@@ -1,0 +1,17 @@
+{
+  "name": "deep-studio-app",
+  "version": "1.0.0",
+  "main": "navigation.js",
+  "types": "navigation.d.ts",
+  "keywords": [
+    "router",
+    "navigation"
+  ],
+  "author": "Graham Mendick",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/grahammendick/navigation/issues"
+  },
+  "homepage": "http://grahammendick.github.io/navigation/",
+  "private": true
+}

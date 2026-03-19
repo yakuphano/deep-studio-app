@@ -1,4 +1,12 @@
 {
   "name": "deep-studio-app",
-  "slug": "deep-studio-app"
+  "slug": "deep-studio-app",
+  "scheme": "deep-studio-app",
+  "experiments": {
+    "typedRoutes": true
+  },
+  "plugins": [
+    "expo-asset",
+    "expo-font"
+  ]
 }

@@ -17,7 +17,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/lib/supabase';
-import { transcribeAudio } from '../../src/lib/whisper';
+import { transcribeWithGroq } from '../../src/lib/groq';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { TASK_LANGUAGES, DEFAULT_LANGUAGE, type TaskLanguageCode } from '../../src/constants/taskLanguages';
 
@@ -307,9 +307,16 @@ export default function AdminPanelScreen() {
         const { data: urlData } = supabase.storage.from('audios').getPublicUrl(uploadData.path);
         audioUrl = urlData.publicUrl;
         try {
-          const res = await transcribeAudio('', mimeType, safeName, audioBlob);
+          const langToUse = selectedLanguage ?? DEFAULT_LANGUAGE;
+          const res = await transcribeWithGroq({
+            fileBlob: audioBlob,
+            mimeType,
+            fileName: safeName,
+            language: langToUse === 'unspecified' ? undefined : langToUse,
+          });
           if (!res.error && res.text?.trim()) transcriptionText = res.text.trim();
-        } catch {
+        } catch (e) {
+          console.error('[Groq] Admin transcribe hatası:', e);
           transcriptionText = 'Metin oluşturulamadı';
         }
       }

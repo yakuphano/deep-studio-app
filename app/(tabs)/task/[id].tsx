@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { supabase } from '../../../src/lib/supabase';
 import { triggerEarningsRefresh } from '../../../src/lib/earningsRefresh';
-import { transcribeAudio } from '../../../src/lib/whisper';
+import { transcribeWithGroq } from '../../../src/lib/groq';
 import { useAuth } from '../../../src/contexts/AuthContext';
 
 const PLAYBACK_SPEED_STORAGE_KEY = 'deepstudio_playback_speed';
@@ -53,6 +53,7 @@ interface TaskData {
   price?: number | null;
   audio_url?: string;
   transcription?: string;
+  language?: string | null;
 }
 
 function WebAudioPlayer({ src, playbackRate }: { src: string; playbackRate: number }) {
@@ -175,6 +176,7 @@ export default function TaskDetailScreen() {
           price: data.price != null ? Number(data.price) : 0,
           audio_url: data.audio_url ?? data.audioUrl,
           transcription: displayText,
+          language: data.language ?? null,
         };
         setTask(taskData);
         setTranscription(displayText);
@@ -284,13 +286,11 @@ export default function TaskDetailScreen() {
   };
 
   const handleAITranscription = async () => {
-    console.log('BUTON ÇALIŞTI');
     if (transcribing) return;
 
-    const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-    console.log('EXPO_PUBLIC_GEMINI_API_KEY:', apiKey ? 'OK' : 'YOK');
+    const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
     if (!apiKey) {
-      const msg = 'Gemini API anahtarı (.env EXPO_PUBLIC_GEMINI_API_KEY) tanımlı değil.';
+      const msg = 'Groq API anahtarı (.env EXPO_PUBLIC_GROQ_API_KEY) tanımlı değil.';
       if (typeof window !== 'undefined') {
         window.alert(msg);
       } else {
@@ -309,15 +309,10 @@ export default function TaskDetailScreen() {
     }
     setTranscribing(true);
     try {
-      const res = await fetch(audioUrl);
-      if (!res.ok) {
-        throw new Error(`Audio fetch failed: ${res.status}`);
-      }
-      const blob = await res.blob();
-      const mimeType = resolveMimeType(blob.type, audioUrl);
-      const ext = mimeType.includes('webm') ? 'webm' : mimeType.includes('mpeg') || mimeType.includes('mp3') ? 'mp3' : mimeType.includes('wav') ? 'wav' : 'm4a';
-      const safeName = `audio_${Date.now()}.${ext}`;
-      const result = await transcribeAudio('', mimeType, safeName, blob);
+      const result = await transcribeWithGroq({
+        fileUrl: audioUrl,
+        language: task?.language ?? undefined,
+      });
       if (!result.error && result.text?.trim()) {
         setTranscription(result.text.trim());
         await supabase
@@ -334,24 +329,22 @@ export default function TaskDetailScreen() {
         }
       } else {
         const msg = result.error ?? t('adminErrors.aiAnalysisFailed');
-        console.error('Gemini Gerçek Hata (transcribeAudio döndü):', msg);
+        console.error('[Groq] transcribeWithGroq hatası:', msg);
+        const displayMsg = /meşgul|quota|429|rate/i.test(msg) ? 'Groq servisi şu an meşgul' : msg;
         if (typeof window !== 'undefined') {
-          window.alert(msg);
+          window.alert(displayMsg);
         } else {
-          Alert.alert(t('login.errorTitle'), msg);
+          Alert.alert(t('login.errorTitle'), displayMsg);
         }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error('Gemini Gerçek Hata:', msg);
-      console.error('Gemini Error (full):', err);
-      const s = String(msg).toLowerCase();
-      const isApiError = s.includes('429') || s.includes('quota') || s.includes('404') || s.includes('model');
-      const errorMsg = isApiError ? 'API Kotası doldu veya model ismi hatalı.' : (msg || 'Ses dosyası okunamadı veya API hatası oluştu.');
+      console.error('[Groq] transcribe hatası (detay):', err);
+      const displayMsg = /meşgul|quota|429|rate/i.test(msg) ? 'Groq servisi şu an meşgul' : (msg || 'Ses dosyası okunamadı veya API hatası.');
       if (typeof window !== 'undefined') {
-        window.alert(errorMsg);
+        window.alert(displayMsg);
       } else {
-        Alert.alert(t('login.errorTitle'), errorMsg);
+        Alert.alert(t('login.errorTitle'), displayMsg);
       }
     } finally {
       setTranscribing(false);
@@ -500,7 +493,12 @@ export default function TaskDetailScreen() {
               disabled={transcribing}
             >
               {transcribing ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <>
+                  <ActivityIndicator size="small" color="#fff" />
+                  <Text style={styles.aiTranscribeButtonText}>
+                    {t('taskDetail.aiTranscribing')}
+                  </Text>
+                </>
               ) : (
                 <>
                   <Ionicons name="sparkles" size={18} color="#fff" />

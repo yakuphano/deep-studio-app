@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useRouter, useRootNavigationState } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/lib/supabase';
@@ -134,7 +135,58 @@ export default function TasksScreen() {
   const { width } = useWindowDimensions();
   const numColumns = width >= 900 ? 3 : width >= 600 ? 2 : 1;
 
+  const userId = user?.id ?? session?.user?.id ?? null;
   const navigatorReady = rootNavigationState?.key != null;
+
+  const fetchTasks = useCallback(async (showLoading = true) => {
+    if (!userId) {
+      console.log('[tasks] fetchTasks atlandı: userId yok');
+      return;
+    }
+    if (showLoading) setLoading(true);
+    try {
+      const cols = 'id, title, status, price, language, category, audio_url, transcription, is_pool_task, assigned_to';
+      const { data: profile } = await supabase.from('profiles').select('languages_expertise').eq('id', userId).single();
+      const expertise = Array.isArray(profile?.languages_expertise) ? profile.languages_expertise.filter((c: string) => c && c !== 'unspecified') : [];
+      const userLangs = expertise.length > 0 ? expertise : ['tr'];
+
+      const { data: assignedData, error: assignedErr } = await supabase
+        .from('tasks')
+        .select(cols)
+        .eq('assigned_to', userId)
+        .order('created_at', { ascending: false });
+      if (assignedErr) console.error('[tasks] assignedData sorgu hatası:', assignedErr);
+      const assigned = (assignedData ?? []).filter((r) => {
+        const cat = (r.category ?? 'transcription').toLowerCase();
+        return cat === 'transcription' || !r.category;
+      });
+
+      const { data: poolData, error: poolErr } = await supabase
+        .from('tasks')
+        .select(cols)
+        .eq('is_pool_task', true)
+        .is('assigned_to', null)
+        .eq('status', 'pending')
+        .in('language', userLangs.length > 0 ? userLangs : ['tr'])
+        .order('created_at', { ascending: false });
+      if (poolErr) console.error('[tasks] poolData sorgu hatası:', poolErr);
+      const pool = (poolData ?? []).filter((r) => {
+        const cat = (r.category ?? 'transcription').toLowerCase();
+        return cat === 'transcription' || !r.category;
+      });
+
+      console.log('[tasks] Aktif Kullanıcı ID:', userId);
+      console.log('[tasks] Gelen Atanmış Görev Sayısı:', assigned.length);
+      console.log('[tasks] Gelen Havuz Görev Sayısı:', pool.length);
+
+      setTasks(assigned);
+      setPoolTasks(pool);
+    } catch (err) {
+      console.error('[tasks] fetchTasks hata:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [userId]);
 
   useEffect(() => {
     if (!navigatorReady) return;
@@ -144,58 +196,55 @@ export default function TasksScreen() {
       } catch (_) {}
       return;
     }
-    const fetchTasks = async () => {
-      const cols = 'id, title, status, price, language, category, audio_url, transcription, is_pool_task, assigned_to';
-      const { data: profile } = await supabase.from('profiles').select('languages_expertise').eq('id', user.id).single();
-      const expertise = Array.isArray(profile?.languages_expertise) ? profile.languages_expertise.filter((c: string) => c && c !== 'unspecified') : [];
-      const userLangs = expertise.length > 0 ? expertise : ['tr'];
-
-      const { data: assignedData } = await supabase
-        .from('tasks')
-        .select(cols)
-        .eq('assigned_to', user.id)
-        .order('created_at', { ascending: false });
-      const assigned = (assignedData ?? []).filter((r) => {
-        const cat = (r.category ?? 'transcription').toLowerCase();
-        return cat === 'transcription' || !r.category;
-      });
-
-      const { data: poolData } = await supabase
-        .from('tasks')
-        .select(cols)
-        .eq('is_pool_task', true)
-        .is('assigned_to', null)
-        .eq('status', 'pending')
-        .in('language', userLangs.length > 0 ? userLangs : ['tr'])
-        .order('created_at', { ascending: false });
-      const pool = (poolData ?? []).filter((r) => {
-        const cat = (r.category ?? 'transcription').toLowerCase();
-        return cat === 'transcription' || !r.category;
-      });
-
-      setTasks(assigned);
-      setPoolTasks(pool);
-      setLoading(false);
-    };
     fetchTasks();
-  }, [navigatorReady, user?.id, session]);
+  }, [navigatorReady, userId, session, fetchTasks]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (userId && navigatorReady) fetchTasks(false);
+    }, [userId, navigatorReady, fetchTasks])
+  );
+
+  useEffect(() => {
+    if (!userId || !navigatorReady) return;
+    const channelName = `tasks-realtime-${userId}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks' },
+        (payload) => {
+          console.log('[tasks] Realtime event:', payload.eventType, payload.new ?? payload.old);
+          fetchTasks(false);
+        }
+      )
+      .subscribe((status) => {
+        console.log('[tasks] Realtime channel status:', status);
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[tasks] Supabase Realtime channel hatası');
+        }
+      });
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, navigatorReady, fetchTasks]);
 
   const handleClaim = useCallback(async (taskId: string) => {
-    if (!user?.id) return;
+    if (!userId) return;
     const claimed = poolTasks.find((t) => t.id === taskId);
     const { error } = await supabase
       .from('tasks')
-      .update({ assigned_to: user.id, is_pool_task: false })
+      .update({ assigned_to: userId, is_pool_task: false })
       .eq('id', taskId)
       .is('assigned_to', null)
       .eq('is_pool_task', true);
     if (!error) {
       setPoolTasks((prev) => prev.filter((t) => t.id !== taskId));
       if (claimed) {
-        setTasks((prev) => [{ ...claimed, assigned_to: user.id, is_pool_task: false }, ...prev]);
+        setTasks((prev) => [{ ...claimed, assigned_to: userId, is_pool_task: false }, ...prev]);
       }
     }
-  }, [user?.id, poolTasks]);
+  }, [userId, poolTasks]);
 
   const getLanguageLabel = (code: string) => {
     const key = `languages.${code}`;

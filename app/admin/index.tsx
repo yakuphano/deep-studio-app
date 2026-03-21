@@ -309,14 +309,17 @@ export default function AdminPanelScreen() {
         try {
           const langToUse = selectedLanguage ?? DEFAULT_LANGUAGE;
           const res = await transcribeWithGroq({
-            fileBlob: audioBlob,
-            mimeType,
-            fileName: safeName,
+            fileUrl: audioUrl,
             language: langToUse === 'unspecified' ? undefined : langToUse,
           });
-          if (!res.error && res.text?.trim()) transcriptionText = res.text.trim();
+          if (!res.error && res.text?.trim()) {
+            transcriptionText = res.text.trim();
+          } else if (res.error) {
+            console.error('[Groq] Admin transcribe error (response):', res.error);
+            transcriptionText = 'Metin oluşturulamadı';
+          }
         } catch (e) {
-          console.error('[Groq] Admin transcribe hatası:', e);
+          console.error('[Groq] Admin transcribe hatası (exception):', e);
           transcriptionText = 'Metin oluşturulamadı';
         }
       }

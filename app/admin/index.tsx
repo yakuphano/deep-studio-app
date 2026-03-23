@@ -10,16 +10,23 @@ import {
   Platform,
   KeyboardAvoidingView,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../../src/lib/supabase';
-import { transcribeWithGroq } from '../../src/lib/groq';
-import { useAuth } from '../../src/contexts/AuthContext';
-import { TASK_LANGUAGES, DEFAULT_LANGUAGE, type TaskLanguageCode } from '../../src/constants/taskLanguages';
+import JSZip from 'jszip';
+import { supabase } from '@/lib/supabase';
+import { transcribeWithGroq } from '@/lib/groq';
+import { useAuth } from '@/contexts/AuthContext';
+import { TASK_LANGUAGES, DEFAULT_LANGUAGE, type TaskLanguageCode } from '@/constants/taskLanguages';
+import { ANNOTATION_LABELS } from '@/constants/annotationLabels';
+import { toYOLO, toCOCO, toPascalVOC } from '@/lib/annotationExports';
+import type { Annotation } from '@/components/AnnotationCanvas';
 
 type User = { id: string; email?: string; full_name?: string; role?: string; is_active?: boolean; languages_expertise?: string[] };
 
@@ -101,6 +108,11 @@ export default function AdminPanelScreen() {
   const [pickedFileName, setPickedFileName] = useState<string | null>(null);
   const [pickedMimeType, setPickedMimeType] = useState<string | null>(null);
   const [showTaskForm, setShowTaskForm] = useState(false);
+  const [taskType, setTaskType] = useState<'audio' | 'image'>('audio');
+  const [imageUrlInput, setImageUrlInput] = useState('');
+  const [imageUploading, setImageUploading] = useState(false);
+  const uploadedUrlRef = useRef<string>('');
+  const [recentTasks, setRecentTasks] = useState<Array<{ id: string; title: string; category?: string | null; image_url?: string | null }>>([]);
   const [userEarnings, setUserEarnings] = useState<Record<string, number>>({});
   const [annotatorSearchQuery, setAnnotatorSearchQuery] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -108,6 +120,8 @@ export default function AdminPanelScreen() {
   const blinkAnim = useRef(new Animated.Value(1)).current;
   const [exportLang, setExportLang] = useState<string>('all');
   const [exportClient, setExportClient] = useState<string>('all');
+  const [exportTaskType, setExportTaskType] = useState<'audio' | 'image' | 'video'>('audio');
+  const [exportFormat, setExportFormat] = useState<'json' | 'yolo' | 'coco' | 'pascalvoc'>('json');
   const [clientNames, setClientNames] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
 
@@ -176,48 +190,201 @@ export default function AdminPanelScreen() {
     fetchClientNames();
   }, [fetchClientNames]);
 
-  const handleExportJson = useCallback(async () => {
+  const fetchRecentTasks = useCallback(async () => {
+    const { data } = await supabase
+      .from('tasks')
+      .select('id, title, category, image_url')
+      .order('created_at', { ascending: false })
+      .limit(10);
+    setRecentTasks(data ?? []);
+  }, []);
+
+  useEffect(() => {
+    if (showTaskForm) fetchRecentTasks();
+  }, [showTaskForm, fetchRecentTasks]);
+
+  const parseAnnotations = (data: unknown): Annotation[] => {
+    if (Array.isArray(data)) return data as Annotation[];
+    if (data && typeof data === 'object' && 'annotations' in data && Array.isArray((data as { annotations: unknown }).annotations)) {
+      return (data as { annotations: Annotation[] }).annotations;
+    }
+    return [];
+  };
+
+  const handleExport = useCallback(async () => {
+    // Güvenlik: İki katmanlı admin doğrulama (AuthContext isAdmin + profiles.role)
+    if (!isAdmin) {
+      Alert.alert(t('login.errorTitle'), 'Bu işlem sadece admin yetkisi gerektirir.');
+      return;
+    }
+    const userId = user?.id ?? (await supabase.auth.getUser()).data.user?.id;
+    if (!userId) {
+      Alert.alert(t('login.errorTitle'), 'Oturum bulunamadı.');
+      return;
+    }
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', userId).single();
+    if (profile?.role !== 'admin') {
+      Alert.alert(t('login.errorTitle'), 'Bu dışa aktarma sadece role === "admin" olan kullanıcılar tarafından yapılabilir.');
+      return;
+    }
     setExporting(true);
     try {
+      const cols = 'id, title, status, transcription, audio_url, image_url, language, client_name, assigned_to, duration, category, type, annotation_data';
       let query = supabase
         .from('tasks')
-        .select('id, title, status, transcription, audio_url, language, client_name, assigned_to, duration')
+        .select(cols)
         .in('status', ['submitted', 'completed']);
       if (exportLang !== 'all') query = query.eq('language', exportLang);
       if (exportClient !== 'all') query = query.eq('client_name', exportClient);
+      if (exportTaskType === 'image') {
+        query = query.or('category.eq.image,type.eq.image');
+      } else if (exportTaskType === 'video') {
+        query = query.or('category.eq.video,type.eq.video');
+      }
       const { data: tasks } = await query.order('created_at', { ascending: false });
-      const ids = [...new Set((tasks ?? []).map((t) => t.assigned_to).filter(Boolean))];
-      const { data: profiles } = ids.length > 0
-        ? await supabase.from('profiles').select('id, email, full_name').in('id', ids)
-        : { data: [] };
-      const profileMap = Object.fromEntries((profiles ?? []).map((p) => [p.id, p]));
-      const exportData = (tasks ?? []).map((t) => ({
-        id: t.id,
-        title: t.title,
-        audio_url: t.audio_url,
-        transcription: t.transcription,
-        duration: t.duration != null ? Number(t.duration) : null,
-        language: t.language,
-        client_name: t.client_name,
-        annotator: t.assigned_to ? (profileMap[t.assigned_to]?.email || profileMap[t.assigned_to]?.full_name || t.assigned_to) : null,
-      }));
+      let taskList = tasks ?? [];
+      if (exportTaskType === 'audio') {
+        taskList = taskList.filter((t) => {
+          const c = ((t as { category?: string }).category ?? '').toLowerCase();
+          const tp = ((t as { type?: string }).type ?? '').toLowerCase();
+          return c !== 'image' && c !== 'video' && tp !== 'image' && tp !== 'video';
+        });
+      }
+
+      if (exportTaskType === 'audio') {
+        const ids = [...new Set(taskList.map((t) => t.assigned_to).filter(Boolean))];
+        const { data: profiles } = ids.length > 0
+          ? await supabase.from('profiles').select('id, email, full_name').in('id', ids)
+          : { data: [] };
+        const profileMap = Object.fromEntries((profiles ?? []).map((p) => [p.id, p]));
+        const exportData = taskList.map((t) => ({
+          id: t.id,
+          title: t.title,
+          audio_url: t.audio_url,
+          transcription: t.transcription,
+          duration: t.duration != null ? Number(t.duration) : null,
+          language: t.language,
+          client_name: t.client_name,
+          annotator: t.assigned_to ? (profileMap[t.assigned_to]?.email || profileMap[t.assigned_to]?.full_name || t.assigned_to) : null,
+        }));
+        const firmaAdi = exportClient === 'all' ? 'Tum_Firmalar' : String(exportClient).replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '') || 'Firma';
+        const dilAdi = exportLang === 'all' ? 'Tum_Diller' : exportLang;
+        const tarih = new Date().toISOString().slice(0, 10);
+        const fileName = `${firmaAdi}_${dilAdi}_${tarih}.json`;
+        const jsonStr = JSON.stringify(exportData, null, 2);
+        if (Platform.OS === 'web' && typeof document !== 'undefined') {
+          const blob = new Blob([jsonStr], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+        console.log('Export System Integrated');
+        if (Platform.OS !== 'web' || typeof document === 'undefined') {
+          const path = `${FileSystem.cacheDirectory}${fileName}`;
+          await FileSystem.writeAsStringAsync(path, jsonStr, { encoding: FileSystem.EncodingType.UTF8 });
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(path, { mimeType: 'application/json', dialogTitle: fileName });
+          } else {
+            Alert.alert(t('admin.exportTitle'), `Dosya kaydedildi: ${path}`);
+          }
+        }
+        return;
+      }
+
+      const imgTasks = taskList.filter((t) => {
+        const cat = ((t as { category?: string }).category ?? '').toLowerCase();
+        const typ = ((t as { type?: string }).type ?? '').toLowerCase();
+        return cat === 'image' || cat === 'video' || typ === 'image' || typ === 'video';
+      });
+
+      if (imgTasks.length === 0) {
+        Alert.alert(t('admin.exportTitle'), 'Seçilen filtrelerde görsel/video görevi bulunamadı.');
+        return;
+      }
+
+      const DEFAULT_W = 1920;
+      const DEFAULT_H = 1080;
+      const zip = new JSZip();
+
+      if (exportFormat === 'coco') {
+        const cocoImages: Array<{ id: number; file_name: string; width: number; height: number }> = [];
+        const allAnnotations: Array<Record<string, unknown>> = [];
+        let imgId = 1;
+        let annId = 1;
+        for (const t of imgTasks) {
+          const annData = (t as { annotation_data?: unknown }).annotation_data;
+          const anns = parseAnnotations(annData);
+          const fname = (t.image_url ?? t.id)?.toString().split('/').pop() ?? `${t.id}.jpg`;
+          const coco = toCOCO({
+            annotations: anns,
+            imageWidth: DEFAULT_W,
+            imageHeight: DEFAULT_H,
+            imageFileName: fname,
+          }) as { images: Array<{ id: number }>; annotations: Array<Record<string, unknown>> };
+          cocoImages.push({ id: imgId, file_name: fname, width: DEFAULT_W, height: DEFAULT_H });
+          for (const ann of coco.annotations ?? []) {
+            allAnnotations.push({ ...ann, id: annId++, image_id: imgId });
+          }
+          imgId++;
+        }
+        const coco = {
+          info: { description: 'Deep Studio Export', version: '1.0' },
+          images: cocoImages,
+          annotations: allAnnotations,
+          categories: ANNOTATION_LABELS.map((name, idx) => ({ id: idx + 1, name, supercategory: 'object' })),
+        };
+        zip.file('instances.json', JSON.stringify(coco, null, 2));
+      } else {
+        for (const t of imgTasks) {
+          const annData = (t as { annotation_data?: unknown }).annotation_data;
+          const anns = parseAnnotations(annData);
+          const fname = (t.image_url ?? t.id)?.toString().split('/').pop() ?? t.id;
+          const baseName = fname.replace(/\.[^.]+$/, '') || t.id;
+          const ctx = { annotations: anns, imageWidth: DEFAULT_W, imageHeight: DEFAULT_H, imageFileName: fname };
+          if (exportFormat === 'yolo') {
+            zip.file(`labels/${baseName}.txt`, toYOLO(ctx));
+          } else if (exportFormat === 'pascalvoc') {
+            zip.file(`annotations/${baseName}.xml`, toPascalVOC(ctx));
+          }
+        }
+      }
+
       const firmaAdi = exportClient === 'all' ? 'Tum_Firmalar' : String(exportClient).replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '') || 'Firma';
       const dilAdi = exportLang === 'all' ? 'Tum_Diller' : exportLang;
+      const tipAdi = exportTaskType === 'image' ? 'Gorsel' : 'Video';
+      const fmtAdi = exportFormat === 'yolo' ? 'YOLO' : exportFormat === 'coco' ? 'COCO' : 'PascalVOC';
       const tarih = new Date().toISOString().slice(0, 10);
-      const fileName = `${firmaAdi}_${dilAdi}_${tarih}.json`;
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
+      const zipFileName = `export_${firmaAdi}_${dilAdi}_${tipAdi}_${fmtAdi}_${tarih}.zip`;
+
+      if (Platform.OS === 'web' && typeof document !== 'undefined') {
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = zipFileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+      console.log('Export System Integrated');
+      if (Platform.OS !== 'web' || typeof document === 'undefined') {
+        const zipBase64 = await zip.generateAsync({ type: 'base64' });
+        const path = `${FileSystem.cacheDirectory}${zipFileName}`;
+        await FileSystem.writeAsStringAsync(path, zipBase64, { encoding: FileSystem.EncodingType.Base64 });
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(path, { mimeType: 'application/zip', dialogTitle: zipFileName });
+        } else {
+          Alert.alert(t('admin.exportTitle'), `ZIP kaydedildi: ${path}`);
+        }
+      }
     } catch (e) {
       Alert.alert(t('login.errorTitle'), (e as Error)?.message ?? 'Dışa aktarma hatası');
     } finally {
       setExporting(false);
     }
-  }, [exportLang, exportClient, t]);
+  }, [exportLang, exportClient, exportTaskType, exportFormat, isAdmin, user, t]);
 
   const handlePickFile = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
@@ -230,6 +397,60 @@ export default function AdminPanelScreen() {
     setPickedFileName(asset.name);
     setPickedMimeType(asset.mimeType ?? null);
     setAudioStatus(asset.name);
+  };
+
+  const handleImageUpload = async () => {
+    const result = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
+    if (result.canceled) return;
+    setImageUrlInput('');
+    uploadedUrlRef.current = '';
+    setImageUploading(true);
+    try {
+      const asset = result.assets[0];
+      const res = await fetch(asset.uri);
+      const blob = await res.blob();
+      const mimeType = asset.mimeType ?? 'image/jpeg';
+      const ext = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg';
+      const fileName = (asset.name || 'image').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const uniquePath = `images/${Date.now()}_${fileName}.${ext}`;
+      const { data: uploadData, error: ue } = await supabase.storage.from('task-assets').upload(uniquePath, blob, { contentType: mimeType, upsert: true });
+      if (ue) {
+        const errMsg = ue?.message ?? JSON.stringify(ue);
+        if (typeof window !== 'undefined') {
+          window.alert('Yükleme hatası: ' + errMsg);
+        } else {
+          Alert.alert('Hata', 'Yükleme hatası: ' + errMsg);
+        }
+        return;
+      }
+      const { data: urlData } = supabase.storage.from('task-assets').getPublicUrl(uploadData.path);
+      const publicUrl = urlData?.publicUrl ?? '';
+      if (!publicUrl) {
+        if (typeof window !== 'undefined') {
+          window.alert('Yükleme hatası: Public URL alınamadı');
+        } else {
+          Alert.alert('Hata', 'Public URL alınamadı');
+        }
+        return;
+      }
+      uploadedUrlRef.current = publicUrl;
+      setImageUrlInput(publicUrl);
+      if (typeof window !== 'undefined') {
+        window.alert('Görsel buluta başarıyla transfer edildi!');
+      } else {
+        Alert.alert('Başarılı', 'Görsel buluta başarıyla transfer edildi!');
+      }
+    } catch (err: any) {
+      console.error('Upload Error:', err);
+      const msg = err?.message ?? (typeof err === 'string' ? err : 'Bilinmeyen hata');
+      if (typeof window !== 'undefined') {
+        window.alert('Yükleme hatası: ' + msg);
+      } else {
+        Alert.alert('Hata', 'Yükleme hatası: ' + msg);
+      }
+    } finally {
+      setImageUploading(false);
+    }
   };
 
   useEffect(() => {
@@ -290,9 +511,75 @@ export default function AdminPanelScreen() {
       return;
     }
     setSubmitting(true);
-    let transcriptionText = 'Metin oluşturulamadı';
-    let audioUrl: string | null = null;
     try {
+      const priceNum = Math.max(0, parseFloat(taskPrice) || 10);
+      const langToSave = selectedLanguage ?? DEFAULT_LANGUAGE;
+      const isPool = selectedUser?.id === '__POOL__' || !selectedUser;
+
+        if (taskType === 'image') {
+        const fromRef = (uploadedUrlRef.current ?? '').trim();
+        const fromState = (imageUrlInput ?? '').trim();
+        const imageUrl = fromRef || fromState;
+
+        if (!imageUrl || imageUrl.length === 0) {
+          const msg = imageUploading ? 'Lütfen görsel yüklenene kadar bekleyin' : 'Görsel görevi için image URL gerekli. Lütfen bir görsel yükleyin veya URL girin.';
+          if (typeof window !== 'undefined') {
+            window.alert(msg);
+          } else {
+            Alert.alert(t('login.errorTitle'), msg);
+          }
+          setSubmitting(false);
+          return;
+        }
+        if (fromRef && !fromState) {
+          setImageUrlInput(fromRef);
+        }
+        const taskData: Record<string, unknown> = {
+          title: title.trim(),
+          status: 'pending',
+          type: 'image',
+          category: 'image',
+          image_url: imageUrl,
+          audio_url: '',
+          transcription: '',
+          price: priceNum,
+          language: langToSave,
+          is_pool_task: isPool,
+          assigned_to: isPool ? null : selectedUser?.id ?? null,
+          client_name: clientName.trim() || null,
+        };
+        console.log('Kaydedilen Veri:', taskData);
+        const { error: insertError } = await supabase.from('tasks').insert(taskData);
+        if (insertError) {
+          console.error('[Admin] Görsel görev insert hatası:', insertError);
+          console.error('[Admin] Gönderilen veri:', taskData);
+          const errMsg = insertError.message ?? 'Görev oluşturulamadı.';
+          if (typeof window !== 'undefined') {
+            window.alert('Hata: ' + errMsg);
+          } else {
+            Alert.alert(t('login.errorTitle'), errMsg);
+          }
+          setSubmitting(false);
+          return;
+        }
+        fetchClientNames();
+        fetchRecentTasks();
+        if (typeof window !== 'undefined') {
+          window.alert('Görev Başarıyla Oluşturuldu');
+        } else {
+          Alert.alert(t('taskDetail.successTitle'), 'Görev Başarıyla Oluşturuldu');
+        }
+        setTitle('');
+        setTaskPrice('10');
+        setClientName('');
+        setImageUrlInput('');
+        uploadedUrlRef.current = '';
+        setShowTaskForm(false);
+        return;
+      }
+
+      let transcriptionText = 'Metin oluşturulamadı';
+      let audioUrl: string | null = null;
       let durationSec: number | null = null;
       const audioBlob = recordedBlob || pickedBlob;
       if (audioBlob) {
@@ -323,9 +610,6 @@ export default function AdminPanelScreen() {
           transcriptionText = 'Metin oluşturulamadı';
         }
       }
-      const priceNum = Math.max(0, parseFloat(taskPrice) || 10);
-      const langToSave = selectedLanguage ?? DEFAULT_LANGUAGE;
-      const isPool = selectedUser?.id === '__POOL__' || !selectedUser;
       const taskData: Record<string, unknown> = {
         title: title.trim(),
         status: 'pending',
@@ -341,6 +625,7 @@ export default function AdminPanelScreen() {
       const { error: insertError } = await supabase.from('tasks').insert(taskData);
       if (insertError) throw insertError;
       fetchClientNames();
+      fetchRecentTasks();
       Alert.alert(t('taskDetail.successTitle'), t('adminErrors.taskCreatedSuccess', { language: t(`languages.${langToSave}`) }));
       setTitle('');
       setClientName('');
@@ -349,7 +634,13 @@ export default function AdminPanelScreen() {
       setAudioStatus('');
       setShowTaskForm(false);
     } catch (err: any) {
-      Alert.alert(t('login.errorTitle'), err?.message ?? 'Hata');
+      console.error('[Admin] Görev oluşturma hatası:', err);
+      const errMsg = err?.message ?? 'Hata';
+      if (typeof window !== 'undefined') {
+        window.alert('Hata: ' + errMsg);
+      } else {
+        Alert.alert(t('login.errorTitle'), errMsg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -401,6 +692,10 @@ export default function AdminPanelScreen() {
   useEffect(() => {
     if (showTaskForm) setSelectedUser(POOL_USER);
   }, [showTaskForm]);
+
+  useEffect(() => {
+    if (showTaskForm) fetchRecentTasks();
+  }, [showTaskForm, fetchRecentTasks]);
 
   useEffect(() => {
     if (selectedUser && selectedUser.id !== '__POOL__' && !displayUsers.some((u) => u.id === selectedUser?.id)) {
@@ -470,6 +765,23 @@ export default function AdminPanelScreen() {
         {showTaskForm && (
           <View style={[styles.sectionCard, CARD_STYLE]}>
             <Text style={styles.sectionTitle}>{t('admin.taskAssignment')}</Text>
+            <Text style={styles.label}>Task Type (Görev Tipi)</Text>
+            <View style={styles.taskTypeRow}>
+              <TouchableOpacity
+                style={[styles.taskTypeChip, taskType === 'audio' && styles.taskTypeChipActive]}
+                onPress={() => setTaskType('audio')}
+              >
+                <Ionicons name="mic" size={18} color={taskType === 'audio' ? '#fff' : '#94a3b8'} />
+                <Text style={[styles.taskTypeChipText, taskType === 'audio' && styles.taskTypeChipTextActive]}>Ses</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.taskTypeChip, taskType === 'image' && styles.taskTypeChipActive]}
+                onPress={() => setTaskType('image')}
+              >
+                <Ionicons name="image" size={18} color={taskType === 'image' ? '#fff' : '#94a3b8'} />
+                <Text style={[styles.taskTypeChipText, taskType === 'image' && styles.taskTypeChipTextActive]}>Görsel</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.label}>{t('admin.taskTitle')}</Text>
             <TextInput style={styles.input} placeholder={t('admin.taskTitlePlaceholder')} placeholderTextColor="#64748b" value={title} onChangeText={setTitle} />
             <Text style={styles.label}>{t('admin.taskPrice')}</Text>
@@ -492,30 +804,123 @@ export default function AdminPanelScreen() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
-            <Text style={styles.label}>{t('admin.audioSection')}</Text>
-            <View style={styles.row}>
-              <TouchableOpacity style={styles.btn} onPress={handlePickFile} disabled={isRecording}>
-                <Text style={styles.btnText}>{t('admin.selectFile')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.btn, styles.recordBtn, isRecording && styles.recordBtnActive]} onPress={handleRecord}>
-                {isRecording && (
-                  <Animated.View style={[styles.recordDot, { opacity: blinkAnim }]} />
-                )}
-                <Text style={styles.btnText}>{isRecording ? t('admin.recording') : t('admin.record')}</Text>
-              </TouchableOpacity>
-            </View>
-            {audioStatus ? <Text style={styles.status}>{audioStatus}</Text> : null}
-            <TouchableOpacity style={[styles.submitBtn, submitting && styles.submitBtnDisabled]} onPress={handleAssignTask} disabled={submitting}>
+            {taskType === 'audio' ? (
+              <>
+                <Text style={styles.label}>{t('admin.audioSection')}</Text>
+                <View style={styles.row}>
+                  <TouchableOpacity style={styles.btn} onPress={handlePickFile} disabled={isRecording}>
+                    <Text style={styles.btnText}>{t('admin.selectFile')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.btn, styles.recordBtn, isRecording && styles.recordBtnActive]} onPress={handleRecord}>
+                    {isRecording && (
+                      <Animated.View style={[styles.recordDot, { opacity: blinkAnim }]} />
+                    )}
+                    <Text style={styles.btnText}>{isRecording ? t('admin.recording') : t('admin.record')}</Text>
+                  </TouchableOpacity>
+                </View>
+                {audioStatus ? <Text style={styles.status}>{audioStatus}</Text> : null}
+              </>
+            ) : (
+              <>
+                <Text style={styles.label}>Image URL (Görsel Adresi)</Text>
+                <View style={styles.imageUrlRow}>
+                  <TextInput
+                    style={[styles.input, styles.imageUrlInput]}
+                    placeholder="https://... veya Görsel Seç ile yükle"
+                    placeholderTextColor="#64748b"
+                    value={imageUrlInput}
+                    onChangeText={setImageUrlInput}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!imageUploading}
+                  />
+                  <TouchableOpacity
+                    style={[styles.uploadImageBtn, imageUploading && styles.uploadImageBtnDisabled]}
+                    onPress={handleImageUpload}
+                    disabled={imageUploading}
+                  >
+                    {imageUploading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons name="cloud-upload" size={18} color="#fff" />
+                        <Text style={styles.uploadImageBtnText}>Görsel Seç</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+            <TouchableOpacity
+              style={[styles.submitBtn, (submitting || (taskType === 'image' && imageUploading)) && styles.submitBtnDisabled]}
+              onPress={handleAssignTask}
+              disabled={submitting || (taskType === 'image' && imageUploading)}
+            >
               <Text style={styles.submitBtnText}>
-                {submitting ? t('admin.assigning') : (selectedUser?.id === '__POOL__' || !selectedUser) ? t('admin.sendToPool') : t('admin.assignToPerson')}
+                {submitting
+                  ? t('admin.assigning')
+                  : taskType === 'image' && imageUploading
+                    ? 'Görsel yükleniyor...'
+                    : (selectedUser?.id === '__POOL__' || !selectedUser)
+                      ? t('admin.sendToPool')
+                      : t('admin.assignToPerson')}
               </Text>
             </TouchableOpacity>
+            {recentTasks.length > 0 && (
+              <>
+                <Text style={[styles.label, { marginTop: 16 }]}>Son Görevler</Text>
+                <View style={styles.recentTasksWrap}>
+                  {recentTasks.map((t) => (
+                    <View key={t.id} style={styles.recentTaskRow}>
+                      {(t.category ?? '').toLowerCase() === 'image' || !!t.image_url ? (
+                        <Ionicons name="image" size={14} color="#f472b6" style={styles.recentTaskIcon} />
+                      ) : null}
+                      <Text style={styles.recentTaskTitle} numberOfLines={1}>{t.title}</Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
           </View>
         )}
 
-        {/* Veri Dışa Aktar (Export) */}
+        {/* Veri Dışa Aktar (Export) - Sadece admin */}
         <View style={[styles.sectionCard, CARD_STYLE]}>
-          <Text style={styles.sectionTitle}>{t('admin.exportTitle')}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <Text style={styles.sectionTitle}>{t('admin.exportTitle')}</Text>
+            {!isAdmin && <Text style={{ fontSize: 11, color: '#94a3b8' }}>(Sadece admin)</Text>}
+          </View>
+          <Text style={styles.exportLabel}>Görev Tipi (Task Type)</Text>
+          <View style={styles.exportTaskTypeRow}>
+            <TouchableOpacity style={[styles.exportChip, exportTaskType === 'audio' && styles.exportChipActive]} onPress={() => { setExportTaskType('audio'); setExportFormat('json'); }}>
+              <Text style={[styles.exportChipText, exportTaskType === 'audio' && styles.exportChipTextActive]}>Audio</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.exportChip, exportTaskType === 'image' && styles.exportChipActive]} onPress={() => { setExportTaskType('image'); setExportFormat('yolo'); }}>
+              <Text style={[styles.exportChipText, exportTaskType === 'image' && styles.exportChipTextActive]}>Image</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.exportChip, exportTaskType === 'video' && styles.exportChipActive]} onPress={() => { setExportTaskType('video'); setExportFormat('yolo'); }}>
+              <Text style={[styles.exportChipText, exportTaskType === 'video' && styles.exportChipTextActive]}>Video</Text>
+            </TouchableOpacity>
+          </View>
+          {exportTaskType === 'audio' && (
+            <Text style={[styles.exportLabel, { marginBottom: 8 }]}>Export Format: JSON</Text>
+          )}
+          {(exportTaskType === 'image' || exportTaskType === 'video') && (
+            <>
+              <Text style={styles.exportLabel}>Export Format</Text>
+              <View style={styles.exportFormatRow}>
+                <TouchableOpacity style={[styles.exportChip, exportFormat === 'yolo' && styles.exportChipActive]} onPress={() => setExportFormat('yolo')}>
+                  <Text style={[styles.exportChipText, exportFormat === 'yolo' && styles.exportChipTextActive]}>YOLOv8 (.txt)</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.exportChip, exportFormat === 'coco' && styles.exportChipActive]} onPress={() => setExportFormat('coco')}>
+                  <Text style={[styles.exportChipText, exportFormat === 'coco' && styles.exportChipTextActive]}>COCO (.json)</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.exportChip, exportFormat === 'pascalvoc' && styles.exportChipActive]} onPress={() => setExportFormat('pascalvoc')}>
+                  <Text style={[styles.exportChipText, exportFormat === 'pascalvoc' && styles.exportChipTextActive]}>Pascal VOC (.xml)</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
           <View style={styles.exportRow}>
             <View style={styles.exportField}>
               <Text style={styles.exportLabel}>{t('admin.exportLanguage')}</Text>
@@ -544,9 +949,9 @@ export default function AdminPanelScreen() {
               </ScrollView>
             </View>
           </View>
-          <TouchableOpacity style={[styles.exportBtn, exporting && styles.exportBtnDisabled]} onPress={handleExportJson} disabled={exporting}>
+          <TouchableOpacity style={[styles.exportBtn, (exporting || !isAdmin) && styles.exportBtnDisabled]} onPress={handleExport} disabled={exporting || !isAdmin}>
             <Ionicons name="download" size={18} color="#fff" />
-            <Text style={styles.exportBtnText}>{exporting ? t('admin.exporting') : t('admin.exportJson')}</Text>
+            <Text style={styles.exportBtnText}>{exporting ? t('admin.exporting') : 'İndir'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -682,6 +1087,21 @@ const styles = StyleSheet.create({
   recordDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#ef4444' },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
   status: { fontSize: 11, color: '#60a5fa', marginTop: 6 },
+  taskTypeRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  taskTypeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(15,23,42,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  taskTypeChipActive: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
+  taskTypeChipText: { fontSize: 13, color: '#94a3b8', fontWeight: '600' },
+  taskTypeChipTextActive: { color: '#fff' },
   langChipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 4 },
   langChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(15,23,42,0.6)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   langChipActive: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
@@ -699,11 +1119,32 @@ const styles = StyleSheet.create({
   exportRow: { gap: 12, marginBottom: 12 },
   exportField: { marginBottom: 8 },
   exportLabel: { fontSize: 12, fontWeight: '600', color: '#94a3b8', marginBottom: 6 },
+  exportTaskTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  exportFormatRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   exportChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   exportChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: 'rgba(15,23,42,0.6)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   exportChipActive: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
   exportChipText: { fontSize: 13, color: '#94a3b8' },
   exportChipTextActive: { color: '#fff', fontWeight: '600' },
+  imageUrlRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 4 },
+  imageUrlInput: { flex: 1, marginBottom: 0 },
+  uploadImageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#8b5cf6',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 10,
+    minWidth: 120,
+    justifyContent: 'center',
+  },
+  uploadImageBtnDisabled: { opacity: 0.7 },
+  uploadImageBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  recentTasksWrap: { marginTop: 8, gap: 4 },
+  recentTaskRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: 'rgba(15,23,42,0.4)', borderRadius: 6, marginBottom: 4 },
+  recentTaskIcon: { marginRight: 8 },
+  recentTaskTitle: { flex: 1, fontSize: 13, color: '#f1f5f9' },
   exportBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#22c55e', paddingVertical: 12, borderRadius: 10, marginTop: 8 },
   exportBtnDisabled: { opacity: 0.6 },
   exportBtnText: { fontSize: 14, color: '#fff', fontWeight: '600' },

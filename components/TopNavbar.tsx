@@ -11,8 +11,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, usePathname } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../src/contexts/AuthContext';
-import { useUnreadMessagesCount } from '../src/hooks/useUnreadMessagesCount';
+import { useAuth } from '@/contexts/AuthContext';
+import { useUnreadMessagesCount } from '@/hooks/useUnreadMessagesCount';
 
 const NAV_ITEMS = [
   { href: '/tasks', labelKey: 'nav.tasks' },

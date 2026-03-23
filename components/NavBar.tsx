@@ -2,8 +2,8 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../src/contexts/AuthContext';
-import { useUnreadMessagesCount } from '../src/hooks/useUnreadMessagesCount';
+import { useAuth } from '@/contexts/AuthContext';
+import { useUnreadMessagesCount } from '@/hooks/useUnreadMessagesCount';
 
 const navItems = [
   { href: '/tasks', labelKey: 'nav.tasks' },

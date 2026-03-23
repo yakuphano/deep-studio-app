@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../../src/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function FAQScreen() {
   const { t } = useTranslation();

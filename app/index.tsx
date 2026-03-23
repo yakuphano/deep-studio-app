@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../src/lib/supabase';
+import { supabase } from '@/lib/supabase';
 
 export default function LoginScreen() {
   const { t } = useTranslation();

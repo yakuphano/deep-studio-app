@@ -7,13 +7,52 @@ import {
   FlatList,
   ActivityIndicator,
   useWindowDimensions,
+  Pressable,
 } from 'react-native';
-import { useRouter, useRootNavigationState } from 'expo-router';
+import { useRouter, useRootNavigationState, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../../src/lib/supabase';
-import { useAuth } from '../../src/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+
+function TaskSelectionCards({
+  onSelect,
+  t,
+}: {
+  onSelect: (type: TaskType) => void;
+  t: (k: string) => string;
+}) {
+  const { width } = useWindowDimensions();
+  const cardSize = width >= 800 ? 200 : Math.min(width * 0.4, 160);
+  return (
+    <View style={styles.dashboard}>
+      <Text style={styles.dashboardTitle}>{t('tasks.pageTitle')}</Text>
+      <View style={[styles.cardsRow, width < 600 && styles.cardsColumn]}>
+        <Pressable
+          style={({ pressed }) => [styles.selectionCard, pressed && styles.cardPressed]}
+          onPress={() => onSelect('transcription')}
+        >
+          <View style={[styles.cardIcon, { backgroundColor: 'rgba(59, 130, 246, 0.2)' }]}>
+            <Ionicons name="mic" size={cardSize * 0.35} color="#3b82f6" />
+          </View>
+          <Text style={styles.cardLabel}>{t('tasks.cardAudioTranscription')}</Text>
+          <Text style={styles.cardHint}>{t('tasks.listenToAudio')} • {t('tasks.transcribeHere')}</Text>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.selectionCard, pressed && styles.cardPressed]}
+          onPress={() => onSelect('image')}
+        >
+          <View style={[styles.cardIcon, { backgroundColor: 'rgba(245, 114, 182, 0.2)' }]}>
+            <Ionicons name="image" size={cardSize * 0.35} color="#f472b6" />
+          </View>
+          <Text style={styles.cardLabel}>{t('tasks.cardImageAnnotation')}</Text>
+          <Text style={styles.cardHint}>BBox • Polygon</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
 
 function useAudioDuration(url: string | null | undefined): number | null {
   const [duration, setDuration] = useState<number | null>(null);
@@ -36,13 +75,17 @@ function useAudioDuration(url: string | null | undefined): number | null {
   return duration;
 }
 
+type TaskType = 'transcription' | 'image';
+
 type Task = {
   id: string;
   title: string;
   status: string;
   price: number | null;
   language: string;
+  category?: string | null;
   audio_url?: string | null;
+  image_url?: string | null;
   transcription?: string | null;
   is_pool_task?: boolean;
   assigned_to?: string | null;
@@ -124,10 +167,20 @@ function TaskCard({
   );
 }
 
+function matchCategory(category: string | null | undefined, taskType: TaskType): boolean {
+  const cat = (category ?? 'transcription').toLowerCase();
+  if (taskType === 'transcription') return cat === 'transcription' || !category;
+  if (taskType === 'image') return cat === 'image';
+  return true;
+}
+
 export default function TasksScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
+  const params = useLocalSearchParams<{ type?: string }>();
+  const taskType = (params.type === 'image' ? 'image' : params.type === 'transcription' ? 'transcription' : null) as TaskType | null;
+
   const { user, session } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [poolTasks, setPoolTasks] = useState<Task[]>([]);
@@ -138,14 +191,19 @@ export default function TasksScreen() {
   const userId = user?.id ?? session?.user?.id ?? null;
   const navigatorReady = rootNavigationState?.key != null;
 
-  const fetchTasks = useCallback(async (showLoading = true) => {
+  const setTypeAndFetch = useCallback((type: TaskType) => {
+    router.replace(`/tasks?type=${type}` as any);
+  }, [router]);
+
+  const fetchTasks = useCallback(async (showLoading = true, filterType: TaskType | null = taskType) => {
     if (!userId) {
       console.log('[tasks] fetchTasks atlandı: userId yok');
       return;
     }
+    const type = filterType ?? 'transcription';
     if (showLoading) setLoading(true);
     try {
-      const cols = 'id, title, status, price, language, category, audio_url, transcription, is_pool_task, assigned_to';
+      const cols = 'id, title, status, price, language, category, audio_url, image_url, transcription, is_pool_task, assigned_to';
       const { data: profile } = await supabase.from('profiles').select('languages_expertise').eq('id', userId).single();
       const expertise = Array.isArray(profile?.languages_expertise) ? profile.languages_expertise.filter((c: string) => c && c !== 'unspecified') : [];
       const userLangs = expertise.length > 0 ? expertise : ['tr'];
@@ -156,28 +214,21 @@ export default function TasksScreen() {
         .eq('assigned_to', userId)
         .order('created_at', { ascending: false });
       if (assignedErr) console.error('[tasks] assignedData sorgu hatası:', assignedErr);
-      const assigned = (assignedData ?? []).filter((r) => {
-        const cat = (r.category ?? 'transcription').toLowerCase();
-        return cat === 'transcription' || !r.category;
-      });
+      const assigned = (assignedData ?? []).filter((r) => matchCategory(r.category, type));
 
-      const { data: poolData, error: poolErr } = await supabase
+      let poolQuery = supabase
         .from('tasks')
         .select(cols)
         .eq('is_pool_task', true)
         .is('assigned_to', null)
         .eq('status', 'pending')
-        .in('language', userLangs.length > 0 ? userLangs : ['tr'])
         .order('created_at', { ascending: false });
+      if (type !== 'image' && userLangs.length > 0) {
+        poolQuery = poolQuery.in('language', userLangs) as typeof poolQuery;
+      }
+      const { data: poolData, error: poolErr } = await poolQuery;
       if (poolErr) console.error('[tasks] poolData sorgu hatası:', poolErr);
-      const pool = (poolData ?? []).filter((r) => {
-        const cat = (r.category ?? 'transcription').toLowerCase();
-        return cat === 'transcription' || !r.category;
-      });
-
-      console.log('[tasks] Aktif Kullanıcı ID:', userId);
-      console.log('[tasks] Gelen Atanmış Görev Sayısı:', assigned.length);
-      console.log('[tasks] Gelen Havuz Görev Sayısı:', pool.length);
+      const pool = (poolData ?? []).filter((r) => matchCategory(r.category, type));
 
       setTasks(assigned);
       setPoolTasks(pool);
@@ -186,7 +237,7 @@ export default function TasksScreen() {
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, taskType]);
 
   useEffect(() => {
     if (!navigatorReady) return;
@@ -196,13 +247,13 @@ export default function TasksScreen() {
       } catch (_) {}
       return;
     }
-    fetchTasks();
-  }, [navigatorReady, userId, session, fetchTasks]);
+    fetchTasks(true, taskType ?? 'transcription');
+  }, [navigatorReady, userId, session, taskType, fetchTasks]);
 
   useFocusEffect(
     useCallback(() => {
-      if (userId && navigatorReady) fetchTasks(false);
-    }, [userId, navigatorReady, fetchTasks])
+      if (userId && navigatorReady && taskType) fetchTasks(false, taskType);
+    }, [userId, navigatorReady, taskType, fetchTasks])
   );
 
   useEffect(() => {
@@ -260,20 +311,38 @@ export default function TasksScreen() {
     );
   }
 
+  if (!taskType) {
+    return (
+      <View style={styles.container}>
+        <TaskSelectionCards onSelect={setTypeAndFetch} t={t} />
+      </View>
+    );
+  }
+
   const poolItems = poolTasks.map((t) => ({ ...t, _isPool: true as const }));
   const assignedItems = tasks.map((t) => ({ ...t, _isPool: false as const }));
   const allItems = [...poolItems, ...assignedItems];
 
+  const pageTitle = taskType === 'image' ? t('tasks.pageTitleImage') : t('tasks.pageTitleTranscription');
+  const emptyText = taskType === 'image' ? t('tasks.emptyImage') : t('tasks.empty');
+  const emptyIcon = taskType === 'image' ? 'image-outline' : 'mic-outline';
+
   return (
     <View style={styles.container}>
-      <Text style={styles.pageTitle}>{t('tasks.pageTitleTranscription')}</Text>
+      <View style={styles.headerRow}>
+        <TouchableOpacity style={styles.backToSelection} onPress={() => router.setParams({ type: '' })}>
+          <Ionicons name="arrow-back" size={18} color="#3b82f6" />
+          <Text style={styles.backToSelectionText}>{t('tasks.pageTitle')}</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.pageTitle}>{pageTitle}</Text>
 
       {loading ? (
         <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 40 }} />
       ) : allItems.length === 0 ? (
         <View style={styles.emptyBox}>
-          <Ionicons name="mic-outline" size={48} color="#64748b" style={{ marginBottom: 12 }} />
-          <Text style={styles.emptyText}>{t('tasks.empty')}</Text>
+          <Ionicons name={emptyIcon as any} size={48} color="#64748b" style={{ marginBottom: 12 }} />
+          <Text style={styles.emptyText}>{emptyText}</Text>
         </View>
       ) : (
         <FlatList
@@ -407,6 +476,42 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   poolCard: { borderColor: 'rgba(59, 130, 246, 0.3)', borderLeftWidth: 4 },
+  dashboard: { flex: 1, padding: 24, paddingTop: 20 },
+  dashboardTitle: { fontSize: 22, fontWeight: '700', color: '#f8fafc', marginBottom: 32 },
+  cardsRow: { flexDirection: 'row', gap: 24, flexWrap: 'wrap' },
+  cardsColumn: { flexDirection: 'column' },
+  selectionCard: {
+    flex: 1,
+    minWidth: 200,
+    maxWidth: 380,
+    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardPressed: { opacity: 0.85 },
+  cardIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  cardLabel: { fontSize: 18, fontWeight: '600', color: '#f1f5f9', marginBottom: 8 },
+  cardHint: { fontSize: 13, color: '#94a3b8' },
+  headerRow: { marginBottom: 8 },
+  backToSelection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 0,
+  },
+  backToSelectionText: { fontSize: 14, color: '#3b82f6', fontWeight: '600' },
   claimBtn: {
     flexDirection: 'row',
     alignItems: 'center',

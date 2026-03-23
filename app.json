@@ -3,7 +3,7 @@
   "slug": "deep-studio-app",
   "scheme": "deep-studio-app",
   "experiments": {
-    "typedRoutes": true
+    "typedRoutes": false
   },
   "plugins": [
     "expo-asset",

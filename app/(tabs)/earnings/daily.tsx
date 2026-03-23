@@ -4,10 +4,10 @@ import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Platform, Animated } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../../../src/lib/supabase';
-import { addEarningsRefreshListener } from '../../../src/lib/earningsRefresh';
-import { useAuth } from '../../../src/contexts/AuthContext';
-import { useCountUp } from '../../../src/hooks/useCountUp';
+import { supabase } from '@/lib/supabase';
+import { addEarningsRefreshListener } from '@/lib/earningsRefresh';
+import { useAuth } from '@/contexts/AuthContext';
+import { useCountUp } from '@/hooks/useCountUp';
 
 interface TaskItem {
   id: string;

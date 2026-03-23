@@ -15,9 +15,9 @@ import {
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../../src/lib/supabase';
-import { useAuth } from '../../src/contexts/AuthContext';
-import { sendMessageAsAdmin, getAdminUserId } from '../../src/lib/messages';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { sendMessageAsAdmin, getAdminUserId } from '@/lib/messages';
 
 type Message = {
   id: string;

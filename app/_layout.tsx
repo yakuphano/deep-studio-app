@@ -1,9 +1,9 @@
-import '../src/i18n';
+import '@/i18n';
 import { useEffect } from 'react';
 import { View, ActivityIndicator, Platform } from 'react-native';
 import { Stack, useRouter, usePathname } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { AuthProvider, useAuth } from '../src/contexts/AuthContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 
 function RootLayoutNav() {
   const { session, loading, isAdmin } = useAuth();

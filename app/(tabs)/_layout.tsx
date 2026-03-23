@@ -7,7 +7,7 @@ export default function MainLayout() {
       screenOptions={{
         header: () => <TopNavbar />,
         headerShown: true,
-        contentStyle: { backgroundColor: '#0f172a' },
+        contentStyle: { backgroundColor: '#0f172a', width: '100%' },
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />

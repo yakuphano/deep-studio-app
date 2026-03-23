@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { supabase } from '../../src/lib/supabase';
-import { useAuth } from '../../src/contexts/AuthContext';
-import { TASK_LANGUAGES, type TaskLanguageCode } from '../../src/constants/taskLanguages';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { TASK_LANGUAGES, type TaskLanguageCode } from '@/constants/taskLanguages';
 
 export default function ProfileScreen() {
   const { t } = useTranslation();

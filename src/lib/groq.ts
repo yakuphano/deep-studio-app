@@ -148,12 +148,20 @@ function getFileExtension(mimeType: string, url: string): string {
   return 'mp3';
 }
 
-/** Groq ISO-639-1 dil kodu (tr, en, ar, az, ku vb.) veya undefined = otomatik algılama */
+/** Groq/Whisper desteklediği diller - listede yoksa undefined (otomatik algılama) */
+const GROQ_SUPPORTED_LANGUAGES = new Set([
+  'tr', 'en', 'ar', 'az', 'zh', 'de', 'es', 'fr', 'ru', 'ko', 'ja', 'pt', 'pl', 'nl', 'it', 'id',
+  'hi', 'fi', 'vi', 'he', 'uk', 'el', 'cs', 'ro', 'da', 'hu', 'ta', 'th', 'ur', 'hr', 'bg', 'lt',
+  'sk', 'te', 'fa', 'lv', 'bn', 'sr', 'sl', 'et', 'mk', 'sw', 'gl', 'mr', 'pa', 'km', 'af', 'ka',
+  'be', 'gu', 'am', 'lo', 'uz', 'ps', 'tk', 'nn', 'mt', 'sa', 'my', 'bo', 'tl', 'mg', 'as', 'tt',
+  'ln', 'ha', 'jw', 'su',
+]);
+
+/** Groq ISO-639-1 dil kodu - destekleniyorsa döner, yoksa undefined (otomatik algılama) */
 function toGroqLanguage(taskLang?: string | null): string | undefined {
   if (!taskLang || taskLang === 'unspecified') return undefined;
   const code = String(taskLang).trim().toLowerCase().slice(0, 2);
-  if (['tr', 'en', 'ar', 'az', 'ku'].includes(code)) return code;
-  return undefined;
+  return GROQ_SUPPORTED_LANGUAGES.has(code) ? code : undefined;
 }
 
 export interface GroqTranscribeOptions {
@@ -172,10 +180,13 @@ export interface GroqTranscribeOptions {
 export async function transcribeWithGroq(options: GroqTranscribeOptions): Promise<GroqTranscribeResult> {
   const { fileBlob, fileUrl, mimeType, fileName, language } = options;
 
-  const API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY ?? process.env.GROQ_API_KEY;
+  const API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
 
-  if (!API_KEY) {
-    return { text: '', error: 'Groq API anahtarı tanımlı değil (.env: EXPO_PUBLIC_GROQ_API_KEY)' };
+  if (!API_KEY || API_KEY === 'gsk_your_key_here' || (typeof API_KEY === 'string' && API_KEY.trim() === '')) {
+    return {
+      text: '',
+      error: 'Groq API anahtarı tanımlı değil (.env: EXPO_PUBLIC_GROQ_API_KEY)',
+    };
   }
 
   if (!fileBlob && !fileUrl) {

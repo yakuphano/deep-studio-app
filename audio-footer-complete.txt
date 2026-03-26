@@ -1,0 +1,74 @@
+COMPLETE AUDIO FOOTER REPLACEMENT
+
+Replace the entire audio task footer section (lines 1019-1049) with this:
+
+CURRENT (lines 1019-1049):
+          <View style={styles.bottomButtonBar}>
+            <TouchableOpacity
+              style={styles.exitButton}
+              onPress={handleExit}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.exitButtonText}>Exit</Text>
+            </TouchableOpacity>
+            <View style={styles.submitGroup}>
+              <TouchableOpacity
+                style={[styles.submitExitButton, saving && styles.submitButtonDisabled]}
+                onPress={handleSubmitAndExit}
+                disabled={saving}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.submitExitButtonText}>
+                  {saving ? t('taskDetail.saving') : 'Submit & Exit'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitButtonGreen, saving && styles.submitButtonDisabled]}
+                onPress={handleSubmitNext}
+                disabled={saving}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.submitButtonGreenText}>
+                  {saving ? t('taskDetail.saving') : 'Submit'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+NEW REPLACEMENT:
+          <View style={styles.bottomButtonBar}>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity
+                style={styles.exitButton}
+                onPress={handleExit}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.exitButtonText}>Exit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitExitButton, saving && styles.submitButtonDisabled]}
+                onPress={handleSubmitAndExit}
+                disabled={saving}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.submitExitButtonText}>
+                  {saving ? t('taskDetail.saving') : 'Submit & Exit'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={[styles.submitButtonGreen, saving && styles.submitButtonDisabled]}
+              onPress={handleSubmitNext}
+              disabled={saving}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.submitButtonGreenText}>
+                {saving ? t('taskDetail.saving') : 'Submit'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+This will create the desired layout:
+- Left side: Exit + Submit & Exit buttons (grouped with gap: 10)
+- Right side: Submit button (standalone)
+- Uses existing justifyContent: 'space-between' in bottomButtonBar

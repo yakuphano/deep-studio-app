@@ -1,0 +1,17 @@
+# Fix for Expo Router MIME Type Error
+# This fixes the "application/json MIME type" error by allowing JavaScript files
+
+<IfModule mod_mime.c>
+  AddType application/x-javascript .js
+</IfModule>
+
+# Enable proper content serving
+<FilesMatch "\.(js|jsx|ts|tsx)$">
+  ForceType application/x-javascript
+  SetHandler text/javascript
+</FilesMatch>
+
+# Disable MIME type checking for development
+<IfModule mod_mime_magic.c>
+  MimeTypesMagic off
+</IfModule>

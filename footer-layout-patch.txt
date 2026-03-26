@@ -1,0 +1,42 @@
+FOOTER LAYOUT UPDATE FOR BOTH AUDIO AND IMAGE TASKS
+
+Both audio and image task footers need the same update:
+
+CURRENT STRUCTURE (both audio and image):
+<View style={styles.bottomButtonBar}>
+  <TouchableOpacity style={styles.exitButton} onPress={handleExit} activeOpacity={0.8}>
+    <Text style={styles.exitButtonText}>Exit</Text>
+  </TouchableOpacity>
+  <View style={styles.submitGroup}>
+    <TouchableOpacity style={[styles.submitExitButton, saving && styles.submitButtonDisabled]} onPress={handleSubmitAndExit} disabled={saving} activeOpacity={0.8}>
+      <Text style={styles.submitExitButtonText}>{saving ? t('taskDetail.saving') : 'Submit & Exit'}</Text>
+    </TouchableOpacity>
+    <TouchableOpacity style={[styles.submitButtonGreen, saving && styles.submitButtonDisabled]} onPress={handleSubmitNext} disabled={saving} activeOpacity={0.8}>
+      <Text style={styles.submitButtonGreenText}>{saving ? t('taskDetail.saving') : 'Submit'}</Text>
+    </TouchableOpacity>
+  </View>
+</View>
+
+NEW STRUCTURE (both audio and image):
+<View style={styles.bottomButtonBar}>
+  <View style={{ flexDirection: 'row', gap: 10 }}>
+    <TouchableOpacity style={styles.exitButton} onPress={handleExit} activeOpacity={0.8}>
+      <Text style={styles.exitButtonText}>Exit</Text>
+    </TouchableOpacity>
+    <TouchableOpacity style={[styles.submitExitButton, saving && styles.submitButtonDisabled]} onPress={handleSubmitAndExit} disabled={saving} activeOpacity={0.8}>
+      <Text style={styles.submitExitButtonText}>{saving ? t('taskDetail.saving') : 'Submit & Exit'}</Text>
+    </TouchableOpacity>
+  </View>
+  <TouchableOpacity style={[styles.submitButtonGreen, saving && styles.submitButtonDisabled]} onPress={handleSubmitNext} disabled={saving} activeOpacity={0.8}>
+    <Text style={styles.submitButtonGreenText}>{saving ? t('taskDetail.saving') : 'Submit'}</Text>
+  </TouchableOpacity>
+</View>
+
+CHANGES:
+1. Wrap Exit and Submit & Exit buttons in <View style={{ flexDirection: 'row', gap: 10 }}>
+2. Move Submit button outside the wrapper to the right side
+3. The bottomButtonBar style already has justifyContent: 'space-between' which will separate the left group from the right button
+
+LOCATIONS:
+- Audio task: around lines 1007-1036
+- Image task: around lines 798-827

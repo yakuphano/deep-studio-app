@@ -98,6 +98,7 @@ export default function TaskDetailScreen() {
   const [position, setPosition] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [transcribing, setTranscribing] = useState(false);
+  const [aiFixing, setAiFixing] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [activeTool, setActiveTool] = useState<'select' | 'pan' | 'bbox' | 'polygon' | 'points'>('points');
   const canvasTool: Tool = activeTool === 'pan' || activeTool === 'points' ? 'select' : activeTool;
@@ -111,10 +112,29 @@ export default function TaskDetailScreen() {
 
   const audioUrl = task?.audio_url ?? null;
   const imageUrl = task?.image_url ?? null;
-  const taskType: 'audio' | 'image' =
-    !!task?.image_url || task?.type === 'image'
-      ? 'image'
-      : ((task?.category ?? '').toLowerCase() === 'image' ? 'image' : 'audio');
+
+  // Improved task type detection with debugging
+  const taskType: 'audio' | 'image' = (() => {
+    const hasImageUrl = !!task?.image_url;
+    const typeIsImage = task?.type === 'image';
+    const categoryIsImage = (task?.category ?? '').toLowerCase() === 'image';
+    const result = hasImageUrl || typeIsImage || categoryIsImage ? 'image' : 'audio';
+    
+    console.log('[TaskDetail] Task type detection:', {
+      id: task?.id,
+      type: task?.type,
+      category: task?.category,
+      image_url: !!task?.image_url,
+      audio_url: !!task?.audio_url,
+      hasImageUrl,
+      typeIsImage,
+      categoryIsImage,
+      detectedType: result
+    });
+    
+    return result;
+  })();
+
   const isImageTask = taskType === 'image';
   const isWeb = Platform.OS === 'web';
 
@@ -255,7 +275,10 @@ export default function TaskDetailScreen() {
   }, [sound]);
 
   const loadAndPlay = async () => {
-    if (!task?.audio_url) return;
+    if (!task?.audio_url || isImageTask) {
+      console.log('[TaskDetail] Audio load skipped: no audio URL or image task');
+      return;
+    }
     try {
       if (sound) await sound.unloadAsync();
       const { sound: newSound } = await Audio.Sound.createAsync(
@@ -344,7 +367,7 @@ export default function TaskDetailScreen() {
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (navigateToNext: boolean = false) => {
     if (!id || !user?.id) return;
     setSaving(true);
     try {
@@ -364,10 +387,74 @@ export default function TaskDetailScreen() {
       if (error) throw error;
       setTask((prev) => (prev ? { ...prev, status: 'submitted' } : null));
       triggerEarningsRefresh();
-      if (typeof window !== 'undefined') {
-        window.alert(t('taskDetail.taskCompleted'));
-      } else {
-        Alert.alert(t('taskDetail.successTitle'), t('taskDetail.taskCompleted'));
+      // Silent success - no alert
+
+      if (navigateToNext) {
+        // Atomic update to claim next available pool task
+        const { data: claimedTask, error: claimError } = await supabase
+          .from('tasks')
+          .update({ 
+            assigned_to: user.id, 
+            is_pool_task: false 
+          })
+          .is('assigned_to', null)
+          .is('is_pool_task', true)
+          .neq('status', 'submitted')
+          .neq('status', 'completed')
+          .neq('id', id) // Exclude current task
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .select('id')
+          .single();
+        
+        if (claimError) {
+          // Check if it's "No rows returned" error (someone else claimed the task)
+          if (claimError.code === 'PGRST116') {
+            // Try once more to get the next available task
+            const { data: retryTask, error: retryError } = await supabase
+              .from('tasks')
+              .update({ 
+                assigned_to: user.id, 
+                is_pool_task: false 
+              })
+              .is('assigned_to', null)
+              .is('is_pool_task', true)
+              .neq('status', 'submitted')
+              .neq('status', 'completed')
+              .neq('id', id) // Exclude current task
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .select('id')
+              .single();
+            
+            if (retryError || !retryTask) {
+              // No more tasks available
+              if (typeof window !== 'undefined') {
+                window.alert('All tasks completed!');
+              } else {
+                Alert.alert('Completed', 'All tasks completed!');
+              }
+              router.replace('/tasks');
+              return;
+            }
+            
+            router.replace(`/task/${retryTask.id}`);
+            return;
+          } else {
+            throw claimError;
+          }
+        }
+        
+        if (claimedTask) {
+          router.replace(`/task/${claimedTask.id}`);
+        } else {
+          if (typeof window !== 'undefined') {
+            window.alert('All tasks completed!');
+          } else {
+            Alert.alert('Completed', 'All tasks completed!');
+          }
+          router.replace('/tasks');
+        }
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -382,40 +469,8 @@ export default function TaskDetailScreen() {
   };
 
   const handleSubmitAndExit = async () => {
-    if (!id || !user?.id) return;
-    setSaving(true);
-    try {
-      const payload: Record<string, unknown> = {
-        status: 'submitted',
-        updated_at: new Date().toISOString(),
-      };
-      if (isImageTask) {
-        payload.annotation_data = { annotations };
-      } else {
-        payload.transcription = transcription.trim();
-      }
-      const { error } = await supabase
-        .from('tasks')
-        .update(payload)
-        .eq('id', id);
-      if (error) throw error;
-      triggerEarningsRefresh();
-      if (typeof window !== 'undefined') {
-        window.alert(t('taskDetail.taskCompleted'));
-      } else {
-        Alert.alert(t('taskDetail.successTitle'), t('taskDetail.taskCompleted'));
-      }
-      router.replace('/tasks');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      if (typeof window !== 'undefined') {
-        window.alert(t('login.errorTitle') + ': ' + errorMessage);
-      } else {
-        Alert.alert(t('login.errorTitle'), errorMessage);
-      }
-    } finally {
-      setSaving(false);
-    }
+    await handleSubmit(false);
+    router.replace('/tasks');
   };
 
   const handleSubmitNext = async () => {
@@ -437,24 +492,70 @@ export default function TaskDetailScreen() {
         .eq('id', id);
       if (error) throw error;
       triggerEarningsRefresh();
-      if (typeof window !== 'undefined') {
-        window.alert(t('taskDetail.taskCompleted'));
-      } else {
-        Alert.alert(t('taskDetail.successTitle'), t('taskDetail.taskCompleted'));
-      }
-      const { data: nextTasks } = await supabase
+      // Silent success - no alert
+      // Atomic update to claim next available pool task
+      const { data: claimedTask, error: claimError } = await supabase
         .from('tasks')
-        .select('id')
-        .or(`assigned_to.eq.${user.id},and(assigned_to.is.null,is_pool_task.eq.true)`)
-        .neq('id', id)
+        .update({ 
+          assigned_to: user.id, 
+          is_pool_task: false 
+        })
+        .is('assigned_to', null)
+        .is('is_pool_task', true)
         .neq('status', 'submitted')
         .neq('status', 'completed')
+        .neq('id', id) // Exclude current task
         .order('created_at', { ascending: false })
-        .limit(1);
-      const nextId = nextTasks?.[0]?.id;
-      if (nextId) {
-        router.replace(`/task/${nextId}`);
+        .limit(1)
+        .select('id')
+        .single();
+      
+      if (claimError) {
+        // Check if it's "No rows returned" error (someone else claimed the task)
+        if (claimError.code === 'PGRST116') {
+          // Try once more to get the next available task
+          const { data: retryTask, error: retryError } = await supabase
+            .from('tasks')
+            .update({ 
+              assigned_to: user.id, 
+              is_pool_task: false 
+            })
+            .is('assigned_to', null)
+            .is('is_pool_task', true)
+            .neq('status', 'submitted')
+            .neq('status', 'completed')
+            .neq('id', id) // Exclude current task
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .select('id')
+            .single();
+          
+          if (retryError || !retryTask) {
+            // No more tasks available
+            if (typeof window !== 'undefined') {
+              window.alert('All tasks completed!');
+            } else {
+              Alert.alert('Completed', 'All tasks completed!');
+            }
+            router.replace('/tasks');
+            return;
+          }
+          
+          router.replace(`/task/${retryTask.id}`);
+          return;
+        } else {
+          throw claimError;
+        }
+      }
+      
+      if (claimedTask) {
+        router.replace(`/task/${claimedTask.id}`);
       } else {
+        if (typeof window !== 'undefined') {
+          window.alert('All tasks completed!');
+        } else {
+          Alert.alert('Completed', 'All tasks completed!');
+        }
         router.replace('/tasks');
       }
     } catch (err) {
@@ -510,11 +611,7 @@ export default function TaskDetailScreen() {
             updated_at: new Date().toISOString(),
           })
           .eq('id', id);
-        if (typeof window !== 'undefined') {
-          window.alert(t('taskDetail.saveSuccess'));
-        } else {
-          Alert.alert(t('taskDetail.successTitle'), t('taskDetail.saveSuccess'));
-        }
+        // Silent success - no alert
       } else {
         const msg = result.error ?? t('adminErrors.aiAnalysisFailed');
         console.error('[Groq] transcribeWithGroq hatası:', msg);
@@ -539,17 +636,91 @@ export default function TaskDetailScreen() {
     }
   };
 
-  if (!session || !user) {
-    return null;
-  }
+  const handleAIFix = async () => {
+    if (aiFixing || !transcription.trim()) return;
 
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
-  }
+    const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+    if (!apiKey || apiKey === 'gsk_your_key_here' || (typeof apiKey === 'string' && apiKey.trim() === '')) {
+      const msg = 'Groq API anahtarı (.env EXPO_PUBLIC_GROQ_API_KEY) tanımlı değil.';
+      if (typeof window !== 'undefined') {
+        window.alert(msg);
+      } else {
+        Alert.alert(t('login.errorTitle'), msg);
+      }
+      return;
+    }
+
+    setAiFixing(true);
+    try {
+      // Try primary model first, fallback to instant model if needed
+      const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+      let lastError: Error | null = null;
+      
+      for (const model of models) {
+        try {
+          console.log(`Trying model: ${model}`);
+          const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: model,
+              messages: [
+                {
+                  role: 'system',
+                  content: 'Sen profesyonel bir editörsün. Sana verilen bozuk Türkçe ses dökümünü (transcription) anlamı bozmadan, sadece imla hatalarını düzelterek, noktalama işaretlerini ekleyerek ve büyük-küçük harf düzenlemesini yaparak geri döndür. Sadece düzeltilmiş metni ver, başka açıklama yapma.'
+                },
+                {
+                  role: 'user',
+                  content: `Metin: ${transcription}`
+                }
+              ]
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.log(`Groq API Error with ${model}:`, errorData);
+            lastError = new Error(`Groq API error with ${model}: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+            continue; // Try next model
+          }
+
+          const data = await response.json();
+          console.log(`Groq API Success with ${model}:`, data);
+          const fixedText = data.choices?.[0]?.message?.content?.trim();
+          
+          if (fixedText) {
+            setTranscription(fixedText);
+            // Silent success - no alert
+            return; // Success, exit the function
+          } else {
+            lastError = new Error('No response from Groq API');
+            continue; // Try next model
+          }
+        } catch (err) {
+          console.log(`Error with ${model}:`, err);
+          lastError = err instanceof Error ? err : new Error(String(err));
+          continue; // Try next model
+        }
+      }
+      
+      // If we get here, all models failed
+      throw lastError || new Error('All models failed');
+      
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.log('AI Fix Error:', errorMessage);
+      if (typeof window !== 'undefined') {
+        window.alert('AI Fix Error: ' + errorMessage);
+      } else {
+        Alert.alert('AI Fix Error', errorMessage);
+      }
+    } finally {
+      setAiFixing(false);
+    }
+  };
 
   if (!task) {
     return (
@@ -813,7 +984,7 @@ export default function TaskDetailScreen() {
         <View style={styles.audioSection}>
           <Text style={styles.sectionLabel}>{t('taskDetail.audioLabel')}</Text>
           <View style={styles.audioCard}>
-            {audioUrl ? (
+            {audioUrl && !isImageTask ? (
               <>
                 {isWeb ? (
                   <WebAudioPlayer src={audioUrl} playbackRate={playbackSpeed} />
@@ -926,25 +1097,59 @@ export default function TaskDetailScreen() {
               editable={true}
             />
           </View>
+          <View style={styles.aiButtonWrapper}>
+            <Pressable
+              style={[
+                styles.aiTranscribeButton,
+                aiFixing && styles.aiTranscribeButtonDisabled,
+                { zIndex: 9999 },
+              ]}
+              onPress={handleAIFix}
+              disabled={aiFixing}
+            >
+              {aiFixing ? (
+                <>
+                  <ActivityIndicator size="small" color="#fff" />
+                  <Text style={styles.aiTranscribeButtonText}>
+                    AI Fixing...
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="sparkles" size={18} color="#fff" />
+                  <Text style={styles.aiTranscribeButtonText}>
+                    ✨ AI Fix
+                  </Text>
+                </>
+              )}
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
-      <View style={[styles.submitContainer, { bottom: insets.bottom + 20, right: 20 }]}>
+      <View style={[styles.submitContainer, { bottom: insets.bottom + 20, left: 20, right: 20 }]}>
         {isSubmitted ? (
           <View style={styles.submittedBadge}>
             <Ionicons name="checkmark-circle" size={18} color="#fff" />
             <Text style={styles.submittedText}>{t('tasks.submitted')}</Text>
           </View>
         ) : (
-          <TouchableOpacity
-            style={[styles.submitButton, saving && styles.submitButtonDisabled]}
-            onPress={handleSubmit}
-            disabled={saving}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.submitButtonText}>
-              {saving ? t('taskDetail.saving') : t('tasks.submit')}
-            </Text>
-          </TouchableOpacity>
+          <View style={[styles.bottomButtonBar, { justifyContent: 'space-between', flexDirection: 'row', width: '100%', paddingHorizontal: 20 }]}>
+  {/* SOL GRUP: Exit ve Submit & Exit yan yana */}
+  <View style={{ flexDirection: 'row', gap: 10 }}>
+    <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
+      <Text style={styles.exitButtonText}>Exit</Text>
+    </TouchableOpacity>
+    
+    <TouchableOpacity style={styles.submitExitButton} onPress={() => handleSubmit(false)}>
+      <Text style={styles.submitExitButtonText}>Submit & Exit</Text>
+    </TouchableOpacity>
+  </View>
+
+  {/* SAĞ GRUP: Sadece Submit butonu */}
+  <TouchableOpacity style={styles.submitButtonGreen} onPress={() => handleSubmit(true)}>
+    <Text style={styles.submitButtonGreenText}>Submit</Text>
+  </TouchableOpacity>
+</View>
         )}
       </View>
     </View>
@@ -1324,6 +1529,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#22c55e',
   },
   submitButtonGreenText: { fontSize: 14, color: '#fff', fontWeight: '600' },
+  footerButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#3b82f6',
+  },
+  footerButtonText: { fontSize: 14, color: '#fff', fontWeight: '600' },
   sidebarFooter: {
     paddingTop: 8,
     borderTopWidth: 1,

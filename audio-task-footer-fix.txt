@@ -1,0 +1,16 @@
+The audio task footer needs to be updated with these changes:
+
+1. Change Exit button onPress from {handleExit} to {() => router.back()}
+2. Change Submit & Exit button to use styles.footerButton and call {() => handleSubmit(false)}
+3. Change Submit button to use styles.submitButton and call {() => handleSubmit(true)}
+
+Current audio task footer (around lines 935-965):
+- Uses wrong function calls
+- Uses wrong styles
+
+Required changes:
+- Exit: onPress={() => router.back()}
+- Submit & Exit: style={[styles.footerButton, saving && styles.submitButtonDisabled]}, onPress={() => handleSubmit(false)}
+- Submit: style={[styles.submitButton, saving && styles.submitButtonDisabled]}, onPress={() => handleSubmit(true)}
+
+The footerButton style has been added to styles.

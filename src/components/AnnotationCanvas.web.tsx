@@ -2,17 +2,16 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { ANNOTATION_LABELS, LABEL_COLORS } from '@/constants/annotationLabels';
 
-export type Tool = 'bbox' | 'polygon' | 'select';
-
-export type BboxHandle = 'tl' | 'tr' | 'br' | 'bl';
+export type Tool = 'bbox' | 'polygon' | 'select' | 'line' | 'circle' | 'magicwand' | 'pan';
+export type BboxHandle = 'tl' | 'tr' | 'br' | 'bl' | 't' | 'r' | 'b' | 'l';
 
 export interface BboxAnnotation {
   id: string;
   type: 'bbox';
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+  x: number; // Natural pixel coordinates
+  y: number; // Natural pixel coordinates  
+  width: number; // Natural pixel width
+  height: number; // Natural pixel height
   label: string;
   z_index?: number;
 }
@@ -29,658 +28,664 @@ export type Annotation = BboxAnnotation | PolygonAnnotation;
 interface AnnotationCanvasProps {
   imageSource?: { uri: string } | null;
   imageUrl?: string | null;
-  initialAnnotations?: unknown;
-  taskId?: string;
   annotations: Annotation[];
   onAnnotationsChange: (annotations: Annotation[]) => void;
-  activeTool?: Tool;
+  activeTool: Tool;
   selectedId?: string | null;
   onSelect?: (id: string | null) => void;
-  onImageDimensions?: (width: number, height: number) => void;
-  isBrushActive?: boolean;
-  brushSize?: number;
-  selectedLabel?: string;
 }
 
-const SNAP_DISTANCE = 20;
-const HANDLE_HIT = 12;
-const HANDLE_SIZE = 8;
+const MIN_BOX_SIZE = 10;
+const HANDLE_SIZE = 6; // Smaller, more professional
+const HANDLE_HIT_AREA = 20;
 
-function getLabelColor(label: string): string {
-  return LABEL_COLORS[label] ?? LABEL_COLORS['Diğer'] ?? '#64748b';
-}
+// Dynamic color map for different labels - CVAT style
+const COLOR_MAP: Record<string, string> = {
+  'araba': '#FF0000', // Red
+  'arabalar': '#FF0000', // Red
+  'car': '#FF0000', // Red
+  'cars': '#FF0000', // Red
+  'kedi': '#FFFF00', // Yellow
+  'kediler': '#FFFF00', // Yellow
+  'cat': '#FFFF00', // Yellow
+  'cats': '#FFFF00', // Yellow
+  'köpek': '#FF8C00', // Dark Orange
+  'köpekler': '#FF8C00', // Dark Orange
+  'dog': '#FF8C00', // Dark Orange
+  'dogs': '#FF8C00', // Dark Orange
+  'insan': '#00FF00', // Green
+  'insanlar': '#00FF00', // Green
+  'person': '#00FF00', // Green
+  'people': '#00FF00', // Green
+  'kişi': '#00FF00', // Green
+  'bisiklet': '#800080', // Purple
+  'bisikletler': '#800080', // Purple
+  'bicycle': '#800080', // Purple
+  'bicycles': '#800080', // Purple
+  'motosiklet': '#40E0D0', // Turquoise
+  'motosikletler': '#40E0D0', // Turquoise
+  'motorcycle': '#40E0D0', // Turquoise
+  'motorcycles': '#40E0D0', // Turquoise
+  'otobüs': '#FF69B4', // Pink
+  'otobüsler': '#FF69B4', // Pink
+  'bus': '#FF69B4', // Pink
+  'buses': '#FF69B4', // Pink
+  'kamyon': '#8B4513', // Brown
+  'kamyonlar': '#8B4513', // Brown
+  'truck': '#8B4513', // Brown
+  'trucks': '#8B4513', // Brown
+  'diğer': '#808080', // Gray
+  'other': '#808080', // Gray
+  'default': '#808080', // Gray fallback
+};
+
+// Get color for label with fallback
+const getLabelColor = (label: string): string => {
+  return COLOR_MAP[label.toLowerCase()] || COLOR_MAP['default'];
+};
 
 export default function AnnotationCanvas({
-  imageSource: imageSourceProp,
+  imageSource,
   imageUrl,
-  initialAnnotations: _initialAnnotations,
-  taskId: _taskId,
   annotations,
   onAnnotationsChange,
-  activeTool = 'select',
+  activeTool,
   selectedId,
   onSelect,
-  onImageDimensions,
-  isBrushActive: isBrushActiveProp,
-  brushSize: brushSizeProp = 12,
-  selectedLabel = '',
 }: AnnotationCanvasProps) {
-  const imageSource = imageSourceProp ?? (imageUrl ? { uri: imageUrl } : null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const brushCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const isDrawingRef = useRef(false);
-  const resizeStartRef = useRef<{ box: BboxAnnotation; px: number; py: number } | null>(null);
-
+  // Refs
+  const containerRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  
+  // State
   const [imageSize, setImageSize] = useState<{ w: number; h: number } | null>(null);
-  const [imgElement, setImgElement] = useState<HTMLImageElement | null>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
-  const [bboxPreview, setBboxPreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const [polyPoints, setPolyPoints] = useState<Array<{ x: number; y: number }>>([]);
-  const [polyPreview, setPolyPreview] = useState<{ x: number; y: number } | null>(null);
-  const [labelPicker, setLabelPicker] = useState<{ x: number; y: number } | null>(null);
-  const [pendingAnnotation, setPendingAnnotation] = useState<Partial<BboxAnnotation | PolygonAnnotation> | null>(null);
-  const [isBrushActiveState, setIsBrushActiveState] = useState(false);
-  const [brushSizeState, setBrushSizeState] = useState(12);
-  const [resizingHandle, setResizingHandle] = useState<BboxHandle | null>(null);
+  
+  // Interaction state
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
+  const [drawPreview, setDrawPreview] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(null);
+  
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeHandle, setResizeHandle] = useState<BboxHandle | null>(null);
+  const [resizeStartBox, setResizeStartBox] = useState<BboxAnnotation | null>(null);
 
-  const isBrushActive = isBrushActiveProp ?? isBrushActiveState;
-  const brushSize = brushSizeProp ?? brushSizeState;
-
-  const getHandleAt = useCallback(
-    (box: BboxAnnotation, px: number, py: number): BboxHandle | null => {
-      const { x, y, width, height } = box;
-      const corners: { h: BboxHandle; cx: number; cy: number }[] = [
-        { h: 'tl', cx: x, cy: y },
-        { h: 'tr', cx: x + width, cy: y },
-        { h: 'br', cx: x + width, cy: y + height },
-        { h: 'bl', cx: x, cy: y + height },
-      ];
-      for (const { h, cx, cy } of corners) {
-        if (Math.abs(px - cx) <= HANDLE_HIT && Math.abs(py - cy) <= HANDLE_HIT) return h;
-      }
-      return null;
-    },
-    []
-  );
-
-  const getNextZIndex = useCallback(() => {
-    let max = 0;
-    for (const a of annotations) {
-      if (a.type === 'bbox' && (a.z_index ?? 0) > max) max = a.z_index ?? 0;
-    }
-    return max + 1;
-  }, [annotations]);
-
+  // Precise coordinate system - The Math
   const screenToImage = useCallback(
     (clientX: number, clientY: number) => {
-      const container = containerRef.current;
-      if (!container) return { x: 0, y: 0 };
-      const rect = container.getBoundingClientRect();
-      const relX = clientX - rect.left;
-      const relY = clientY - rect.top;
-
-      const img = imgElement;
-      if (img && imageSize && imageSize.w > 0 && imageSize.h > 0) {
-        const imgRect = img.getBoundingClientRect();
-        if (imgRect.width <= 0 || imgRect.height <= 0) {
-          const scaleUsed = scale || 1;
-          const ix = (relX - offset.x) / scaleUsed;
-          const iy = (relY - offset.y) / scaleUsed;
-          return {
-            x: Math.max(0, Math.min(imageSize.w, ix)),
-            y: Math.max(0, Math.min(imageSize.h, iy)),
-          };
-        }
-        const scaleFit = Math.min(imgRect.width / imageSize.w, imgRect.height / imageSize.h);
-        const contentW = imageSize.w * scaleFit;
-        const contentH = imageSize.h * scaleFit;
-        const contentLeft = imgRect.left + (imgRect.width - contentW) / 2;
-        const contentTop = imgRect.top + (imgRect.height - contentH) / 2;
-        const ix = (clientX - contentLeft) / scaleFit;
-        const iy = (clientY - contentTop) / scaleFit;
-        return {
-          x: Math.max(0, Math.min(imageSize.w, ix)),
-          y: Math.max(0, Math.min(imageSize.h, iy)),
-        };
-      }
-      const scaleUsed = scale || 1;
-      return {
-        x: (relX - offset.x) / scaleUsed,
-        y: (relY - offset.y) / scaleUsed,
-      };
+      if (!imageSize || !containerRef.current) return { x: 0, y: 0 };
+      
+      // Get container's exact position
+      const rect = containerRef.current.getBoundingClientRect();
+      
+      // Apply the precise formula: (clientX - rect.left - offset.x) / scale
+      const imageX = (clientX - rect.left - offset.x) / scale;
+      const imageY = (clientY - rect.top - offset.y) / scale;
+      
+      return { x: imageX, y: imageY };
     },
-    [scale, offset, imgElement, imageSize]
+    [imageSize, scale, offset]
   );
 
   const imageToScreen = useCallback(
-    (ix: number, iy: number) => {
-      const img = imgElement;
-      const container = containerRef.current;
-      if (img && container && imageSize && imageSize.w > 0 && imageSize.h > 0) {
-        const imgRect = img.getBoundingClientRect();
-        if (imgRect.width <= 0 || imgRect.height <= 0) {
-          return { x: ix * scale + offset.x, y: iy * scale + offset.y };
-        }
-        // Match screenToImage: object-fit contain
-        const scaleFit = Math.min(imgRect.width / imageSize.w, imgRect.height / imageSize.h);
-        const contentW = imageSize.w * scaleFit;
-        const contentH = imageSize.h * scaleFit;
-        const contentLeft = imgRect.left + (imgRect.width - contentW) / 2;
-        const contentTop = imgRect.top + (imgRect.height - contentH) / 2;
-        const cRect = container.getBoundingClientRect();
-        return {
-          x: contentLeft - cRect.left + ix * scaleFit,
-          y: contentTop - cRect.top + iy * scaleFit,
-        };
-      }
-      return { x: ix * scale + offset.x, y: iy * scale + offset.y };
+    (imageX: number, imageY: number) => {
+      if (!imageSize) return { x: 0, y: 0 };
+      
+      // Apply transform: translate(offset) scale(scale)
+      return {
+        x: imageX * scale + offset.x,
+        y: imageY * scale + offset.y,
+      };
     },
-    [scale, offset, imgElement, imageSize]
+    [imageSize, scale, offset]
   );
 
+  // Image load with initial fit
   useEffect(() => {
-    const el = brushCanvasRef.current;
+    const img = imgRef.current;
     const container = containerRef.current;
-    if (el && container) {
-      const w = container.offsetWidth;
-      const h = container.offsetHeight;
-      if (w > 0 && h > 0) {
-        el.width = w;
-        el.height = h;
-      }
-    }
-  });
-
-  useEffect(() => {
-    if (!imgElement || !imageSource?.uri) return;
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const w = img.naturalWidth;
-      const h = img.naturalHeight;
-      setImageSize({ w, h });
-      onImageDimensions?.(w, h);
+    if (!img || !container || !imageSource?.uri && !imageUrl) return;
+    
+    const handleLoad = () => {
+      const naturalWidth = img.naturalWidth;
+      const naturalHeight = img.naturalHeight;
+      
+      setImageSize({ w: naturalWidth, h: naturalHeight });
+      
+      // Calculate initial scale to fit image in container
+      const containerRect = container.getBoundingClientRect();
+      const scaleX = containerRect.width / naturalWidth;
+      const scaleY = containerRect.height / naturalHeight;
+      const initialScale = Math.min(scaleX, scaleY, 1); // Don't upscale, only downscale
+      
+      // Center the image
+      const offsetX = (containerRect.width - naturalWidth * initialScale) / 2;
+      const offsetY = (containerRect.height - naturalHeight * initialScale) / 2;
+      
+      setScale(initialScale);
+      setOffset({ x: offsetX, y: offsetY });
     };
-    img.src = imageSource.uri;
-  }, [imageSource?.uri, imgElement, onImageDimensions]);
+    
+    img.src = imageSource?.uri || imageUrl || '';
+    img.addEventListener('load', handleLoad);
+    
+    return () => img.removeEventListener('load', handleLoad);
+  }, [imageSource?.uri, imageUrl]);
 
-  const addAnnotation = useCallback(
-    (ann: BboxAnnotation | PolygonAnnotation) => {
-      const next = [...annotations, ann];
-      onAnnotationsChange(next);
-      setPendingAnnotation(null);
-      setLabelPicker(null);
-    },
-    [annotations, onAnnotationsChange]
-  );
-
-  const updateAnnotation = useCallback(
-    (id: string, updater: (a: Annotation) => Annotation) => {
-      const next = annotations.map((a) => (a.id === id ? updater(a) : a));
-      onAnnotationsChange(next);
-    },
-    [annotations, onAnnotationsChange]
-  );
-
-  const removeAnnotation = useCallback(
-    (id: string) => {
-      onAnnotationsChange(annotations.filter((a) => a.id !== id));
-      onSelect?.(null);
-    },
-    [annotations, onAnnotationsChange, onSelect]
-  );
-
+  // Handle mouse down - CVAT interactions with pan priority
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      e.preventDefault();
-      if (isBrushActive) return;
-      const pt = screenToImage(e.clientX, e.clientY);
-      const px = pt.x;
-      const py = pt.y;
-      const rect = containerRef.current?.getBoundingClientRect();
-      const sx = rect ? e.clientX - rect.left : px;
-      const sy = rect ? e.clientY - rect.top : py;
-
+      const image = screenToImage(e.clientX, e.clientY);
+      
+      // State conflict prevention - only one interaction at a time
+      if (isDrawing || isDragging || isResizing) {
+        return;
+      }
+      
+      // Pan tool priority - disable all drawing/selection when panning
+      if (activeTool === 'pan') {
+        // Pan logic handled by interaction layer's onWheel
+        return;
+      }
+      
+      // Handle bbox drawing
       if (activeTool === 'bbox') {
-        setDragStart({ x: px, y: py });
-        setBboxPreview({ x: px, y: py, w: 0, h: 0 });
+        // Check if clicking on a handle first (hitbox priority)
+        if (selectedId) {
+          const selectedBox = annotations.find(a => a.id === selectedId && a.type === 'bbox') as BboxAnnotation | undefined;
+          if (selectedBox) {
+            const handle = getHandleAt(image.x, image.y, selectedBox);
+            if (handle) {
+              setIsResizing(true);
+              setResizeHandle(handle);
+              setResizeStartBox(selectedBox);
+              // Set cursor based on handle
+              const cursors: Record<BboxHandle, string> = {
+                'tl': 'nwse-resize', 'tr': 'nesw-resize', 'br': 'nwse-resize', 'bl': 'nesw-resize',
+                't': 'ns-resize', 'r': 'ew-resize', 'b': 'ns-resize', 'l': 'ew-resize'
+              };
+              document.body.style.cursor = cursors[handle];
+              return;
+            }
+          }
+        }
+        
+        // If not clicking on handle, start drawing
+        setIsDrawing(true);
+        setDrawStart({ x: image.x, y: image.y });
+        setDrawPreview({ x: image.x, y: image.y, width: 0, height: 0 });
         return;
       }
 
-      if (activeTool === 'polygon') {
-        if (polyPoints.length === 0) {
-          setPolyPoints([{ x: px, y: py }]);
-          return;
-        }
-        const first = polyPoints[0];
-        const dist = Math.hypot(px - first.x, py - first.y);
-        if (dist <= SNAP_DISTANCE) {
-          setLabelPicker({ x: sx, y: sy });
-          setPendingAnnotation({
-            type: 'polygon',
-            id: `poly-${Date.now()}`,
-            points: [...polyPoints],
-            label: '',
-          });
-          setPolyPoints([]);
-          setPolyPreview(null);
-          return;
-        }
-        setPolyPoints((prev) => [...prev, { x: px, y: py }]);
-        return;
-      }
-
+      // Handle selection and interactions
       if (activeTool === 'select') {
-        const selBox = selectedId ? annotations.find((a) => a.type === 'bbox' && a.id === selectedId) as BboxAnnotation | undefined : undefined;
-        if (selBox) {
-          const handle = getHandleAt(selBox, px, py);
-          if (handle) {
-            setResizingHandle(handle);
-            resizeStartRef.current = { box: selBox, px, py };
-            return;
-          }
-        }
-        const clicked = [...annotations].reverse().find((a) => {
+        // Check if clicking on a bbox
+        const clicked = annotations.find((a) => {
           if (a.type === 'bbox') {
-            return px >= a.x && px <= a.x + a.width && py >= a.y && py <= a.y + a.height;
+            return image.x >= a.x && image.x <= a.x + a.width &&
+                   image.y >= a.y && image.y <= a.y + a.height;
           }
-          const pts = a.points;
-          let inside = false;
-          for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-            const xi = pts[i].x, yi = pts[i].y;
-            const xj = pts[j].x, yj = pts[j].y;
-            if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
-          }
-          return inside;
+          return false;
         });
-        onSelect?.(clicked?.id ?? null);
+
+        if (clicked && clicked.type === 'bbox') {
+          onSelect?.(clicked.id);
+          
+          // Check if clicking on resize handle
+          if (clicked.id === selectedId) {
+            const handle = getHandleAt(image.x, image.y, clicked);
+            if (handle) {
+              setIsResizing(true);
+              setResizeHandle(handle);
+              setResizeStartBox(clicked);
+              // Set cursor based on handle
+              const cursors: Record<BboxHandle, string> = {
+                'tl': 'nwse-resize', 'tr': 'nesw-resize', 'br': 'nwse-resize', 'bl': 'nesw-resize',
+                't': 'ns-resize', 'r': 'ew-resize', 'b': 'ns-resize', 'l': 'ew-resize'
+              };
+              document.body.style.cursor = cursors[handle];
+              return;
+            }
+          }
+          
+          // Start dragging the box
+          setIsDragging(true);
+          setDragOffset({ x: image.x - clicked.x, y: image.y - clicked.y });
+        } else {
+          onSelect?.(null);
+        }
       }
     },
-    [activeTool, polyPoints, screenToImage, annotations, onSelect, isBrushActive, selectedId, getHandleAt]
+    [activeTool, screenToImage, annotations, selectedId, onSelect, isDrawing, isDragging, isResizing]
   );
 
+  // Handle mouse move with interaction priority
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (isBrushActive) return;
-      const pt = screenToImage(e.clientX, e.clientY);
-      const px = pt.x;
-      const py = pt.y;
-
-      if (resizingHandle && resizeStartRef.current) {
-        const { box } = resizeStartRef.current;
-        const x2 = box.x + box.width;
-        const y2 = box.y + box.height;
-        let nx: number, ny: number, nw: number, nh: number;
-        switch (resizingHandle) {
-          case 'tl':
-            nx = Math.min(px, x2 - 2);
-            ny = Math.min(py, y2 - 2);
-            nw = x2 - nx;
-            nh = y2 - ny;
-            break;
-          case 'tr':
-            nx = box.x;
-            ny = Math.min(py, y2 - 2);
-            nw = Math.max(px - box.x, 2);
-            nh = y2 - ny;
-            break;
-          case 'br':
-            nx = box.x;
-            ny = box.y;
-            nw = Math.max(px - box.x, 2);
-            nh = Math.max(py - box.y, 2);
-            break;
-          case 'bl':
-            nx = Math.min(px, x2 - 2);
-            ny = box.y;
-            nw = x2 - nx;
-            nh = Math.max(py - box.y, 2);
-            break;
-          default:
-            return;
+      // If resizing, only handle resize - suspend other interactions
+      if (isResizing) {
+        const image = screenToImage(e.clientX, e.clientY);
+        
+        if (selectedId && resizeHandle && resizeStartBox) {
+          const box = resizeStartBox;
+          const x2 = box.x + box.width;
+          const y2 = box.y + box.height;
+          
+          let newX: number, newY: number, newWidth: number, newHeight: number;
+          
+          switch (resizeHandle) {
+            case 'tl':
+              newX = image.x;
+              newY = image.y;
+              newWidth = x2 - image.x;
+              newHeight = y2 - image.y;
+              break;
+            case 'tr':
+              newX = box.x;
+              newY = image.y;
+              newWidth = image.x - box.x;
+              newHeight = y2 - image.y;
+              break;
+            case 'br':
+              newX = box.x;
+              newY = box.y;
+              newWidth = image.x - box.x;
+              newHeight = image.y - box.y;
+              break;
+            case 'bl':
+              newX = image.x;
+              newY = box.y;
+              newWidth = x2 - image.x;
+              newHeight = image.y - box.y;
+              break;
+            case 't':
+              newX = box.x;
+              newY = image.y;
+              newWidth = box.width;
+              newHeight = y2 - image.y;
+              break;
+            case 'r':
+              newX = box.x;
+              newY = box.y;
+              newWidth = image.x - box.x;
+              newHeight = box.height;
+              break;
+            case 'b':
+              newX = box.x;
+              newY = box.y;
+              newWidth = box.width;
+              newHeight = image.y - box.y;
+              break;
+            case 'l':
+              newX = image.x;
+              newY = box.y;
+              newWidth = x2 - image.x;
+              newHeight = box.height;
+              break;
+            default:
+              return;
+          }
+          
+          onAnnotationsChange(annotations.map(a => {
+            if (a.id === selectedId && a.type === 'bbox') {
+              return { ...a, x: newX, y: newY, width: newWidth, height: newHeight };
+            }
+            return a;
+          }));
         }
-        if (nw < 2) { nw = 2; nx = x2 - 2; }
-        if (nh < 2) { nh = 2; ny = y2 - 2; }
-        updateAnnotation(box.id, (a) =>
-          a.type === 'bbox' ? { ...a, x: nx, y: ny, width: nw, height: nh } : a
-        );
+        return;
+      }
+      
+      const image = screenToImage(e.clientX, e.clientY);
+      
+      // Handle drawing
+      if (isDrawing && drawStart) {
+        const width = image.x - drawStart.x;
+        const height = image.y - drawStart.y;
+        const x = width < 0 ? image.x : drawStart.x;
+        const y = height < 0 ? image.y : drawStart.y;
+        setDrawPreview({ x, y, width: Math.abs(width), height: Math.abs(height) });
         return;
       }
 
-      if (activeTool === 'bbox' && dragStart) {
-        const x = Math.min(dragStart.x, px);
-        const y = Math.min(dragStart.y, py);
-        const w = Math.abs(px - dragStart.x);
-        const h = Math.abs(py - dragStart.y);
-        setBboxPreview({ x, y, w, h });
-        return;
-      }
-
-      if (activeTool === 'polygon' && polyPoints.length > 0) {
-        setPolyPreview({ x: px, y: py });
+      // Handle dragging
+      if (isDragging && selectedId && dragOffset) {
+        const newX = Math.max(0, image.x - dragOffset.x);
+        const newY = Math.max(0, image.y - dragOffset.y);
+        
+        onAnnotationsChange(annotations.map(a => {
+          if (a.id === selectedId && a.type === 'bbox') {
+            return { ...a, x: newX, y: newY };
+          }
+          return a;
+        }));
       }
     },
-    [activeTool, dragStart, polyPoints, screenToImage, isBrushActive, resizingHandle, updateAnnotation]
+    [screenToImage, isResizing, selectedId, resizeHandle, resizeStartBox, isDrawing, drawStart, isDragging, dragOffset, annotations, onAnnotationsChange]
   );
 
+  // Handle mouse up - CVAT auto-select
   const handlePointerUp = useCallback(() => {
-    if (isBrushActive) return;
-    if (resizingHandle) {
-      setResizingHandle(null);
-      resizeStartRef.current = null;
-      return;
-    }
-    if (activeTool === 'bbox' && dragStart && bboxPreview) {
-      const { x, y, w, h } = bboxPreview;
-      if (w > 2 && h > 2) {
-        const label = selectedLabel && selectedLabel.trim() ? selectedLabel.trim() : '';
-        if (label) {
-          addAnnotation({
-            id: `bbox-${Date.now()}`,
-            type: 'bbox',
-            x, y, width: w, height: h,
-            label,
-            z_index: getNextZIndex(),
-          });
-        } else {
-          const center = imageToScreen(x + w / 2, y + h / 2);
-          setLabelPicker({ x: center.x, y: center.y });
-          setPendingAnnotation({
-            type: 'bbox',
-            id: `bbox-${Date.now()}`,
-            x, y, width: w, height: h,
-            label: '',
-            z_index: getNextZIndex(),
-          });
-        }
-      }
-      setDragStart(null);
-      setBboxPreview(null);
-    }
-  }, [activeTool, dragStart, bboxPreview, isBrushActive, resizingHandle, selectedLabel, addAnnotation, getNextZIndex, imageToScreen]);
-
-  const handleLabelSelect = useCallback(
-    (label: string) => {
-      if (!pendingAnnotation) return;
-      if (pendingAnnotation.type === 'bbox' && pendingAnnotation.x != null && pendingAnnotation.y != null && pendingAnnotation.width != null && pendingAnnotation.height != null) {
-        addAnnotation({
-          id: pendingAnnotation.id!,
+    // Handle drawing completion and auto-select
+    if (isDrawing && drawStart && drawPreview) {
+      const { x, y, width, height } = drawPreview;
+      
+      if (width >= MIN_BOX_SIZE && height >= MIN_BOX_SIZE) {
+        const newBox: BboxAnnotation = {
+          id: `bbox-${Date.now()}`,
           type: 'bbox',
-          x: pendingAnnotation.x,
-          y: pendingAnnotation.y,
-          width: pendingAnnotation.width,
-          height: pendingAnnotation.height,
-          label,
-          z_index: pendingAnnotation.z_index ?? getNextZIndex(),
-        });
-      } else if (pendingAnnotation.type === 'polygon' && 'points' in pendingAnnotation) {
-        addAnnotation({
-          id: pendingAnnotation.id!,
-          type: 'polygon',
-          points: pendingAnnotation.points!,
-          label,
-        });
+          x,
+          y,
+          width,
+          height,
+          label: 'object',
+          z_index: Date.now(),
+        };
+        
+        onAnnotationsChange([...annotations, newBox]);
+        onSelect?.(newBox.id); // Auto-select the new box
       }
-    },
-    [pendingAnnotation, addAnnotation, getNextZIndex]
-  );
+    }
+    
+    // Reset all interaction states
+    setIsDrawing(false);
+    setIsDragging(false);
+    setIsResizing(false);
+    setDrawStart(null);
+    setDrawPreview(null);
+    setDragOffset(null);
+    setResizeHandle(null);
+    setResizeStartBox(null);
+    
+    // Reset cursor globally when interaction ends
+    document.body.style.cursor = '';
+  }, [isDrawing, drawStart, drawPreview, annotations, onAnnotationsChange, onSelect]);
 
+  // Helper function to get handle at position
+  const getHandleAt = (x: number, y: number, box: BboxAnnotation): BboxHandle | null => {
+    const handles = [
+      { h: 'tl' as BboxHandle, cx: box.x, cy: box.y },
+      { h: 'tr' as BboxHandle, cx: box.x + box.width, cy: box.y },
+      { h: 'br' as BboxHandle, cx: box.x + box.width, cy: box.y + box.height },
+      { h: 'bl' as BboxHandle, cx: box.x, cy: box.y + box.height },
+      { h: 't' as BboxHandle, cx: box.x + box.width / 2, cy: box.y },
+      { h: 'r' as BboxHandle, cx: box.x + box.width, cy: box.y + box.height / 2 },
+      { h: 'b' as BboxHandle, cx: box.x + box.width / 2, cy: box.y + box.height },
+      { h: 'l' as BboxHandle, cx: box.x, cy: box.y + box.height / 2 },
+    ];
+
+    for (const { h, cx, cy } of handles) {
+      if (Math.abs(x - cx) <= HANDLE_HIT_AREA && Math.abs(y - cy) <= HANDLE_HIT_AREA) {
+        return h;
+      }
+    }
+    return null;
+  };
+
+  // Handle keyboard delete
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setPolyPoints([]);
-        setPolyPreview(null);
-        setLabelPicker(null);
-        setPendingAnnotation(null);
-        setDragStart(null);
-        setBboxPreview(null);
-        setResizingHandle(null);
-        resizeStartRef.current = null;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete' && selectedId) {
+        e.preventDefault();
+        onAnnotationsChange(annotations.filter(a => a.id !== selectedId));
         onSelect?.(null);
       }
-      if (e.key === 'Backspace' && selectedId) removeAnnotation(selectedId);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId, removeAnnotation, onSelect]);
 
-  if (!imageSource?.uri) {
-    return (
-      <View style={styles.placeholder}>
-        <span style={{ color: '#64748b' }}>Resim yüklenmedi</span>
-      </View>
-    );
-  }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedId, annotations, onAnnotationsChange, onSelect]);
 
   return (
-    <View style={styles.container} pointerEvents="auto">
+    <View style={styles.container}>
       <div
-        ref={(el) => { containerRef.current = el; }}
+        ref={containerRef}
         style={{
           position: 'relative',
           width: '100%',
           height: '100%',
-          minHeight: 300,
-          overflow: 'hidden',
-          background: '#1e293b',
+          overflow: 'hidden', // Critical: prevent scrolling
+          backgroundColor: '#1e293b',
         }}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
       >
+        {/* Image Layer - Bottom layer */}
         <img
-          ref={(el) => setImgElement(el as HTMLImageElement)}
-          src={imageSource.uri}
+          ref={imgRef}
+          src={imageSource?.uri || imageUrl || ''}
           alt="annotation"
-          crossOrigin="anonymous"
+          draggable={false}
           style={{
             position: 'absolute',
             left: 0,
             top: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain',
-            objectPosition: 'center center',
-            transform: `translate(${offset.x}px, ${offset.y}px)`,
+            width: imageSize?.w || '100%', // Use natural image width
+            height: imageSize?.h || '100%', // Use natural image height
+            objectFit: 'none', // Manual scale/offset management
+            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+            transformOrigin: '0 0', // Critical: top-left origin
             pointerEvents: 'none',
           }}
         />
+        
+        {/* SVG Layer - Middle layer with same transform */}
         <svg
           style={{
             position: 'absolute',
             left: 0,
             top: 0,
-            width: '100%',
-            height: '100%',
-            pointerEvents: 'none',
+            width: imageSize?.w || '100%', // Same as image
+            height: imageSize?.h || '100%', // Same as image
+            pointerEvents: activeTool === 'pan' ? 'none' : 'none', // Always disabled, especially in pan mode
+            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+            transformOrigin: '0 0', // Critical: top-left origin
           }}
+          viewBox={imageSize ? `0 0 ${imageSize.w} ${imageSize.h}` : '0 0 100 100'}
+          preserveAspectRatio="xMidYMid meet"
         >
-          {annotations.map((a) => {
-            if (a.type === 'bbox') {
-              const c = getLabelColor(a.label);
-              const sel = a.id === selectedId;
-              const sc = imageToScreen(a.x, a.y);
-              const scBr = imageToScreen(a.x + a.width, a.y + a.height);
-              const sw = scBr.x - sc.x;
-              const sh = scBr.y - sc.y;
-              const hs = HANDLE_SIZE / 2;
-              const corners = [
-                    { x: sc.x, y: sc.y },
-                    { x: sc.x + sw, y: sc.y },
-                    { x: sc.x + sw, y: sc.y + sh },
-                    { x: sc.x, y: sc.y + sh },
-                  ];
+          {/* Render annotations */}
+          {annotations.map((annotation) => {
+            if (annotation.type === 'bbox') {
+              const sel = annotation.id === selectedId;
+              const color = getLabelColor(annotation.label);
+              
               return (
-                <g key={a.id}>
+                <g key={annotation.id} style={{ pointerEvents: 'none' }}>
+                  {/* Bounding box with dynamic label color */}
                   <rect
-                    x={sc.x}
-                    y={sc.y}
-                    width={sw}
-                    height={sh}
-                    fill={c}
-                    fillOpacity={0.2}
-                    stroke={c}
-                    strokeWidth={sel ? 3 : 1}
+                    x={annotation.x}
+                    y={annotation.y}
+                    width={annotation.width}
+                    height={annotation.height}
+                    stroke={getLabelColor(annotation.label)} // Dynamic color based on label
+                    strokeWidth={2} // Fixed thickness
+                    fill="none"
+                    style={{
+                      cursor: activeTool === 'select' ? 'move' : 'default',
+                      vectorEffect: 'non-scaling-stroke', // Prevent thinning on zoom
+                      filter: 'drop-shadow(0px 0px 2px rgba(0,0,0,0.5))', // Shadow for contrast
+                      pointerEvents: 'auto', // Override group's pointerEvents
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect?.(annotation.id);
+                    }}
                   />
-                  <text x={sc.x} y={sc.y - 4} fill={c} fontSize={12}>{a.label}</text>
-                  {sel && corners.map((corner, i) => (
-                    <rect
-                      key={i}
-                      x={corner.x - hs}
-                      y={corner.y - hs}
-                      width={HANDLE_SIZE}
-                      height={HANDLE_SIZE}
-                      fill="#fff"
-                      stroke="#3b82f6"
-                      strokeWidth={2}
-                    />
-                  ))}
+                  
+                  {/* Label band with dynamic background - scale independent */}
+                  <rect
+                    x={annotation.x}
+                    y={annotation.y - (16 / scale)} // Scale independent height
+                    width={annotation.width}
+                    height={16 / scale} // Scale independent height
+                    fill={getLabelColor(annotation.label)} // Dynamic background color
+                    style={{
+                      pointerEvents: 'none', // Don't interfere with resizing
+                    }}
+                  />
+                  
+                  {/* Label text without percentage - cleaner look */}
+                  <text
+                    x={annotation.x + (4 / scale)} // Scale independent padding
+                    y={annotation.y - (4 / scale)} // Scale independent position
+                    fill="#FFFFFF" // White text
+                    fontSize={12 / scale} // Scale independent font size
+                    fontWeight="bold"
+                    style={{
+                      pointerEvents: 'none', // Don't interfere with resizing
+                    }}
+                  >
+                    [{annotation.label}]
+                  </text>
+                  
+                  {/* 8 Resize handles - CVAT style with invisible but wide hitbox */}
+                  {sel && (
+                    <>
+                      {[
+                        { handle: 'tl' as BboxHandle, x: annotation.x, y: annotation.y, cursor: 'nwse-resize' },
+                        { handle: 'tr' as BboxHandle, x: annotation.x + annotation.width, y: annotation.y, cursor: 'nesw-resize' },
+                        { handle: 'br' as BboxHandle, x: annotation.x + annotation.width, y: annotation.y + annotation.height, cursor: 'nwse-resize' },
+                        { handle: 'bl' as BboxHandle, x: annotation.x, y: annotation.y + annotation.height, cursor: 'nesw-resize' },
+                        { handle: 't' as BboxHandle, x: annotation.x + annotation.width / 2, y: annotation.y, cursor: 'ns-resize' },
+                        { handle: 'r' as BboxHandle, x: annotation.x + annotation.width, y: annotation.y + annotation.height / 2, cursor: 'ew-resize' },
+                        { handle: 'b' as BboxHandle, x: annotation.x + annotation.width / 2, y: annotation.y + annotation.height, cursor: 'ns-resize' },
+                        { handle: 'l' as BboxHandle, x: annotation.x, y: annotation.y + annotation.height / 2, cursor: 'ew-resize' },
+                      ].map(({ handle, x, y, cursor }) => (
+                        <g key={handle}>
+                          {/* Invisible but wide hitbox - scale independent */}
+                          <rect
+                            x={x - HANDLE_HIT_AREA / 2}
+                            y={y - HANDLE_HIT_AREA / 2}
+                            width={HANDLE_HIT_AREA}
+                            height={HANDLE_HIT_AREA}
+                            fill="transparent"
+                            opacity={0} // Completely invisible
+                            style={{
+                              cursor,
+                              userSelect: 'none',
+                              pointerEvents: 'all', // Override SVG's pointerEvents: none
+                            }}
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              setIsResizing(true);
+                              setResizeHandle(handle);
+                              setResizeStartBox(annotation);
+                              // Force cursor globally during resize
+                              document.body.style.cursor = cursor;
+                            }}
+                          />
+                          {/* Visible handle - same color as box with white border */}
+                          <rect
+                            x={x - (HANDLE_SIZE / (2 * scale))} // Scale independent size
+                            y={y - (HANDLE_SIZE / (2 * scale))} // Scale independent size
+                            width={HANDLE_SIZE / scale} // Scale independent size
+                            height={HANDLE_SIZE / scale} // Scale independent size
+                            fill={getLabelColor(annotation.label)} // Same color as box
+                            stroke="#FFFFFF" // Thin white border
+                            strokeWidth={1 / scale} // Scale independent stroke
+                            vectorEffect="non-scaling-stroke" // Prevent thinning on zoom
+                            style={{
+                              cursor,
+                              userSelect: 'none',
+                            }}
+                            pointerEvents="none" // Let hitbox handle events
+                          />
+                        </g>
+                      ))}
+                    </>
+                  )}
                 </g>
               );
             }
-            const pts = a.points.map((p) => imageToScreen(p.x, p.y));
-            const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z';
-            const c = getLabelColor(a.label);
-            const sel = a.id === selectedId;
-            return (
-              <g key={a.id}>
-                <path d={d} fill={c} fillOpacity={0.2} stroke={c} strokeWidth={sel ? 3 : 1} />
-                <text x={pts[0]?.x ?? 0} y={(pts[0]?.y ?? 0) - 4} fill={c} fontSize={12}>{a.label}</text>
-              </g>
-            );
+            return null;
           })}
-          {bboxPreview && (
+          
+          {/* Drawing preview - always blue for focus */}
+          {drawPreview && (
             <rect
-              x={imageToScreen(bboxPreview.x, bboxPreview.y).x}
-              y={imageToScreen(bboxPreview.x, bboxPreview.y).y}
-              width={imageToScreen(bboxPreview.x + bboxPreview.w, bboxPreview.y).x - imageToScreen(bboxPreview.x, bboxPreview.y).x}
-              height={imageToScreen(bboxPreview.x, bboxPreview.y + bboxPreview.h).y - imageToScreen(bboxPreview.x, bboxPreview.y).y}
-              fill="none"
-              stroke="#3b82f6"
+              x={drawPreview.x}
+              y={drawPreview.y}
+              width={drawPreview.width}
+              height={drawPreview.height}
+              stroke="#3b82f6" // Blue for drawing focus
               strokeWidth={2}
-              strokeDasharray="4 2"
+              strokeDasharray="5 5"
+              fill="none"
+              style={{
+                vectorEffect: 'non-scaling-stroke', // Prevent thinning on zoom
+              }}
             />
           )}
-          {polyPoints.map((p, i) => {
-            const sp = imageToScreen(p.x, p.y);
-            return (
-              <circle key={i} cx={sp.x} cy={sp.y} r={i === 0 ? 8 : 6} fill="#3b82f6" stroke="#fff" strokeWidth={2} />
-            );
-          })}
-          {polyPreview && polyPoints.length > 0 && (
-            <>
-              <line
-                x1={imageToScreen(polyPoints[polyPoints.length - 1].x, polyPoints[polyPoints.length - 1].y).x}
-                y1={imageToScreen(polyPoints[polyPoints.length - 1].x, polyPoints[polyPoints.length - 1].y).y}
-                x2={imageToScreen(polyPreview.x, polyPreview.y).x}
-                y2={imageToScreen(polyPreview.x, polyPreview.y).y}
-                stroke="#3b82f6"
-                strokeWidth={2}
-                strokeDasharray="4 2"
-              />
-              {polyPoints.length >= 2 && (() => {
-                const snap = Math.hypot(polyPreview.x - polyPoints[0].x, polyPreview.y - polyPoints[0].y) <= SNAP_DISTANCE;
-                const p0 = imageToScreen(polyPoints[0].x, polyPoints[0].y);
-                const pp = imageToScreen(polyPreview.x, polyPreview.y);
-                return snap ? (
-                  <line x1={p0.x} y1={p0.y} x2={pp.x} y2={pp.y} stroke="#22c55e" strokeWidth={3} />
-                ) : null;
-              })()}
-            </>
-          )}
         </svg>
-        <canvas
-          ref={(el) => { brushCanvasRef.current = el; }}
+        
+        {/* Interaction Layer - Top transparent layer - ALWAYS ACTIVE */}
+        <div
           style={{
             position: 'absolute',
             left: 0,
             top: 0,
-            width: '100%',
-            height: '100%',
-            pointerEvents: isBrushActive ? 'auto' : 'none',
-            zIndex: 10,
+            width: imageSize?.w || '100%', // Same as image and SVG
+            height: imageSize?.h || '100%', // Same as image and SVG
+            cursor: activeTool === 'bbox' ? 'crosshair' : 'default',
+            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+            transformOrigin: '0 0', // Critical: top-left origin
+            pointerEvents: 'auto', // ALWAYS ACTIVE - manages all events
           }}
           onPointerDown={(e) => {
-            if (!isBrushActive || !brushCanvasRef.current) return;
-            const rect = brushCanvasRef.current.getBoundingClientRect();
-            const ctx = brushCanvasRef.current.getContext('2d');
-            if (!ctx) return;
-            isDrawingRef.current = true;
-            ctx.beginPath();
-            ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
-            ctx.lineWidth = brushSize;
-            ctx.strokeStyle = '#3b82f6';
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            e.currentTarget.setPointerCapture(e.pointerId);
+            e.preventDefault(); // Prevent native drag
+            e.stopPropagation(); // Stop event bubbling
+            handlePointerDown(e);
           }}
           onPointerMove={(e) => {
-            if (!isBrushActive || !isDrawingRef.current || !brushCanvasRef.current) return;
-            const rect = brushCanvasRef.current.getBoundingClientRect();
-            const ctx = brushCanvasRef.current.getContext('2d');
-            if (!ctx) return;
-            ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
-            ctx.stroke();
+            e.preventDefault(); // Prevent native drag
+            handlePointerMove(e);
           }}
           onPointerUp={(e) => {
-            isDrawingRef.current = false;
-            e.currentTarget.releasePointerCapture(e.pointerId);
+            e.preventDefault(); // Prevent native drag
+            handlePointerUp();
           }}
           onPointerLeave={(e) => {
-            isDrawingRef.current = false;
-            e.currentTarget.releasePointerCapture(e.pointerId);
+            e.preventDefault(); // Prevent native drag
+            handlePointerUp();
+          }}
+          onWheel={(e) => {
+            e.preventDefault(); // Prevent page scroll
+            
+            // Zoom control with limits (Min: 0.1, Max: 5)
+            const scaleFactor = e.deltaY < 0 ? 1.1 : 0.9;
+            const newScale = Math.max(0.1, Math.min(5, scale * scaleFactor));
+            
+            if (newScale !== scale) {
+              const rect = containerRef.current?.getBoundingClientRect();
+              if (!rect) return;
+              
+              const mouseX = e.clientX - rect.left;
+              const mouseY = e.clientY - rect.top;
+              
+              // Calculate offset to zoom towards mouse position
+              const scaleChange = newScale - scale;
+              const offsetX = -(mouseX - offset.x) * (scaleChange / scale);
+              const offsetY = -(mouseY - offset.y) * (scaleChange / scale);
+              
+              setScale(newScale);
+              setOffset(prev => ({
+                x: prev.x + offsetX,
+                y: prev.y + offsetY,
+              }));
+            }
           }}
         />
-        {labelPicker && (
-          <div
-            style={{
-              position: 'absolute',
-              left: labelPicker.x,
-              top: labelPicker.y,
-              transform: 'translate(-50%, -100%)',
-              background: '#1e293b',
-              border: '1px solid #334155',
-              borderRadius: 8,
-              padding: 8,
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 6,
-              zIndex: 100,
-            }}
-          >
-            {ANNOTATION_LABELS.map((l) => (
-              <button
-                key={l}
-                onClick={() => handleLabelSelect(l)}
-                style={{
-                  background: LABEL_COLORS[l],
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 6,
-                  padding: '6px 12px',
-                  fontSize: 12,
-                  cursor: 'pointer',
-                }}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, minHeight: 300 },
-  placeholder: {
+  container: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 200,
+    backgroundColor: '#1e293b',
   },
 });

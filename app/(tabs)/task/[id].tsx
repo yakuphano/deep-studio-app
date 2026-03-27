@@ -22,7 +22,7 @@ import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { transcribeWithGroq } from '@/lib/groq';
 import { useAuth } from '@/contexts/AuthContext';
 import AnnotationCanvas, { type Annotation, type Tool } from '@/components/AnnotationCanvas';
-import { ANNOTATION_LABELS } from '@/constants/annotationLabels';
+import { ANNOTATION_LABELS, LABEL_COLORS } from '@/constants/annotationLabels';
 
 const PLAYBACK_SPEED_STORAGE_KEY = 'deepstudio_playback_speed';
 const MIN_SPEED = 0.1;
@@ -103,7 +103,7 @@ export default function TaskDetailScreen() {
   const [activeTool, setActiveTool] = useState<'select' | 'pan' | 'bbox' | 'polygon' | 'points'>('points');
   const canvasTool: Tool = activeTool === 'pan' || activeTool === 'points' ? 'select' : activeTool;
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
-  const [selectedLabel, setSelectedLabel] = useState<string>(ANNOTATION_LABELS[0] ?? 'Araba');
+  const [selectedLabel, setSelectedLabel] = useState<string>('');
   const [isBrushActive, setIsBrushActive] = useState(false);
   const [collapsedObjects, setCollapsedObjects] = useState<Record<string, boolean>>({});
   const isSeeking = useRef(false);
@@ -734,7 +734,7 @@ export default function TaskDetailScreen() {
 
   const handleUpdateAnnotationLabel = (annotationId: string, label: string) => {
     setAnnotations((prev) =>
-      prev.map((a) => (a.id === annotationId ? { ...a, label } : a))
+      prev.map((a) => (a.id === annotationId ? { ...a, label: typeof label === 'object' ? (label as any).name || (label as any).label || JSON.stringify(label) : label } : a))
     );
   };
   const handleDeleteAnnotation = (annotationId: string) => {
@@ -849,54 +849,56 @@ export default function TaskDetailScreen() {
               />
             </View>
           </View>
-          {/* Right Sidebar - 260px fixed */}
+          {/* Right Sidebar - 280px fixed */}
           <View style={styles.rightSidebar}>
-            <Text style={styles.rightSidebarTitle}>Nesne Listesi</Text>
+            <Text style={styles.rightSidebarTitle}>NESNE LİSTESİ</Text>
             <ScrollView style={styles.objectList} showsVerticalScrollIndicator={false}>
               {annotations.length === 0 ? (
                 <Text style={styles.objectListEmpty}>Henüz nesne yok</Text>
               ) : (
                 annotations.map((a, idx) => {
-                  const isCollapsed = collapsedObjects[a.id] ?? false;
+                  const labelStr = typeof a.label === 'object' ? (a.label as any).name || (a.label as any).label : a.label;
+                  const labelColor = labelStr ? LABEL_COLORS[labelStr] || LABEL_COLORS['Diğer'] : null;
                   return (
-                    <View key={a.id} style={styles.objectItemWrap}>
-                      <TouchableOpacity
-                        style={[
-                          styles.objectItem,
-                          a.id === selectedAnnotationId && styles.objectItemActivePurple,
-                        ]}
-                        onPress={() => setSelectedAnnotationId(a.id)}
-                      >
-                        <TouchableOpacity
-                          style={styles.collapseBtn}
-                          onPress={() => toggleCollapsed(a.id)}
-                        >
-                          <Ionicons name={isCollapsed ? 'chevron-forward' : 'chevron-down'} size={14} color="#94a3b8" />
-                        </TouchableOpacity>
-                        <Text style={styles.objectItemLabel}>{getObjectDisplayName(a, idx)}</Text>
-                        <TouchableOpacity
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          onPress={() => handleDeleteAnnotation(a.id)}
-                        >
-                          <Ionicons name="trash-outline" size={14} color="#94a3b8" />
-                        </TouchableOpacity>
-                      </TouchableOpacity>
-                      {!isCollapsed && (
-                        <View style={styles.perObjectLabels}>
-                          {ANNOTATION_LABELS.map((l) => (
-                            <TouchableOpacity
-                              key={l}
-                              style={[styles.labelChipPill, (a.label === l || (!a.label && l === selectedLabel)) && styles.labelChipActivePurple]}
-                              onPress={() => {
-                                handleUpdateAnnotationLabel(a.id, l);
-                                setSelectedLabel(l);
-                              }}
-                            >
-                              <Text style={styles.labelChipTextSmall}>{l}</Text>
-                            </TouchableOpacity>
-                          ))}
+                    <View key={a.id} style={styles.objectCardWrap}>
+                      <View style={[styles.objectCard, labelColor && { borderLeftColor: labelColor, borderLeftWidth: 4 }]}>
+                        <View style={styles.objectCardHeader}>
+                          <Text style={styles.objectCardTitle}>{getObjectDisplayName(a, idx)}</Text>
+                          <TouchableOpacity
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={() => handleDeleteAnnotation(a.id)}
+                          >
+                            <Ionicons name="trash-outline" size={16} color="#94a3b8" />
+                          </TouchableOpacity>
                         </View>
-                      )}
+                       
+                          <View style={styles.labelOptionsGrid}>
+                            {ANNOTATION_LABELS.map((label) => {
+                              const isSelected = a.label === label;
+                              const chipColor = LABEL_COLORS[label] ?? '#94a3b8';
+                              return (
+                                <TouchableOpacity
+                                  key={label}
+                                  style={[
+                                    styles.labelOptionChip,
+                                    {
+                                      borderColor: chipColor,
+                                      backgroundColor: isSelected ? chipColor : 'transparent',
+                                    }
+                                  ]}
+                                  onPress={() => {
+                                    handleUpdateAnnotationLabel(a.id, label);
+                                    setSelectedLabel(label);
+                                  }}
+                                >
+                                  <Text style={[styles.labelOptionText, { color: isSelected ? '#fff' : chipColor }]}>
+                                    {label}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                      </View>
                     </View>
                   );
                 })
@@ -1439,9 +1441,9 @@ const styles = StyleSheet.create({
   },
   toolBtnLargeText: { fontSize: 10, color: '#f1f5f9', marginTop: 2, fontWeight: '500' },
   rightSidebar: {
-    width: 260,
-    minWidth: 260,
-    maxWidth: 260,
+    width: 280,
+    minWidth: 280,
+    maxWidth: 280,
     padding: 8,
     backgroundColor: '#1e293b',
     borderLeftWidth: 1,
@@ -1450,51 +1452,62 @@ const styles = StyleSheet.create({
   },
   rightSidebarTitle: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#94a3b8',
-    marginBottom: 8,
+    fontWeight: '700',
+    color: '#f1f5f9',
+    marginBottom: 12,
+    letterSpacing: 1,
     textTransform: 'uppercase',
   },
   objectList: { flex: 1, minHeight: 60 },
   objectListEmpty: { fontSize: 12, color: '#64748b', fontStyle: 'italic' },
-  objectItemWrap: { marginBottom: 8 },
-  objectItem: {
+  objectCardWrap: { marginBottom: 8 },
+  objectCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 0,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  objectCardHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#334155',
-    gap: 8,
+    marginBottom: 12,
   },
-  objectItemActive: { borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.15)' },
-  objectItemActivePurple: { borderColor: '#7c3aed', backgroundColor: 'rgba(124, 58, 237, 0.2)' },
-  objectItemLabel: { flex: 1, fontSize: 12, color: '#f1f5f9', fontWeight: '600' },
-  collapseBtn: { padding: 4 },
-  perObjectLabels: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  labelChipSmall: {
-    paddingHorizontal: 12,
+  objectCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f1f5f9',
+  },
+  selectedLabelBadge: {
+    backgroundColor: '#3b82f6',
+    borderRadius: 20,
+    paddingHorizontal: 14,
     paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: '#0f172a',
+    alignSelf: 'flex-start',
+  },
+  selectedLabelText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  labelOptionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  labelOptionChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 16,
+    backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#334155',
   },
-  labelChipPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#334155',
+  labelOptionText: {
+    fontSize: 10,
+    fontWeight: '500',
   },
-  labelChipActivePurple: {
-    backgroundColor: '#7c3aed',
-    borderColor: '#7c3aed',
-  },
-  labelChipTextSmall: { fontSize: 11, color: '#f1f5f9' },
   bottomButtonBar: {
     flexDirection: 'row',
     alignItems: 'center',

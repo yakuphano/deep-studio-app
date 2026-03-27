@@ -1,6 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { ANNOTATION_LABELS, LABEL_COLORS } from '@/constants/annotationLabels';
+import { LABEL_COLORS } from '@/constants/annotationLabels';
 
 export type Tool = 'bbox' | 'polygon' | 'select' | 'line' | 'circle' | 'magicwand' | 'pan';
 export type BboxHandle = 'tl' | 'tr' | 'br' | 'bl' | 't' | 'r' | 'b' | 'l';
@@ -33,55 +33,19 @@ interface AnnotationCanvasProps {
   activeTool: Tool;
   selectedId?: string | null;
   onSelect?: (id: string | null) => void;
+  selectedLabel?: string | null;
 }
 
 const MIN_BOX_SIZE = 10;
 const HANDLE_SIZE = 6; // Smaller, more professional
 const HANDLE_HIT_AREA = 20;
 
-// Dynamic color map for different labels - CVAT style
-const COLOR_MAP: Record<string, string> = {
-  'araba': '#FF0000', // Red
-  'arabalar': '#FF0000', // Red
-  'car': '#FF0000', // Red
-  'cars': '#FF0000', // Red
-  'kedi': '#FFFF00', // Yellow
-  'kediler': '#FFFF00', // Yellow
-  'cat': '#FFFF00', // Yellow
-  'cats': '#FFFF00', // Yellow
-  'köpek': '#FF8C00', // Dark Orange
-  'köpekler': '#FF8C00', // Dark Orange
-  'dog': '#FF8C00', // Dark Orange
-  'dogs': '#FF8C00', // Dark Orange
-  'insan': '#00FF00', // Green
-  'insanlar': '#00FF00', // Green
-  'person': '#00FF00', // Green
-  'people': '#00FF00', // Green
-  'kişi': '#00FF00', // Green
-  'bisiklet': '#800080', // Purple
-  'bisikletler': '#800080', // Purple
-  'bicycle': '#800080', // Purple
-  'bicycles': '#800080', // Purple
-  'motosiklet': '#40E0D0', // Turquoise
-  'motosikletler': '#40E0D0', // Turquoise
-  'motorcycle': '#40E0D0', // Turquoise
-  'motorcycles': '#40E0D0', // Turquoise
-  'otobüs': '#FF69B4', // Pink
-  'otobüsler': '#FF69B4', // Pink
-  'bus': '#FF69B4', // Pink
-  'buses': '#FF69B4', // Pink
-  'kamyon': '#8B4513', // Brown
-  'kamyonlar': '#8B4513', // Brown
-  'truck': '#8B4513', // Brown
-  'trucks': '#8B4513', // Brown
-  'diğer': '#808080', // Gray
-  'other': '#808080', // Gray
-  'default': '#808080', // Gray fallback
-};
-
 // Get color for label with fallback
-const getLabelColor = (label: string): string => {
-  return COLOR_MAP[label.toLowerCase()] || COLOR_MAP['default'];
+const getLabelColor = (label: string | any): string => {
+  const labelStr = typeof label === 'object'
+    ? (label as any).name || (label as any).label || ''
+    : String(label ?? '');
+  return LABEL_COLORS[labelStr] ?? '#94a3b8';
 };
 
 export default function AnnotationCanvas({
@@ -92,6 +56,7 @@ export default function AnnotationCanvas({
   activeTool,
   selectedId,
   onSelect,
+  selectedLabel,
 }: AnnotationCanvasProps) {
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
@@ -376,15 +341,15 @@ export default function AnnotationCanvas({
       
       if (width >= MIN_BOX_SIZE && height >= MIN_BOX_SIZE) {
         const newBox: BboxAnnotation = {
-          id: `bbox-${Date.now()}`,
-          type: 'bbox',
-          x,
-          y,
-          width,
-          height,
-          label: 'object',
-          z_index: Date.now(),
-        };
+  id: `bbox-${Date.now()}`,
+  type: 'bbox',
+  x,
+  y,
+  width,
+  height,
+  label: '',   // ← SADECE BU
+  z_index: Date.now(),
+};
         
         onAnnotationsChange([...annotations, newBox]);
         onSelect?.(newBox.id); // Auto-select the new box
@@ -538,7 +503,7 @@ export default function AnnotationCanvas({
                       pointerEvents: 'none', // Don't interfere with resizing
                     }}
                   >
-                    [{annotation.label}]
+                    [{typeof annotation.label === 'object' ? (annotation.label as any).name || (annotation.label as any).label || JSON.stringify(annotation.label) : annotation.label}]
                   </text>
                   
                   {/* 8 Resize handles - CVAT style with invisible but wide hitbox */}

@@ -2,7 +2,7 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { LABEL_COLORS } from '@/constants/annotationLabels';
 
-export type Tool = 'bbox' | 'polygon' | 'select' | 'line' | 'circle' | 'magicwand' | 'pan';
+export type Tool = 'bbox' | 'polygon' | 'points' | 'select' | 'line' | 'circle' | 'magicwand' | 'pan';
 export type BboxHandle = 'tl' | 'tr' | 'br' | 'bl' | 't' | 'r' | 'b' | 'l';
 
 export interface BboxAnnotation {
@@ -23,7 +23,16 @@ export interface PolygonAnnotation {
   label: string;
 }
 
-export type Annotation = BboxAnnotation | PolygonAnnotation;
+export interface PointAnnotation {
+  id: string;
+  type: 'point';
+  x: number;
+  y: number;
+  label: string;
+  z_index?: number;
+}
+
+export type Annotation = BboxAnnotation | PolygonAnnotation | PointAnnotation;
 
 interface AnnotationCanvasProps {
   imageSource?: { uri: string } | null;
@@ -68,9 +77,16 @@ export default function AnnotationCanvas({
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   
   // Interaction state
-  const [isDrawing, setIsDrawing] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(null);
+  const [panStartOffset, setPanStartOffset] = useState<{ x: number; y: number } | null>(null);
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [drawPreview, setDrawPreview] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  
+  // Polygon drawing state
+  const [polygonPoints, setPolygonPoints] = useState<{ x: number; y: number }[]>([]);
+  const [isDrawingPolygon, setIsDrawingPolygon] = useState(false);
   
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(null);
@@ -144,16 +160,19 @@ export default function AnnotationCanvas({
   // Handle mouse down - CVAT interactions with pan priority
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
+      // Pan tool priority - disable all drawing/selection when panning
+      if (activeTool === 'pan') {
+        setIsPanning(true);
+        setPanStart({ x: e.clientX, y: e.clientY });
+        setPanStartOffset({ x: offset.x, y: offset.y });
+        (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+        return;
+      }
+      
       const image = screenToImage(e.clientX, e.clientY);
       
       // State conflict prevention - only one interaction at a time
       if (isDrawing || isDragging || isResizing) {
-        return;
-      }
-      
-      // Pan tool priority - disable all drawing/selection when panning
-      if (activeTool === 'pan') {
-        // Pan logic handled by interaction layer's onWheel
         return;
       }
       
@@ -186,6 +205,65 @@ export default function AnnotationCanvas({
         return;
       }
 
+      // Handle polygon drawing
+      if (activeTool === 'polygon') {
+        const newPoint = { x: image.x, y: image.y };
+        
+        if (!isDrawingPolygon) {
+          // Start new polygon
+          setIsDrawingPolygon(true);
+          setPolygonPoints([newPoint]);
+        } else {
+          // Check if clicking near the first point to close polygon
+          if (polygonPoints.length >= 3) {
+            const firstPoint = polygonPoints[0];
+            const distance = Math.sqrt(
+              Math.pow(newPoint.x - firstPoint.x, 2) + 
+              Math.pow(newPoint.y - firstPoint.y, 2)
+            );
+            
+            if (distance < 10) { // Close polygon if near first point
+              // Create polygon annotation
+              const newPolygon: PolygonAnnotation = {
+                id: `polygon-${Date.now()}`,
+                type: 'polygon',
+                points: polygonPoints,
+                label: '',
+                z_index: Date.now(),
+              };
+              
+              onAnnotationsChange([...annotations, newPolygon]);
+              onSelect?.(newPolygon.id);
+              
+              // Reset polygon drawing state
+              setIsDrawingPolygon(false);
+              setPolygonPoints([]);
+              return;
+            }
+          }
+          
+          // Add new point
+          setPolygonPoints([...polygonPoints, newPoint]);
+        }
+        return;
+      }
+
+      // Handle points tool
+      if (activeTool === 'points') {
+        const newPoint: PointAnnotation = {
+          id: `point-${Date.now()}`,
+          type: 'point',
+          x: image.x,
+          y: image.y,
+          label: '',
+          z_index: Date.now(),
+        };
+        
+        onAnnotationsChange([...annotations, newPoint]);
+        onSelect?.(newPoint.id); // Auto-select the new point
+        return;
+      }
+
       // Handle selection and interactions
       if (activeTool === 'select') {
         // Check if clicking on a bbox
@@ -194,14 +272,34 @@ export default function AnnotationCanvas({
             return image.x >= a.x && image.x <= a.x + a.width &&
                    image.y >= a.y && image.y <= a.y + a.height;
           }
+          if (a.type === 'polygon') {
+            // Simple point-in-polygon test (ray casting algorithm)
+            const points = a.points;
+            let inside = false;
+            for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+              const xi = points[i].x, yi = points[i].y;
+              const xj = points[j].x, yj = points[j].y;
+              const intersect = ((yi > image.y) !== (yj > image.y))
+                  && (image.x < (xj - xi) * (image.y - yi) / (yj - yi) + xi);
+              if (intersect) inside = !inside;
+            }
+            return inside;
+          }
+          if (a.type === 'point') {
+            // Check if click is near the point (within 10px radius)
+            const distance = Math.sqrt(
+              Math.pow(image.x - a.x, 2) + Math.pow(image.y - a.y, 2)
+            );
+            return distance <= 10;
+          }
           return false;
         });
 
-        if (clicked && clicked.type === 'bbox') {
+        if (clicked) {
           onSelect?.(clicked.id);
           
-          // Check if clicking on resize handle
-          if (clicked.id === selectedId) {
+          // Check if clicking on resize handle (only for bbox)
+          if (clicked.type === 'bbox' && clicked.id === selectedId) {
             const handle = getHandleAt(image.x, image.y, clicked);
             if (handle) {
               setIsResizing(true);
@@ -217,20 +315,32 @@ export default function AnnotationCanvas({
             }
           }
           
-          // Start dragging the box
+          // Start dragging the annotation
           setIsDragging(true);
-          setDragOffset({ x: image.x - clicked.x, y: image.y - clicked.y });
+          setDragOffset({ x: image.x - (clicked.type === 'bbox' ? clicked.x : 0), y: image.y - (clicked.type === 'bbox' ? clicked.y : 0) });
         } else {
           onSelect?.(null);
         }
       }
     },
-    [activeTool, screenToImage, annotations, selectedId, onSelect, isDrawing, isDragging, isResizing]
+    [activeTool, screenToImage, annotations, selectedId, onSelect, isDrawing, isDragging, isResizing, isDrawingPolygon, polygonPoints]
   );
 
   // Handle mouse move with interaction priority
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
+      // Handle panning
+      if (isPanning && panStart && panStartOffset) {
+        const deltaX = e.clientX - panStart.x;
+        const deltaY = e.clientY - panStart.y;
+        
+        setOffset({
+          x: panStartOffset.x + deltaX,
+          y: panStartOffset.y + deltaY,
+        });
+        return;
+      }
+      
       // If resizing, only handle resize - suspend other interactions
       if (isResizing) {
         const image = screenToImage(e.clientX, e.clientY);
@@ -323,8 +433,22 @@ export default function AnnotationCanvas({
         const newY = Math.max(0, image.y - dragOffset.y);
         
         onAnnotationsChange(annotations.map(a => {
-          if (a.id === selectedId && a.type === 'bbox') {
-            return { ...a, x: newX, y: newY };
+          if (a.id === selectedId) {
+            if (a.type === 'bbox') {
+              return { ...a, x: newX, y: newY };
+            }
+            if (a.type === 'polygon') {
+              // Move all points by the same offset
+              const dx = newX - 0; // Since we used 0 as reference in dragOffset
+              const dy = newY - 0;
+              return { 
+                ...a, 
+                points: a.points.map(p => ({ x: p.x + dx, y: p.y + dy }))
+              };
+            }
+            if (a.type === 'point') {
+              return { ...a, x: newX, y: newY };
+            }
           }
           return a;
         }));
@@ -347,7 +471,7 @@ export default function AnnotationCanvas({
   y,
   width,
   height,
-  label: '',   // ← SADECE BU
+  label: '',
   z_index: Date.now(),
 };
         
@@ -356,15 +480,23 @@ export default function AnnotationCanvas({
       }
     }
     
-    // Reset all interaction states
+    // Reset interaction states for bbox/drag/resize
     setIsDrawing(false);
     setIsDragging(false);
     setIsResizing(false);
+    setIsPanning(false);
     setDrawStart(null);
     setDrawPreview(null);
     setDragOffset(null);
     setResizeHandle(null);
     setResizeStartBox(null);
+    setPanStart(null);
+    setPanStartOffset(null);
+    
+    // IMPORTANT: DO NOT reset polygon drawing state here.
+    // Do NOT call setIsDrawingPolygon(false) or setPolygonPoints([]) in handlePointerUp.
+    // Polygon drawing is started and finished entirely in handlePointerDown
+    // when the click is near the first point.
     
     // Reset cursor globally when interaction ends
     document.body.style.cursor = '';
@@ -453,6 +585,132 @@ export default function AnnotationCanvas({
         >
           {/* Render annotations */}
           {annotations.map((annotation) => {
+            if (annotation.type === 'polygon') {
+              const sel = annotation.id === selectedId;
+              const color = getLabelColor(annotation.label);
+              const pointsAttr = annotation.points
+                .map(p => `${p.x},${p.y}`)
+                .join(' ');
+              
+              return (
+                <g key={annotation.id} style={{ pointerEvents: 'none' }}>
+                  <polygon
+                    points={pointsAttr}
+                    stroke={color}
+                    strokeWidth={3}
+                    fill={color}
+                    fillOpacity={0.25}
+                    style={{
+                      vectorEffect: 'non-scaling-stroke',
+                      pointerEvents: 'auto',
+                      cursor: activeTool === 'select' ? 'move' : 'default',
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect?.(annotation.id);
+                    }}
+                  />
+                  
+                  {/* Label text near the first vertex */}
+                  {(() => {
+                    const labelText =
+                      typeof annotation.label === 'object'
+                        ? (annotation.label as any).name ||
+                          (annotation.label as any).label ||
+                          ''
+                        : String(annotation.label ?? '');
+                    
+                    return labelText.trim() ? (
+                      <text
+                        x={annotation.points[0].x + 4}
+                        y={annotation.points[0].y - 4}
+                        fill="#FFFFFF"
+                        fontSize={12 / scale}
+                        fontWeight="bold"
+                        style={{
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        {labelText}
+                      </text>
+                    ) : null;
+                  })()}
+                  
+                  {/* Permanent vertex points for saved polygon */}
+                  {annotation.points.map((point, index) => (
+                    <circle
+                      key={`${annotation.id}-point-${index}`}
+                      cx={point.x}
+                      cy={point.y}
+                      r={11}
+                      fill={color}
+                      stroke="#FFFFFF"
+                      strokeWidth={2.5}
+                      vectorEffect="non-scaling-stroke"
+                      style={{
+                        pointerEvents: 'none',
+                        filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.35))',
+                      }}
+                    />
+                  ))}
+                </g>
+              );
+            }
+            
+            if (annotation.type === 'point') {
+              const sel = annotation.id === selectedId;
+              const color = getLabelColor(annotation.label);
+              
+              return (
+                <g key={annotation.id} style={{ pointerEvents: 'none' }}>
+                  {/* Point annotation */}
+                  <circle
+                    cx={annotation.x}
+                    cy={annotation.y}
+                    r={11}
+                    fill={color}
+                    stroke="#FFFFFF"
+                    strokeWidth={3}
+                    vectorEffect="non-scaling-stroke"
+                    style={{
+                      filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.35))',
+                      cursor: 'pointer',
+                      pointerEvents: 'auto',
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect?.(annotation.id);
+                    }}
+                  />
+                  
+                  {/* Label text near the point */}
+                  {(() => {
+                    const labelText =
+                      typeof annotation.label === 'object'
+                        ? (annotation.label as any).name ||
+                          (annotation.label as any).label ||
+                          ''
+                        : String(annotation.label ?? '');
+                    
+                    return labelText.trim() ? (
+                      <text
+                        x={annotation.x + 12}
+                        y={annotation.y - 4}
+                        fill="#FFFFFF"
+                        fontSize={12 / scale}
+                        fontWeight="bold"
+                        style={{
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        {labelText}
+                      </text>
+                    ) : null;
+                  })()}
+                </g>
+              );
+            }
+            
             if (annotation.type === 'bbox') {
               const sel = annotation.id === selectedId;
               const color = getLabelColor(annotation.label);
@@ -466,7 +724,7 @@ export default function AnnotationCanvas({
                     width={annotation.width}
                     height={annotation.height}
                     stroke={getLabelColor(annotation.label)} // Dynamic color based on label
-                    strokeWidth={2} // Fixed thickness
+                    strokeWidth={3} // Increased thickness for better visibility
                     fill="none"
                     style={{
                       cursor: activeTool === 'select' ? 'move' : 'default',
@@ -481,30 +739,52 @@ export default function AnnotationCanvas({
                   />
                   
                   {/* Label band with dynamic background - scale independent */}
-                  <rect
-                    x={annotation.x}
-                    y={annotation.y - (16 / scale)} // Scale independent height
-                    width={annotation.width}
-                    height={16 / scale} // Scale independent height
-                    fill={getLabelColor(annotation.label)} // Dynamic background color
-                    style={{
-                      pointerEvents: 'none', // Don't interfere with resizing
-                    }}
-                  />
+                  {(() => {
+                    const labelText =
+                      typeof annotation.label === 'object'
+                        ? (annotation.label as any).name ||
+                          (annotation.label as any).label ||
+                          ''
+                        : String(annotation.label ?? '');
+                    
+                    return labelText.trim() ? (
+                      <rect
+                        x={annotation.x}
+                        y={annotation.y - (16 / scale)} // Scale independent height
+                        width={annotation.width}
+                        height={16 / scale} // Scale independent height
+                        fill={getLabelColor(annotation.label)} // Dynamic background color
+                        style={{
+                          pointerEvents: 'none', // Don't interfere with resizing
+                        }}
+                      />
+                    ) : null;
+                  })()}
                   
-                  {/* Label text without percentage - cleaner look */}
-                  <text
-                    x={annotation.x + (4 / scale)} // Scale independent padding
-                    y={annotation.y - (4 / scale)} // Scale independent position
-                    fill="#FFFFFF" // White text
-                    fontSize={12 / scale} // Scale independent font size
-                    fontWeight="bold"
-                    style={{
-                      pointerEvents: 'none', // Don't interfere with resizing
-                    }}
-                  >
-                    [{typeof annotation.label === 'object' ? (annotation.label as any).name || (annotation.label as any).label || JSON.stringify(annotation.label) : annotation.label}]
-                  </text>
+                  {/* Label text - scale independent */}
+                  {(() => {
+                    const labelText =
+                      typeof annotation.label === 'object'
+                        ? (annotation.label as any).name ||
+                          (annotation.label as any).label ||
+                          ''
+                        : String(annotation.label ?? '');
+                    
+                    return labelText.trim() ? (
+                      <text
+                        x={annotation.x + (4 / scale)} // Scale independent padding
+                        y={annotation.y - (4 / scale)} // Scale independent position
+                        fill="#FFFFFF" // White text
+                        fontSize={12 / scale} // Scale independent font size
+                        fontWeight="bold"
+                        style={{
+                          pointerEvents: 'none', // Don't interfere with resizing
+                        }}
+                      >
+                        {labelText}
+                      </text>
+                    ) : null;
+                  })()}
                   
                   {/* 8 Resize handles - CVAT style with invisible but wide hitbox */}
                   {sel && (
@@ -520,29 +800,20 @@ export default function AnnotationCanvas({
                         { handle: 'l' as BboxHandle, x: annotation.x, y: annotation.y + annotation.height / 2, cursor: 'ew-resize' },
                       ].map(({ handle, x, y, cursor }) => (
                         <g key={handle}>
-                          {/* Invisible but wide hitbox - scale independent */}
+                          {/* Invisible wide hitbox for easier interaction */}
                           <rect
-                            x={x - HANDLE_HIT_AREA / 2}
-                            y={y - HANDLE_HIT_AREA / 2}
-                            width={HANDLE_HIT_AREA}
-                            height={HANDLE_HIT_AREA}
+                            x={x - (HANDLE_HIT_AREA / (2 * scale))} // Scale independent hitbox
+                            y={y - (HANDLE_HIT_AREA / (2 * scale))} // Scale independent hitbox
+                            width={HANDLE_HIT_AREA / scale} // Scale independent hitbox
+                            height={HANDLE_HIT_AREA / scale} // Scale independent hitbox
                             fill="transparent"
-                            opacity={0} // Completely invisible
                             style={{
                               cursor,
                               userSelect: 'none',
-                              pointerEvents: 'all', // Override SVG's pointerEvents: none
                             }}
-                            onPointerDown={(e) => {
-                              e.stopPropagation();
-                              setIsResizing(true);
-                              setResizeHandle(handle);
-                              setResizeStartBox(annotation);
-                              // Force cursor globally during resize
-                              document.body.style.cursor = cursor;
-                            }}
+                            pointerEvents="auto" // Handle events
                           />
-                          {/* Visible handle - same color as box with white border */}
+                          {/* Visible small handle */}
                           <rect
                             x={x - (HANDLE_SIZE / (2 * scale))} // Scale independent size
                             y={y - (HANDLE_SIZE / (2 * scale))} // Scale independent size
@@ -584,6 +855,45 @@ export default function AnnotationCanvas({
               }}
             />
           )}
+          
+          {/* Polygon drawing preview */}
+          {isDrawingPolygon && polygonPoints.length > 0 && (
+            <>
+              {/* Draw lines between existing points */}
+              {polygonPoints.map((point, index) => {
+                if (index === 0) return null;
+                const prevPoint = polygonPoints[index - 1];
+                return (
+                  <line
+                    key={`line-${index}`}
+                    x1={prevPoint.x}
+                    y1={prevPoint.y}
+                    x2={point.x}
+                    y2={point.y}
+                    stroke="#3b82f6"
+                    strokeWidth={3}
+                    strokeDasharray="5 5"
+                    style={{
+                      vectorEffect: 'non-scaling-stroke',
+                    }}
+                  />
+                );
+              })}
+              
+              {/* Draw points */}
+              {polygonPoints.map((point, index) => (
+                <circle
+                  key={`point-${index}`}
+                  cx={point.x}
+                  cy={point.y}
+                  r={11}
+                  fill="#3b82f6"
+                  stroke="#FFFFFF"
+                  strokeWidth={2.5}
+                />
+              ))}
+            </>
+          )}
         </svg>
         
         {/* Interaction Layer - Top transparent layer - ALWAYS ACTIVE */}
@@ -592,11 +902,10 @@ export default function AnnotationCanvas({
             position: 'absolute',
             left: 0,
             top: 0,
-            width: imageSize?.w || '100%', // Same as image and SVG
-            height: imageSize?.h || '100%', // Same as image and SVG
-            cursor: activeTool === 'bbox' ? 'crosshair' : 'default',
-            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-            transformOrigin: '0 0', // Critical: top-left origin
+            width: '100%', // Full container width
+            height: '100%', // Full container height
+            cursor: activeTool === 'bbox' || activeTool === 'points' ? 'crosshair' : 'default',
+            touchAction: 'none',
             pointerEvents: 'auto', // ALWAYS ACTIVE - manages all events
           }}
           onPointerDown={(e) => {
@@ -610,10 +919,16 @@ export default function AnnotationCanvas({
           }}
           onPointerUp={(e) => {
             e.preventDefault(); // Prevent native drag
+            if ((e.currentTarget as HTMLDivElement).hasPointerCapture(e.pointerId)) {
+              (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+            }
             handlePointerUp();
           }}
           onPointerLeave={(e) => {
             e.preventDefault(); // Prevent native drag
+            if ((e.currentTarget as HTMLDivElement).hasPointerCapture(e.pointerId)) {
+              (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+            }
             handlePointerUp();
           }}
           onWheel={(e) => {
@@ -630,16 +945,17 @@ export default function AnnotationCanvas({
               const mouseX = e.clientX - rect.left;
               const mouseY = e.clientY - rect.top;
               
-              // Calculate offset to zoom towards mouse position
-              const scaleChange = newScale - scale;
-              const offsetX = -(mouseX - offset.x) * (scaleChange / scale);
-              const offsetY = -(mouseY - offset.y) * (scaleChange / scale);
+              const mouseXInImage = (mouseX - offset.x) / scale;
+              const mouseYInImage = (mouseY - offset.y) / scale;
+              
+              const newOffsetX = mouseX - mouseXInImage * newScale;
+              const newOffsetY = mouseY - mouseYInImage * newScale;
               
               setScale(newScale);
-              setOffset(prev => ({
-                x: prev.x + offsetX,
-                y: prev.y + offsetY,
-              }));
+              setOffset({
+                x: newOffsetX,
+                y: newOffsetY,
+              });
             }
           }}
         />

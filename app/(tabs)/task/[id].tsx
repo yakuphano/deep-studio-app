@@ -101,7 +101,7 @@ export default function TaskDetailScreen() {
   const [aiFixing, setAiFixing] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [activeTool, setActiveTool] = useState<'select' | 'pan' | 'bbox' | 'polygon' | 'points'>('points');
-  const canvasTool: Tool = activeTool === 'pan' || activeTool === 'points' ? 'select' : activeTool;
+  const canvasTool: Tool = activeTool === 'pan' ? 'select' : activeTool;
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>('');
   const [isBrushActive, setIsBrushActive] = useState(false);
@@ -745,7 +745,9 @@ export default function TaskDetailScreen() {
   const getObjectDisplayName = (a: Annotation, idx: number) => {
     const n = idx + 1;
     if (a.type === 'bbox') return `Kutu #${n}`;
-    return `Nokta #${n}`;
+    if (a.type === 'polygon') return `Polygon #${n}`;
+    if (a.type === 'point') return `Nokta #${n}`;
+    return `Nesne #${n}`;
   };
 
   const toggleCollapsed = (annotationId: string) => {
@@ -777,10 +779,10 @@ export default function TaskDetailScreen() {
               style={[styles.toolBtnLarge, activeTool === 'select' && !isBrushActive && styles.toolBtnActivePurple]}
               onPress={() => { setActiveTool('select'); setIsBrushActive(false); }}
               activeOpacity={0.8}
-              {...(isWeb ? { accessibilityLabel: 'Seç', title: 'Seç' } as any : {})}
+              {...(isWeb ? { accessibilityLabel: 'Select', title: 'Select' } as any : {})}
             >
               <Ionicons name="hand-left-outline" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Seç</Text>
+              <Text style={styles.toolBtnLargeText}>Select</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'pan' && !isBrushActive && styles.toolBtnActivePurple]}
@@ -795,10 +797,10 @@ export default function TaskDetailScreen() {
               style={[styles.toolBtnLarge, activeTool === 'bbox' && !isBrushActive && styles.toolBtnActivePurple]}
               onPress={() => { setActiveTool('bbox'); setIsBrushActive(false); }}
               activeOpacity={0.8}
-              {...(isWeb ? { accessibilityLabel: 'Box (R)', title: 'Box (R)' } as any : {})}
+              {...(isWeb ? { accessibilityLabel: 'Bounding Box (R)', title: 'Bounding Box (R)' } as any : {})}
             >
               <Ionicons name="square-outline" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Box (R)</Text>
+              <Text style={styles.toolBtnLargeText}>Bounding Box (R)</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'polygon' && !isBrushActive && styles.toolBtnActivePurple]}
@@ -915,14 +917,14 @@ export default function TaskDetailScreen() {
         {/* Bottom Button Bar */}
         {!isSubmitted && (
           <View style={styles.bottomButtonBar}>
-            <TouchableOpacity
-              style={styles.exitButton}
-              onPress={handleExit}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.exitButtonText}>Exit</Text>
-            </TouchableOpacity>
-            <View style={styles.submitGroup}>
+            <View style={styles.bottomLeftActions}>
+              <TouchableOpacity
+                style={styles.exitButton}
+                onPress={handleExit}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.exitButtonText}>Exit</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.submitExitButton, saving && styles.submitButtonDisabled]}
                 onPress={handleSubmitAndExit}
@@ -933,6 +935,8 @@ export default function TaskDetailScreen() {
                   {saving ? t('taskDetail.saving') : 'Submit & Exit'}
                 </Text>
               </TouchableOpacity>
+            </View>
+            <View style={styles.bottomRightActions}>
               <TouchableOpacity
                 style={[styles.submitButtonGreen, saving && styles.submitButtonDisabled]}
                 onPress={handleSubmitNext}
@@ -1517,6 +1521,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  bottomLeftActions: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  bottomRightActions: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
   },
   exitButton: {
     paddingHorizontal: 16,

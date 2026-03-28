@@ -71,15 +71,17 @@ export default function AnnotationCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   
-  // State
+  // Viewport transform state - single source of truth
   const [imageSize, setImageSize] = useState<{ w: number; h: number } | null>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   
-  // Interaction state
+  // Pan state - screen space only
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(null);
   const [panStartOffset, setPanStartOffset] = useState<{ x: number; y: number } | null>(null);
+  
+  // Annotation drawing state
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [drawPreview, setDrawPreview] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -157,10 +159,10 @@ export default function AnnotationCanvas({
     return () => img.removeEventListener('load', handleLoad);
   }, [imageSource?.uri, imageUrl]);
 
-  // Handle mouse down - CVAT interactions with pan priority
+  // Handle mouse down - clean interaction model
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      // Pan tool priority - disable all drawing/selection when panning
+      // Pan mode - screen space only, immediate return
       if (activeTool === 'pan') {
         setIsPanning(true);
         setPanStart({ x: e.clientX, y: e.clientY });
@@ -169,9 +171,10 @@ export default function AnnotationCanvas({
         return;
       }
       
+      // Annotation tools - use image space conversion
       const image = screenToImage(e.clientX, e.clientY);
       
-      // State conflict prevention - only one interaction at a time
+      // State conflict prevention
       if (isDrawing || isDragging || isResizing) {
         return;
       }
@@ -323,25 +326,27 @@ export default function AnnotationCanvas({
         }
       }
     },
-    [activeTool, screenToImage, annotations, selectedId, onSelect, isDrawing, isDragging, isResizing, isDrawingPolygon, polygonPoints]
+    [activeTool, offset, isPanning, panStart, panStartOffset, screenToImage, annotations, selectedId, onSelect, isDrawing, isDragging, isResizing, isDrawingPolygon, polygonPoints]
   );
 
-  // Handle mouse move with interaction priority
+  // Handle mouse move - clean interaction model
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
-      // Handle panning
-      if (isPanning && panStart && panStartOffset) {
-        const deltaX = e.clientX - panStart.x;
-        const deltaY = e.clientY - panStart.y;
-        
-        setOffset({
-          x: panStartOffset.x + deltaX,
-          y: panStartOffset.y + deltaY,
-        });
+      // Pan mode - screen space only, immediate return
+      if (activeTool === 'pan') {
+        if (isPanning && panStart && panStartOffset) {
+          const deltaX = e.clientX - panStart.x;
+          const deltaY = e.clientY - panStart.y;
+          
+          setOffset({
+            x: panStartOffset.x + deltaX,
+            y: panStartOffset.y + deltaY,
+          });
+        }
         return;
       }
       
-      // If resizing, only handle resize - suspend other interactions
+      // Annotation tools - use image space conversion
       if (isResizing) {
         const image = screenToImage(e.clientX, e.clientY);
         
@@ -454,7 +459,7 @@ export default function AnnotationCanvas({
         }));
       }
     },
-    [screenToImage, isResizing, selectedId, resizeHandle, resizeStartBox, isDrawing, drawStart, isDragging, dragOffset, annotations, onAnnotationsChange]
+    [activeTool, isPanning, panStart, panStartOffset, offset, screenToImage, isResizing, selectedId, resizeHandle, resizeStartBox, isDrawing, drawStart, isDragging, dragOffset, annotations, onAnnotationsChange]
   );
 
   // Handle mouse up - CVAT auto-select
@@ -500,7 +505,7 @@ export default function AnnotationCanvas({
     
     // Reset cursor globally when interaction ends
     document.body.style.cursor = '';
-  }, [isDrawing, drawStart, drawPreview, annotations, onAnnotationsChange, onSelect]);
+  }, [isDrawing, drawStart, drawPreview, annotations, onAnnotationsChange, onSelect, isPanning, panStart, panStartOffset]);
 
   // Helper function to get handle at position
   const getHandleAt = (x: number, y: number, box: BboxAnnotation): BboxHandle | null => {
@@ -574,11 +579,12 @@ export default function AnnotationCanvas({
             position: 'absolute',
             left: 0,
             top: 0,
-            width: imageSize?.w || '100%', // Same as image
-            height: imageSize?.h || '100%', // Same as image
-            pointerEvents: activeTool === 'pan' ? 'none' : 'none', // Always disabled, especially in pan mode
+            width: imageSize?.w || '100%',
+            height: imageSize?.h || '100%',
+            cursor: activeTool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : (activeTool === 'bbox' || activeTool === 'points' ? 'crosshair' : 'default'),
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-            transformOrigin: '0 0', // Critical: top-left origin
+            transformOrigin: '0 0',
+            pointerEvents: activeTool === 'pan' ? 'none' : 'auto',
           }}
           viewBox={imageSize ? `0 0 ${imageSize.w} ${imageSize.h}` : '0 0 100 100'}
           preserveAspectRatio="xMidYMid meet"
@@ -607,7 +613,9 @@ export default function AnnotationCanvas({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onSelect?.(annotation.id);
+                      if (activeTool !== 'pan') {
+                        onSelect?.(annotation.id);
+                      }
                     }}
                   />
                   
@@ -679,7 +687,9 @@ export default function AnnotationCanvas({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onSelect?.(annotation.id);
+                      if (activeTool !== 'pan') {
+                        onSelect?.(annotation.id);
+                      }
                     }}
                   />
                   
@@ -734,7 +744,9 @@ export default function AnnotationCanvas({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onSelect?.(annotation.id);
+                      if (activeTool !== 'pan') {
+                        onSelect?.(annotation.id);
+                      }
                     }}
                   />
                   
@@ -904,7 +916,7 @@ export default function AnnotationCanvas({
             top: 0,
             width: '100%', // Full container width
             height: '100%', // Full container height
-            cursor: activeTool === 'bbox' || activeTool === 'points' ? 'crosshair' : 'default',
+            cursor: activeTool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : (activeTool === 'bbox' || activeTool === 'points' ? 'crosshair' : 'default'),
             touchAction: 'none',
             pointerEvents: 'auto', // ALWAYS ACTIVE - manages all events
           }}
@@ -942,20 +954,20 @@ export default function AnnotationCanvas({
               const rect = containerRef.current?.getBoundingClientRect();
               if (!rect) return;
               
+              // Cursor position relative to container
               const mouseX = e.clientX - rect.left;
               const mouseY = e.clientY - rect.top;
               
-              const mouseXInImage = (mouseX - offset.x) / scale;
-              const mouseYInImage = (mouseY - offset.y) / scale;
+              // Image-space point under cursor before zoom
+              const imageX = (mouseX - offset.x) / scale;
+              const imageY = (mouseY - offset.y) / scale;
               
-              const newOffsetX = mouseX - mouseXInImage * newScale;
-              const newOffsetY = mouseY - mouseYInImage * newScale;
+              // New offset to keep same image point under cursor
+              const newOffsetX = mouseX - imageX * newScale;
+              const newOffsetY = mouseY - imageY * newScale;
               
               setScale(newScale);
-              setOffset({
-                x: newOffsetX,
-                y: newOffsetY,
-              });
+              setOffset({ x: newOffsetX, y: newOffsetY });
             }
           }}
         />

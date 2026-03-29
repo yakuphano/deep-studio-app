@@ -100,7 +100,7 @@ export default function TaskDetailScreen() {
   const [transcribing, setTranscribing] = useState(false);
   const [aiFixing, setAiFixing] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [activeTool, setActiveTool] = useState<'select' | 'pan' | 'bbox' | 'polygon' | 'points'>('points');
+  const [activeTool, setActiveTool] = useState<'pan' | 'select' | 'bbox' | 'polygon' | 'points' | 'ellipse' | 'cuboid' | 'polyline' | 'semantic' | 'brush' | 'magic_wand'>('points');
   const canvasTool: Tool = activeTool === 'pan' ? 'select' : activeTool;
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>('');
@@ -775,24 +775,29 @@ export default function TaskDetailScreen() {
         <View style={styles.annotationLayout}>
           {/* Left Toolbar - 80px, 60x60 buttons, purple active */}
           <View style={styles.leftToolbarCol}>
-            <TouchableOpacity
-              style={[styles.toolBtnLarge, activeTool === 'select' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('select'); setIsBrushActive(false); }}
-              activeOpacity={0.8}
-              {...(isWeb ? { accessibilityLabel: 'Select', title: 'Select' } as any : {})}
-            >
-              <Ionicons name="hand-left-outline" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Select</Text>
-            </TouchableOpacity>
+            {/* Pan Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'pan' && !isBrushActive && styles.toolBtnActivePurple]}
               onPress={() => { setActiveTool('pan'); setIsBrushActive(false); }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Pan', title: 'Pan' } as any : {})}
             >
-              <Ionicons name="move-outline" size={20} color="#f1f5f9" />
+              <Ionicons name="hand-outline" size={20} color="#f1f5f9" />
               <Text style={styles.toolBtnLargeText}>Pan</Text>
             </TouchableOpacity>
+            
+            {/* Select Tool */}
+            <TouchableOpacity
+              style={[styles.toolBtnLarge, activeTool === 'select' && !isBrushActive && styles.toolBtnActivePurple]}
+              onPress={() => { setActiveTool('select'); setIsBrushActive(false); }}
+              activeOpacity={0.8}
+              {...(isWeb ? { accessibilityLabel: 'Select', title: 'Select' } as any : {})}
+            >
+              <Ionicons name="finger-print-outline" size={20} color="#f1f5f9" />
+              <Text style={styles.toolBtnLargeText}>Select</Text>
+            </TouchableOpacity>
+            
+            {/* Bounding Box Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'bbox' && !isBrushActive && styles.toolBtnActivePurple]}
               onPress={() => { setActiveTool('bbox'); setIsBrushActive(false); }}
@@ -802,30 +807,104 @@ export default function TaskDetailScreen() {
               <Ionicons name="square-outline" size={20} color="#f1f5f9" />
               <Text style={styles.toolBtnLargeText}>Bounding Box (R)</Text>
             </TouchableOpacity>
+            
+            {/* Polygon Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'polygon' && !isBrushActive && styles.toolBtnActivePurple]}
               onPress={() => { setActiveTool('polygon'); setIsBrushActive(false); }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Polygon (P)', title: 'Polygon (P)' } as any : {})}
             >
-              <Ionicons name="resize-outline" size={20} color="#f1f5f9" />
+              <Ionicons name="git-merge-outline" size={20} color="#f1f5f9" />
               <Text style={styles.toolBtnLargeText}>Polygon (P)</Text>
             </TouchableOpacity>
+            
+            {/* Points Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'points' && !isBrushActive && styles.toolBtnActivePurple]}
               onPress={() => { setActiveTool('points'); setIsBrushActive(false); }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Points (N)', title: 'Points (N)' } as any : {})}
             >
-              <Ionicons name="ellipse-outline" size={20} color="#f1f5f9" />
+              <Ionicons name="radio-button-off-outline" size={20} color="#f1f5f9" />
               <Text style={styles.toolBtnLargeText}>Points (N)</Text>
             </TouchableOpacity>
+            
+            {/* Ellipse Tool */}
             <TouchableOpacity
-              style={[styles.toolBtnLarge]}
-              onPress={() => selectedAnnotationId && handleDeleteAnnotation(selectedAnnotationId)}
+              style={[styles.toolBtnLarge, activeTool === 'ellipse' && !isBrushActive && styles.toolBtnActivePurple]}
+              onPress={() => { setActiveTool('ellipse'); setIsBrushActive(false); }}
+              activeOpacity={0.8}
+              {...(isWeb ? { accessibilityLabel: 'Ellipse', title: 'Ellipse' } as any : {})}
             >
-              <Ionicons name="trash-outline" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Sil</Text>
+              <Ionicons name="ellipse-outline" size={20} color="#f1f5f9" />
+              <Text style={styles.toolBtnLargeText}>Ellipse</Text>
+            </TouchableOpacity>
+            
+            {/* Cuboid Tool */}
+            <TouchableOpacity
+              style={[styles.toolBtnLarge, activeTool === 'cuboid' && !isBrushActive && styles.toolBtnActivePurple]}
+              onPress={() => { setActiveTool('cuboid'); setIsBrushActive(false); }}
+              activeOpacity={0.8}
+              {...(isWeb ? { accessibilityLabel: 'Cuboid', title: 'Cuboid' } as any : {})}
+            >
+              <Ionicons name="cube-outline" size={20} color="#f1f5f9" />
+              <Text style={styles.toolBtnLargeText}>Cuboid</Text>
+            </TouchableOpacity>
+            
+            {/* Polyline Tool */}
+            <TouchableOpacity
+              style={[styles.toolBtnLarge, activeTool === 'polyline' && !isBrushActive && styles.toolBtnActivePurple]}
+              onPress={() => { setActiveTool('polyline'); setIsBrushActive(false); }}
+              activeOpacity={0.8}
+              {...(isWeb ? { accessibilityLabel: 'Polyline', title: 'Polyline' } as any : {})}
+            >
+              <Ionicons name="create-outline" size={20} color="#f1f5f9" />
+              <Text style={styles.toolBtnLargeText}>Polyline</Text>
+            </TouchableOpacity>
+            
+            {/* Semantic Segmentation Tool */}
+            <TouchableOpacity
+              style={[styles.toolBtnLarge, activeTool === 'semantic' && !isBrushActive && styles.toolBtnActivePurple]}
+              onPress={() => { setActiveTool('semantic'); setIsBrushActive(false); }}
+              activeOpacity={0.8}
+              {...(isWeb ? { accessibilityLabel: 'Semantic Segmentation', title: 'Semantic Segmentation' } as any : {})}
+            >
+              <Ionicons name="color-filter-outline" size={20} color="#f1f5f9" />
+              <Text style={styles.toolBtnLargeText}>Semantic</Text>
+            </TouchableOpacity>
+            
+            {/* Brush Tool */}
+            <TouchableOpacity
+              style={[styles.toolBtnLarge, activeTool === 'brush' && !isBrushActive && styles.toolBtnActivePurple]}
+              onPress={() => { setActiveTool('brush'); setIsBrushActive(false); }}
+              activeOpacity={0.8}
+              {...(isWeb ? { accessibilityLabel: 'Brush', title: 'Brush' } as any : {})}
+            >
+              <Ionicons name="brush-outline" size={20} color="#f1f5f9" />
+              <Text style={styles.toolBtnLargeText}>Brush</Text>
+            </TouchableOpacity>
+            
+            {/* Magic Wand Tool */}
+            <TouchableOpacity
+              style={[styles.toolBtnLarge, activeTool === 'magic_wand' && !isBrushActive && styles.toolBtnActivePurple]}
+              onPress={() => { setActiveTool('magic_wand'); setIsBrushActive(false); }}
+              activeOpacity={0.8}
+              {...(isWeb ? { accessibilityLabel: 'Magic Wand', title: 'Magic Wand' } as any : {})}
+            >
+              <Ionicons name="sparkles" size={20} color="#f1f5f9" />
+              <Text style={styles.toolBtnLargeText}>Magic Wand</Text>
+            </TouchableOpacity>
+            
+            {/* Delete Button - Kırmızı, en alta */}
+            <TouchableOpacity
+              style={[styles.toolBtnLarge, styles.deleteToolBtn]}
+              onPress={() => selectedAnnotationId && handleDeleteAnnotation(selectedAnnotationId)}
+              activeOpacity={0.8}
+              {...(isWeb ? { accessibilityLabel: 'Delete Selected', title: 'Delete Selected' } as any : {})}
+            >
+              <Ionicons name="trash-outline" size={20} color="#ef4444" />
+              <Text style={[styles.toolBtnLargeText, styles.deleteToolBtnText]}>Sil</Text>
             </TouchableOpacity>
           </View>
           {/* Center Canvas */}
@@ -1641,4 +1720,11 @@ const styles = StyleSheet.create({
   },
   labelChipActive: { borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)' },
   labelChipText: { fontSize: 12, color: '#f1f5f9', fontWeight: '500' },
+  deleteToolBtn: {
+    borderColor: '#ef4444',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+  },
+  deleteToolBtnText: {
+    color: '#ef4444',
+  },
 });

@@ -2,7 +2,7 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { LABEL_COLORS } from '@/constants/annotationLabels';
 
-export type Tool = 'bbox' | 'polygon' | 'points' | 'select' | 'line' | 'circle' | 'magicwand' | 'pan';
+export type Tool = 'pan' | 'select' | 'bbox' | 'polygon' | 'points' | 'ellipse' | 'cuboid' | 'polyline' | 'semantic' | 'brush' | 'magic_wand';
 export type BboxHandle = 'tl' | 'tr' | 'br' | 'bl' | 't' | 'r' | 'b' | 'l';
 
 export interface BboxAnnotation {

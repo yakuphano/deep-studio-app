@@ -19,10 +19,10 @@ interface ObjectListProps {
 
 const getObjectDisplayName = (a: Annotation, idx: number) => {
   const n = idx + 1;
-  if ((a as any).type === 'bbox') return `Kutu #${n}`;
+  if ((a as any).type === 'bbox') return `Bounding Box #${n}`;
   if ((a as any).type === 'polygon') return `Polygon #${n}`;
-  if ((a as any).type === 'point') return `Nokta #${n}`;
-  return `Nesne #${n}`;
+  if ((a as any).type === 'point') return `Point #${n}`;
+  return `Object #${n}`;
 };
 
 export default function ObjectList({ 
@@ -43,7 +43,7 @@ export default function ObjectList({
             const labelStr = typeof annotation.label === 'object' 
               ? (annotation.label as any).name || (annotation.label as any).label 
               : annotation.label;
-            const labelColor = labelStr ? LABEL_COLORS[labelStr] || LABEL_COLORS['diğer'] : '#3b82f6';
+            const labelColor = labelStr ? LABEL_COLORS[labelStr] || LABEL_COLORS['Other'] : '#3b82f6';
             const isSelected = selectedAnnotationId === annotation.id;
             
             return (
@@ -56,7 +56,7 @@ export default function ObjectList({
                 <View style={styles.objectListItemHeader}>
                   <View style={styles.objectListItemInfo}>
                     <Text style={[styles.objectListItemTitle, { color: labelColor }]}>
-                      {(annotation as any).type === 'bbox' && `BBox #${idx + 1} - ${labelStr || 'diğer'}`}
+                      {(annotation as any).type === 'bbox' && `BBox #${idx + 1} - ${labelStr || 'Other'}`}
                       {(annotation as any).type === 'polygon' && `Polygon #${idx + 1}`}
                       {(annotation as any).type === 'point' && `Point #${idx + 1}`}
                       {(annotation as any).type !== 'bbox' && (annotation as any).type !== 'polygon' && (annotation as any).type !== 'point' && getObjectDisplayName(annotation, idx)}
@@ -65,20 +65,20 @@ export default function ObjectList({
                     <View style={styles.labelChipsContainer}>
                       {ANNOTATION_LABELS.map((labelItem) => (
                         <TouchableOpacity
-                          key={labelItem.id}
+                          key={labelItem}
                           style={[
                             styles.labelChip,
-                            labelStr === labelItem.id && styles.labelChipSelected,
-                            { backgroundColor: labelStr === labelItem.id ? labelItem.color : '#374151' }
+                            labelStr === labelItem && styles.labelChipSelected,
+                            { backgroundColor: labelStr === labelItem ? LABEL_COLORS[labelItem] : '#374151' }
                           ]}
-                          onPress={() => onUpdateAnnotationLabel(annotation.id, labelItem.id)}
+                          onPress={() => onUpdateAnnotationLabel(annotation.id, labelItem)}
                           activeOpacity={0.8}
                         >
                           <Text style={[
                             styles.labelChipText,
-                            { color: labelStr === labelItem.id ? 'white' : '#9ca3af' }
+                            { color: labelStr === labelItem ? 'white' : '#9ca3af' }
                           ]}>
-                            {labelItem.name}
+                            {labelItem}
                           </Text>
                         </TouchableOpacity>
                       ))}

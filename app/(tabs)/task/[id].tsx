@@ -737,21 +737,34 @@ export default function TaskDetailScreen() {
       prev.map((a) => (a.id === annotationId ? { ...a, label: typeof label === 'object' ? (label as any).name || (label as any).label || JSON.stringify(label) : label } : a))
     );
   };
+
   const handleDeleteAnnotation = (annotationId: string) => {
     setAnnotations((prev) => prev.filter((a) => a.id !== annotationId));
-    if (selectedAnnotationId === annotationId) setSelectedAnnotationId(null);
+    if (selectedAnnotationId === annotationId) {
+      setSelectedAnnotationId(null);
+    }
   };
 
   const getObjectDisplayName = (a: Annotation, idx: number) => {
     const n = idx + 1;
-    if (a.type === 'bbox') return `Kutu #${n}`;
+    if (a.type === 'bbox') return `Bounding Box #${n}`;
     if (a.type === 'polygon') return `Polygon #${n}`;
-    if (a.type === 'point') return `Nokta #${n}`;
-    return `Nesne #${n}`;
+    if (a.type === 'point') return `Point #${n}`;
+    return `Object #${n}`;
   };
 
-  const toggleCollapsed = (annotationId: string) => {
-    setCollapsedObjects((prev) => ({ ...prev, [annotationId]: !prev[annotationId] }));
+  const getAnnotationTypeName = (type: string) => {
+    const names = {
+      bbox: 'Bounding Box',
+      polygon: 'Polygon',
+      points: 'Points',
+      ellipse: 'Ellipse',
+      cuboid: 'Cuboid',
+      polyline: 'Polyline',
+      semantic: 'Semantic',
+      brush: 'Brush'
+    };
+    return names[type] || type;
   };
 
   const taskTypeLabel = (() => {
@@ -782,7 +795,7 @@ export default function TaskDetailScreen() {
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Pan', title: 'Pan' } as any : {})}
             >
-              <Ionicons name="hand-outline" size={20} color="#f1f5f9" />
+              <Ionicons name="hand-right-outline" size={20} color="#f1f5f9" />
               <Text style={styles.toolBtnLargeText}>Pan</Text>
             </TouchableOpacity>
             
@@ -904,7 +917,7 @@ export default function TaskDetailScreen() {
               {...(isWeb ? { accessibilityLabel: 'Delete Selected', title: 'Delete Selected' } as any : {})}
             >
               <Ionicons name="trash-outline" size={20} color="#ef4444" />
-              <Text style={[styles.toolBtnLargeText, styles.deleteToolBtnText]}>Sil</Text>
+              <Text style={[styles.toolBtnLargeText, styles.deleteToolBtnText]}>Delete</Text>
             </TouchableOpacity>
           </View>
           {/* Center Canvas */}
@@ -932,14 +945,14 @@ export default function TaskDetailScreen() {
           </View>
           {/* Right Sidebar - 280px fixed */}
           <View style={styles.rightSidebar}>
-            <Text style={styles.rightSidebarTitle}>NESNE LİSTESİ</Text>
+            <Text style={styles.rightSidebarTitle}>OBJECT LIST</Text>
             <ScrollView style={styles.objectList} showsVerticalScrollIndicator={false}>
               {annotations.length === 0 ? (
-                <Text style={styles.objectListEmpty}>Henüz nesne yok</Text>
+                <Text style={styles.objectListEmpty}>No objects yet</Text>
               ) : (
                 annotations.map((a, idx) => {
                   const labelStr = typeof a.label === 'object' ? (a.label as any).name || (a.label as any).label : a.label;
-                  const labelColor = labelStr ? LABEL_COLORS[labelStr] || LABEL_COLORS['Diğer'] : null;
+                  const labelColor = labelStr ? LABEL_COLORS[labelStr] || LABEL_COLORS['Other'] : null;
                   return (
                     <View key={a.id} style={styles.objectCardWrap}>
                       <View style={[styles.objectCard, labelColor && { borderLeftColor: labelColor, borderLeftWidth: 4 }]}>
@@ -1504,13 +1517,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a2332',
     borderRightWidth: 1,
     borderRightColor: '#334155',
-    gap: 6,
+    gap: 4,
   },
   toolBtnLarge: {
-    width: 60,
-    height: 60,
-    minWidth: 60,
-    minHeight: 60,
+    width: 45,
+    height: 45,
+    minWidth: 45,
+    minHeight: 45,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 8,
@@ -1522,7 +1535,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#7c3aed',
     borderColor: '#7c3aed',
   },
-  toolBtnLargeText: { fontSize: 10, color: '#f1f5f9', marginTop: 2, fontWeight: '500' },
+  toolBtnLargeText: { fontSize: 9, color: '#f1f5f9', marginTop: 1, fontWeight: '500' },
   rightSidebar: {
     width: 280,
     minWidth: 280,

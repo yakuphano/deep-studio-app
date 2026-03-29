@@ -32,7 +32,23 @@ export interface PointAnnotation {
   z_index?: number;
 }
 
-export type Annotation = BboxAnnotation | PolygonAnnotation | PointAnnotation;
+export interface PolylineAnnotation {
+  id: string;
+  type: 'polyline';
+  points: { x: number; y: number }[];
+  label: string;
+  z_index?: number;
+}
+
+export interface BrushAnnotation {
+  id: string;
+  type: 'brush';
+  points: { x: number; y: number }[];
+  label: string;
+  z_index?: number;
+}
+
+export type Annotation = BboxAnnotation | PolygonAnnotation | PointAnnotation | PolylineAnnotation | BrushAnnotation;
 
 interface AnnotationCanvasProps {
   imageSource?: { uri: string } | null;
@@ -71,15 +87,17 @@ export default function AnnotationCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   
-  // State
+  // Viewport transform state - single source of truth
   const [imageSize, setImageSize] = useState<{ w: number; h: number } | null>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   
-  // Interaction state
+  // Pan state - screen space only
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(null);
   const [panStartOffset, setPanStartOffset] = useState<{ x: number; y: number } | null>(null);
+  
+  // Annotation drawing state
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [drawPreview, setDrawPreview] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -87,6 +105,24 @@ export default function AnnotationCanvas({
   // Polygon drawing state
   const [polygonPoints, setPolygonPoints] = useState<{ x: number; y: number }[]>([]);
   const [isDrawingPolygon, setIsDrawingPolygon] = useState(false);
+  
+  // Polyline drawing state
+  const [polylinePoints, setPolylinePoints] = useState<{ x: number; y: number }[]>([]);
+  const [isDrawingPolyline, setIsDrawingPolyline] = useState(false);
+  const [polylinePreviewPoint, setPolylinePreviewPoint] = useState<{ x: number; y: number } | null>(null);
+  
+  // Brush drawing state
+  const [brushPoints, setBrushPoints] = useState<{ x: number; y: number }[]>([]);
+  
+  // Active drawing state (tek merkezli yapı)
+  const [activeDrawing, setActiveDrawing] = useState<{
+    tool: 'polyline' | 'cuboid' | 'brush' | null;
+    x?: number; y?: number; 
+    width?: number; height?: number; 
+    dx?: number; dy?: number; 
+    step?: 1 | 2;
+    points?: {x: number; y: number}[];
+  } | null>(null);
   
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(null);
@@ -157,10 +193,19 @@ export default function AnnotationCanvas({
     return () => img.removeEventListener('load', handleLoad);
   }, [imageSource?.uri, imageUrl]);
 
-  // Handle mouse down - CVAT interactions with pan priority
+  // Handle mouse down - clean interaction model
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      // Pan tool priority - disable all drawing/selection when panning
+      console.log("=== handlePointerDown Başladı ===");
+      console.log("Aktif Araç:", activeTool);
+      console.log("Active Drawing:", activeDrawing);
+      
+      // Block right click from placing points
+      if (e.button === 2) {
+        return;
+      }
+      
+      // Pan mode - screen space only, immediate return
       if (activeTool === 'pan') {
         setIsPanning(true);
         setPanStart({ x: e.clientX, y: e.clientY });
@@ -169,15 +214,18 @@ export default function AnnotationCanvas({
         return;
       }
       
+      // Annotation tools - use image space conversion
       const image = screenToImage(e.clientX, e.clientY);
       
-      // State conflict prevention - only one interaction at a time
-      if (isDrawing || isDragging || isResizing) {
+      if (activeTool === 'brush') {
+        setIsDrawing(true);
+        const imagePos = screenToImage(e.clientX, e.clientY);
+        setBrushPoints([imagePos]); // İlk noktayı koy
         return;
       }
       
-      // Handle bbox drawing
-      if (activeTool === 'bbox') {
+      // Handle bbox and ellipse drawing
+      if (activeTool === 'bbox' || activeTool === 'ellipse') {
         // Check if clicking on a handle first (hitbox priority)
         if (selectedId) {
           const selectedBox = annotations.find(a => a.id === selectedId && a.type === 'bbox') as BboxAnnotation | undefined;
@@ -264,6 +312,33 @@ export default function AnnotationCanvas({
         return;
       }
 
+      // Handle polyline drawing
+      if (activeTool === 'polyline') {
+        const pt = screenToImage(e.clientX, e.clientY);
+        if (!isDrawingPolyline) { 
+          setIsDrawingPolyline(true); 
+          setIsDrawing(true);
+          setPolylinePoints([pt]); 
+        } else { 
+          setPolylinePoints(prev => [...prev, pt]); 
+        }
+        return;
+      }
+
+      // Handle cuboid drawing (3D Kutu)
+      if (activeTool === 'cuboid') {
+        const pt = screenToImage(e.clientX, e.clientY);
+        if (!activeDrawing) { 
+          setActiveDrawing({ tool: 'cuboid', x: pt.x, y: pt.y, width: 0, height: 0, dx: 0, dy: 0, step: 1 });
+          setIsDrawing(true); setDrawStart(pt);
+        } else if (activeDrawing.step === 2) {
+          const newCuboid = { ...activeDrawing, id: `cuboid-${Date.now()}`, type: 'cuboid', label: selectedLabel || '' };
+          onAnnotationsChange([...annotations, newCuboid as any]);
+          setActiveDrawing(null); setIsDrawing(false);
+        }
+        return;
+      }
+
       // Handle selection and interactions
       if (activeTool === 'select') {
         // Check if clicking on a bbox
@@ -323,25 +398,27 @@ export default function AnnotationCanvas({
         }
       }
     },
-    [activeTool, screenToImage, annotations, selectedId, onSelect, isDrawing, isDragging, isResizing, isDrawingPolygon, polygonPoints]
+    [activeTool, offset, isPanning, panStart, panStartOffset, screenToImage, annotations, selectedId, onSelect, isDrawing, isDragging, isResizing, isDrawingPolygon, polygonPoints]
   );
 
-  // Handle mouse move with interaction priority
+  // Handle mouse move - clean interaction model
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
-      // Handle panning
-      if (isPanning && panStart && panStartOffset) {
-        const deltaX = e.clientX - panStart.x;
-        const deltaY = e.clientY - panStart.y;
-        
-        setOffset({
-          x: panStartOffset.x + deltaX,
-          y: panStartOffset.y + deltaY,
-        });
+      // Pan mode - screen space only, immediate return
+      if (activeTool === 'pan') {
+        if (isPanning && panStart && panStartOffset) {
+          const deltaX = e.clientX - panStart.x;
+          const deltaY = e.clientY - panStart.y;
+          
+          setOffset({
+            x: panStartOffset.x + deltaX,
+            y: panStartOffset.y + deltaY,
+          });
+        }
         return;
       }
       
-      // If resizing, only handle resize - suspend other interactions
+      // Annotation tools - use image space conversion
       if (isResizing) {
         const image = screenToImage(e.clientX, e.clientY);
         
@@ -417,6 +494,12 @@ export default function AnnotationCanvas({
       
       const image = screenToImage(e.clientX, e.clientY);
       
+      if (activeTool === 'brush' && isDrawing) {
+        const imagePos = screenToImage(e.clientX, e.clientY);
+        setBrushPoints((prev) => [...prev, imagePos]);
+        return;
+      }
+      
       // Handle drawing
       if (isDrawing && drawStart) {
         const width = image.x - drawStart.x;
@@ -424,6 +507,53 @@ export default function AnnotationCanvas({
         const x = width < 0 ? image.x : drawStart.x;
         const y = height < 0 ? image.y : drawStart.y;
         setDrawPreview({ x, y, width: Math.abs(width), height: Math.abs(height) });
+        return;
+      }
+
+      // Handle cuboid drawing
+      if (activeTool === 'cuboid' && activeDrawing) {
+        if (activeDrawing.step === 1 && isDrawing && drawStart) {
+          // MouseMove (Step 1): Update width and height only
+          const width = image.x - drawStart.x;
+          const height = image.y - drawStart.y;
+          const x = width < 0 ? image.x : drawStart.x;
+          const y = height < 0 ? image.y : drawStart.y;
+          setDrawPreview({ x, y, width: Math.abs(width), height: Math.abs(height) });
+          
+          // Update activeDrawing with new dimensions
+          setActiveDrawing({
+            ...activeDrawing,
+            x: drawStart.x,
+            y: drawStart.y,
+            width: Math.abs(width),
+            height: Math.abs(height)
+          });
+          return;
+        } else if (activeDrawing.step === 2) {
+          // MouseMove (Step 2): Update depth based on mouse position
+          const dx = image.x - activeDrawing.x;
+          const dy = image.y - activeDrawing.y;
+          
+          setActiveDrawing({
+            ...activeDrawing,
+            dx,
+            dy
+          });
+          return;
+        }
+      }
+
+      // Handle polyline preview point for rubber-band effect
+      if (isDrawingPolyline) {
+        setPolylinePreviewPoint({ x: image.x, y: image.y });
+        return;
+      }
+
+      // Handle cuboid movement (step 2)
+      if (activeTool === 'cuboid' && activeDrawing?.step === 2 && isDrawing) {
+        const dx = image.x - activeDrawing.x;
+        const dy = image.y - activeDrawing.y;
+        setActiveDrawing({ ...activeDrawing, dx, dy });
         return;
       }
 
@@ -454,7 +584,7 @@ export default function AnnotationCanvas({
         }));
       }
     },
-    [screenToImage, isResizing, selectedId, resizeHandle, resizeStartBox, isDrawing, drawStart, isDragging, dragOffset, annotations, onAnnotationsChange]
+    [activeTool, isPanning, panStart, panStartOffset, offset, screenToImage, isResizing, selectedId, resizeHandle, resizeStartBox, isDrawing, drawStart, isDragging, dragOffset, annotations, onAnnotationsChange]
   );
 
   // Handle mouse up - CVAT auto-select
@@ -464,34 +594,95 @@ export default function AnnotationCanvas({
       const { x, y, width, height } = drawPreview;
       
       if (width >= MIN_BOX_SIZE && height >= MIN_BOX_SIZE) {
-        const newBox: BboxAnnotation = {
-  id: `bbox-${Date.now()}`,
-  type: 'bbox',
-  x,
-  y,
-  width,
-  height,
-  label: '',
-  z_index: Date.now(),
-};
+        // Determine if this is bbox, ellipse, or cuboid front face based on activeTool
+        if (activeTool === 'bbox') {
+          const newBox: BboxAnnotation = {
+            id: `bbox-${Date.now()}`,
+            type: 'bbox',
+            x,
+            y,
+            width,
+            height,
+            label: '',
+            z_index: Date.now(),
+          };
+          
+          onAnnotationsChange([...annotations, newBox]);
+          onSelect?.(newBox.id); // Auto-select the new box
+        } else if (activeTool === 'ellipse') {
+          // Calculate ellipse parameters from bbox
+          const centerX = x + width / 2;
+          const centerY = y + height / 2;
+          const radiusX = Math.abs(width / 2);
+          const radiusY = Math.abs(height / 2);
+          
+          const newEllipse: any = {
+            id: `ellipse-${Date.now()}`,
+            type: 'ellipse',
+            cx: centerX,
+            cy: centerY,
+            rx: radiusX,
+            ry: radiusY,
+            label: selectedLabel || '',
+            z_index: Date.now(),
+          };
+          
+          onAnnotationsChange([...annotations, newEllipse]);
+          onSelect?.(newEllipse.id); // Auto-select the new ellipse
+        }
         
-        onAnnotationsChange([...annotations, newBox]);
-        onSelect?.(newBox.id); // Auto-select the new box
+        if (activeTool === 'brush' && brushPoints.length > 1) {
+          const newBrush: BrushAnnotation = {
+            id: `brush-${Date.now()}`,
+            type: 'brush',
+            points: brushPoints,
+            label: selectedLabel || '',
+            z_index: Date.now(),
+          };
+          onAnnotationsChange([...annotations, newBrush]);
+          setIsDrawing(false);
+          setBrushPoints([]); // Geçici noktaları temizle
+        } else if (activeTool === 'cuboid') {
+          // MouseUp (Step 1): Finish drawing, move to step 2
+          if (activeDrawing && activeDrawing.step === 1) {
+            // Update activeDrawing with final dimensions and move to step 2
+            const { x, y, width, height } = drawPreview;
+            setActiveDrawing({
+              ...activeDrawing,
+              x: drawStart.x,
+              y: drawStart.y,
+              width: Math.abs(width),
+              height: Math.abs(height),
+              step: 2
+            });
+            // Don't reset drawing state yet, continue to depth phase
+            return;
+          }
+        }
       }
     }
     
     // Reset interaction states for bbox/drag/resize
-    setIsDrawing(false);
+    // But DON'T reset if we're in cuboid depth phase (step 2)
+    if (!activeDrawing || activeDrawing.step === 1) {
+      setIsDrawing(false);
+      setDrawStart(null);
+      setDrawPreview(null);
+    }
+    
     setIsDragging(false);
     setIsResizing(false);
     setIsPanning(false);
-    setDrawStart(null);
-    setDrawPreview(null);
     setDragOffset(null);
     setResizeHandle(null);
     setResizeStartBox(null);
     setPanStart(null);
     setPanStartOffset(null);
+    
+    // Reset polyline preview when interaction ends (güvenlik için)
+    if (isDrawingPolyline) {
+      setPolylinePreviewPoint(null);
+    }
     
     // IMPORTANT: DO NOT reset polygon drawing state here.
     // Do NOT call setIsDrawingPolygon(false) or setPolygonPoints([]) in handlePointerUp.
@@ -500,7 +691,7 @@ export default function AnnotationCanvas({
     
     // Reset cursor globally when interaction ends
     document.body.style.cursor = '';
-  }, [isDrawing, drawStart, drawPreview, annotations, onAnnotationsChange, onSelect]);
+  }, [isDrawing, drawStart, drawPreview, annotations, onAnnotationsChange, onSelect, isPanning, panStart, panStartOffset]);
 
   // Helper function to get handle at position
   const getHandleAt = (x: number, y: number, box: BboxAnnotation): BboxHandle | null => {
@@ -548,6 +739,7 @@ export default function AnnotationCanvas({
           overflow: 'hidden', // Critical: prevent scrolling
           backgroundColor: '#1e293b',
         }}
+        onContextMenu={(e) => e.preventDefault()}
       >
         {/* Image Layer - Bottom layer */}
         <img
@@ -574,11 +766,12 @@ export default function AnnotationCanvas({
             position: 'absolute',
             left: 0,
             top: 0,
-            width: imageSize?.w || '100%', // Same as image
-            height: imageSize?.h || '100%', // Same as image
-            pointerEvents: activeTool === 'pan' ? 'none' : 'none', // Always disabled, especially in pan mode
+            width: imageSize?.w || '100%',
+            height: imageSize?.h || '100%',
+            cursor: activeTool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : (activeTool === 'bbox' || activeTool === 'points' ? 'crosshair' : 'default'),
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-            transformOrigin: '0 0', // Critical: top-left origin
+            transformOrigin: '0 0',
+            pointerEvents: activeTool === 'pan' ? 'none' : 'auto',
           }}
           viewBox={imageSize ? `0 0 ${imageSize.w} ${imageSize.h}` : '0 0 100 100'}
           preserveAspectRatio="xMidYMid meet"
@@ -607,7 +800,9 @@ export default function AnnotationCanvas({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onSelect?.(annotation.id);
+                      if (activeTool !== 'pan') {
+                        onSelect?.(annotation.id);
+                      }
                     }}
                   />
                   
@@ -679,7 +874,9 @@ export default function AnnotationCanvas({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onSelect?.(annotation.id);
+                      if (activeTool !== 'pan') {
+                        onSelect?.(annotation.id);
+                      }
                     }}
                   />
                   
@@ -734,7 +931,9 @@ export default function AnnotationCanvas({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onSelect?.(annotation.id);
+                      if (activeTool !== 'pan') {
+                        onSelect?.(annotation.id);
+                      }
                     }}
                   />
                   
@@ -836,24 +1035,427 @@ export default function AnnotationCanvas({
                 </g>
               );
             }
+            
+            if ((annotation as any).type === 'ellipse') {
+              const sel = (annotation as any).id === selectedId;
+              const color = getLabelColor((annotation as any).label);
+              
+              return (
+                <g key={(annotation as any).id} style={{ pointerEvents: 'none' }}>
+                  <ellipse
+                    cx={(annotation as any).cx || (annotation as any).x}
+                    cy={(annotation as any).cy || (annotation as any).y}
+                    rx={(annotation as any).rx || (annotation as any).radiusX}
+                    ry={(annotation as any).ry || (annotation as any).radiusY}
+                    stroke={color}
+                    strokeWidth={3}
+                    fill={color}
+                    fillOpacity={0.25}
+                    style={{
+                      vectorEffect: 'non-scaling-stroke',
+                      pointerEvents: 'auto',
+                      cursor: activeTool === 'select' ? 'move' : 'default',
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (activeTool !== 'pan') {
+                        onSelect?.((annotation as any).id);
+                      }
+                    }}
+                  />
+                  
+                  {/* Label text near the top of ellipse */}
+                  {(() => {
+                    const labelText =
+                      typeof (annotation as any).label === 'object'
+                        ? ((annotation as any).label as any).name ||
+                          ((annotation as any).label as any).label ||
+                          ''
+                        : String((annotation as any).label ?? '');
+                    
+                    return labelText.trim() ? (
+                      <text
+                        x={(annotation as any).cx || (annotation as any).x}
+                        y={(annotation as any).cy || (annotation as any).y - ((annotation as any).ry || (annotation as any).radiusY) - 4}
+                        fill="#FFFFFF"
+                        fontSize={12 / scale}
+                        fontWeight="bold"
+                        textAnchor="middle"
+                        style={{
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        {labelText}
+                      </text>
+                    ) : null;
+                  })()}
+                </g>
+              );
+            }
+            
+            if ((annotation as any).type === 'cuboid') {
+              const sel = (annotation as any).id === selectedId;
+              const color = getLabelColor((annotation as any).label);
+              const { x, y, width, height, dx, dy } = annotation as any;
+              
+              return (
+                <g key={(annotation as any).id} style={{ pointerEvents: 'none' }}>
+                  {/* Front face */}
+                  <rect
+                    x={x}
+                    y={y}
+                    width={width}
+                    height={height}
+                    stroke={color}
+                    strokeWidth={2}
+                    fill={color}
+                    fillOpacity={0.3}
+                    style={{
+                      vectorEffect: 'non-scaling-stroke',
+                      pointerEvents: 'auto',
+                      cursor: activeTool === 'select' ? 'move' : 'default',
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (activeTool !== 'pan') {
+                        onSelect?.((annotation as any).id);
+                      }
+                    }}
+                  />
+                  
+                  {/* Back face */}
+                  <rect
+                    x={x + dx}
+                    y={y + dy}
+                    width={width}
+                    height={height}
+                    stroke={color}
+                    strokeWidth={2}
+                    fill={color}
+                    fillOpacity={0.2}
+                    style={{
+                      vectorEffect: 'non-scaling-stroke',
+                      pointerEvents: 'auto',
+                    }}
+                  />
+                  
+                  {/* Connecting lines */}
+                  {[
+                    [
+                      { x: x, y: y },
+                      { x: x + dx, y: y + dy }
+                    ],
+                    [
+                      { x: x + width, y: y },
+                      { x: x + width + dx, y: y + dy }
+                    ],
+                    [
+                      { x: x + width, y: y + height },
+                      { x: x + width + dx, y: y + height + dy }
+                    ],
+                    [
+                      { x: x, y: y + height },
+                      { x: x + dx, y: y + height + dy }
+                    ],
+                  ].map((points, index) => (
+                    <line
+                      key={`edge-${index}`}
+                      x1={points[0].x}
+                      y1={points[0].y}
+                      x2={points[1].x}
+                      y2={points[1].y}
+                      stroke={color}
+                      strokeWidth={2}
+                      style={{
+                        vectorEffect: 'non-scaling-stroke',
+                      }}
+                    />
+                  ))}
+                  
+                  {/* Label text near front face */}
+                  {(() => {
+                    const labelText =
+                      typeof (annotation as any).label === 'object'
+                        ? ((annotation as any).label as any).name ||
+                          ((annotation as any).label as any).label ||
+                          ''
+                        : String((annotation as any).label ?? '');
+                    
+                    return labelText.trim() ? (
+                      <text
+                        x={x}
+                        y={y - 4}
+                        fill="#FFFFFF"
+                        fontSize={12 / scale}
+                        fontWeight="bold"
+                        style={{
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        {labelText}
+                      </text>
+                    ) : null;
+                  })()}
+                </g>
+              );
+            }
+            
+            if (annotation.type === 'brush') {
+              const color = getLabelColor(annotation.label);
+              return (
+                <polyline
+                  key={annotation.id}
+                  points={annotation.points.map(p => `${p.x},${p.y}`).join(' ')}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={10 / scale} // Sabit fırça kalınlığı
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                  onClick={() => onSelect?.(annotation.id)}
+                />
+              );
+            }
+            
+            if (annotation.type === 'polyline') {
+              const sel = annotation.id === selectedId;
+              const color = getLabelColor(annotation.label);
+              const points = annotation.points;
+              
+              return (
+                <g key={annotation.id} style={{ pointerEvents: 'none' }}>
+                  {/* Çizgi: <polyline> element */}
+                  <polyline
+                    points={points.map(p => `${p.x},${p.y}`).join(' ')}
+                    stroke={color}
+                    strokeWidth={2}
+                    fill="none"
+                    style={{
+                      vectorEffect: 'non-scaling-stroke',
+                      pointerEvents: 'auto',
+                      cursor: activeTool === 'select' ? 'pointer' : 'default',
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (activeTool !== 'pan') {
+                        onSelect?.(annotation.id);
+                      }
+                    }}
+                  />
+                  
+                  {/* Her nokta için bir <circle> */}
+                  {points.map((point: any, index: number) => (
+                    <circle
+                      key={`vertex-${index}`}
+                      cx={point.x}
+                      cy={point.y}
+                      r={4 / scale}
+                      fill={color}
+                      stroke="#ffffff"
+                      strokeWidth={1 / scale}
+                      style={{
+                        vectorEffect: 'non-scaling-stroke',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  ))}
+                  
+                  {/* Label text */}
+                  {(() => {
+                    const labelText =
+                      typeof annotation.label === 'object'
+                        ? (annotation.label as any).name ||
+                          (annotation.label as any).label ||
+                          ''
+                        : String(annotation.label ?? '');
+                    
+                    return labelText.trim() && points.length >= 2 ? (
+                      <text
+                        x={points[0].x}
+                        y={points[0].y - 8}
+                        fill="#FFFFFF"
+                        fontSize={12 / scale}
+                        fontWeight="bold"
+                        style={{
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        {labelText}
+                      </text>
+                    ) : null;
+                  })()}
+                </g>
+              );
+            }
+            
             return null;
           })}
           
           {/* Drawing preview - always blue for focus */}
           {drawPreview && (
-            <rect
-              x={drawPreview.x}
-              y={drawPreview.y}
-              width={drawPreview.width}
-              height={drawPreview.height}
-              stroke="#3b82f6" // Blue for drawing focus
-              strokeWidth={2}
-              strokeDasharray="5 5"
-              fill="none"
-              style={{
-                vectorEffect: 'non-scaling-stroke', // Prevent thinning on zoom
-              }}
-            />
+            <>
+              {activeTool === 'ellipse' ? (
+                // Ellipse preview - show ellipse while dragging
+                <ellipse 
+                  cx={drawPreview.x + drawPreview.width / 2} 
+                  cy={drawPreview.y + drawPreview.height / 2} 
+                  rx={drawPreview.width / 2} 
+                  ry={drawPreview.height / 2} 
+                  stroke="#3b82f6" 
+                  strokeDasharray="5 5" 
+                  fill="none" 
+                  strokeWidth={2 / scale} 
+                />
+              ) : (
+                // BBox preview for other tools
+                <rect
+                  x={drawPreview.x}
+                  y={drawPreview.y}
+                  width={drawPreview.width}
+                  height={drawPreview.height}
+                  stroke="#3b82f6" // Blue for drawing focus
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  fill="none"
+                  style={{
+                    vectorEffect: 'non-scaling-stroke', // Prevent thinning on zoom
+                  }}
+                />
+              )}
+            </>
+          )}
+          
+          {/* Cuboid depth preview */}
+          {(() => {
+            // Global güvenlik (Crash-Proof)
+            const { 
+              x = 0, 
+              y = 0, 
+              width = 0, 
+              height = 0, 
+              dx = 0, 
+              dy = 0, 
+              step = 1 
+            } = activeDrawing || {};
+            
+            return activeDrawing?.tool === 'cuboid' ? (
+              <>
+                {step === 2 && (
+                  <>
+                    {/* Front Face */}
+                    <rect
+                      x={x}
+                      y={y}
+                      width={width}
+                      height={height}
+                      stroke="green"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      fill="green"
+                      fillOpacity={0.1}
+                      style={{
+                        vectorEffect: 'non-scaling-stroke',
+                      }}
+                    />
+                    
+                    {/* Back Face */}
+                    <rect
+                      x={x + dx}
+                      y={y + dy}
+                      width={width}
+                      height={height}
+                      stroke="green"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      fill="green"
+                      fillOpacity={0.05}
+                      style={{
+                        vectorEffect: 'non-scaling-stroke',
+                      }}
+                    />
+                    
+                    {/* 4 Connection Lines */}
+                    {/* 1. Sol Üst: (x,y)->(x+dx,y+dy) */}
+                    <line
+                      x1={x}
+                      y1={y}
+                      x2={x + dx}
+                      y2={y + dy}
+                      stroke="green"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      style={{
+                        vectorEffect: 'non-scaling-stroke',
+                      }}
+                    />
+                    {/* 2. Sağ Üst: (x+w,y)->(x+w+dx,y+dy) */}
+                    <line
+                      x1={x + width}
+                      y1={y}
+                      x2={x + width + dx}
+                      y2={y + dy}
+                      stroke="green"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      style={{
+                        vectorEffect: 'non-scaling-stroke',
+                      }}
+                    />
+                    {/* 3. Sol Alt: (x,y+h)->(x+dx,y+h+dy) */}
+                    <line
+                      x1={x}
+                      y1={y + height}
+                      x2={x + dx}
+                      y2={y + height + dy}
+                      stroke="green"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      style={{
+                        vectorEffect: 'non-scaling-stroke',
+                      }}
+                    />
+                    {/* 4. Sağ Alt: (x+w,y+h)->(x+w+dx,y+h+dy) */}
+                    <line
+                      x1={x + width}
+                      y1={y + height}
+                      x2={x + width + dx}
+                      y2={y + height + dy}
+                      stroke="green"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      style={{
+                        vectorEffect: 'non-scaling-stroke',
+                      }}
+                    />
+                  </>
+                )}
+              </>
+            ) : null;
+          })()}
+          
+          {/* Polyline Render */}
+          {isDrawingPolyline && polylinePoints.length > 0 && (
+            <g>
+              <polyline points={polylinePoints.map(p => `${p.x},${p.y}`).join(' ')} stroke="yellow" strokeWidth={2} fill="none" />
+              {polylinePoints.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={4} fill="yellow" stroke="white" />)}
+              {polylinePreviewPoint && <line x1={polylinePoints[polylinePoints.length-1].x} y1={polylinePoints[polylinePoints.length-1].y} x2={polylinePreviewPoint.x} y2={polylinePreviewPoint.y} stroke="yellow" strokeDasharray="5,5" />}
+            </g>
+          )}
+
+          {/* Cuboid Preview Render */}
+          {activeDrawing?.tool === 'cuboid' && (
+            <g stroke="green" strokeWidth={2} fill="rgba(0,255,0,0.1)">
+              <rect x={activeDrawing.x} y={activeDrawing.y} width={activeDrawing.width} height={activeDrawing.height} />
+              {activeDrawing.step === 2 && (
+                <>
+                  <rect x={activeDrawing.x + activeDrawing.dx} y={activeDrawing.y + activeDrawing.dy} width={activeDrawing.width} height={activeDrawing.height} />
+                  <line x1={activeDrawing.x} y1={activeDrawing.y} x2={activeDrawing.x + activeDrawing.dx} y2={activeDrawing.y + activeDrawing.dy} />
+                  <line x1={activeDrawing.x + activeDrawing.width} y1={activeDrawing.y} x2={activeDrawing.x + activeDrawing.width + activeDrawing.dx} y2={activeDrawing.y + activeDrawing.dy} />
+                  <line x1={activeDrawing.x} y1={activeDrawing.y + activeDrawing.height} x2={activeDrawing.x + activeDrawing.dx} y2={activeDrawing.y + activeDrawing.height + activeDrawing.dy} />
+                  <line x1={activeDrawing.x} y1={activeDrawing.y + activeDrawing.height} x2={activeDrawing.x + activeDrawing.width + activeDrawing.dx} y2={activeDrawing.y + activeDrawing.height + activeDrawing.dy} />
+                </>
+              )}
+            </g>
           )}
           
           {/* Polygon drawing preview */}
@@ -871,7 +1473,7 @@ export default function AnnotationCanvas({
                     x2={point.x}
                     y2={point.y}
                     stroke="#3b82f6"
-                    strokeWidth={3}
+                    strokeWidth={2}
                     strokeDasharray="5 5"
                     style={{
                       vectorEffect: 'non-scaling-stroke',
@@ -894,6 +1496,88 @@ export default function AnnotationCanvas({
               ))}
             </>
           )}
+          
+          {/* Brush Önizleme */}
+          {activeTool === 'brush' && brushPoints.length > 0 && (
+            <polyline
+              points={brushPoints.map(p => `${p.x},${p.y}`).join(' ')}
+              fill="none"
+              stroke="#3b82f6"
+              strokeWidth={10 / scale}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+          
+          {/* Polyline drawing preview */}
+          {isDrawingPolyline && polylinePoints.length > 0 && (
+            <>
+              {/* Draw lines between existing points */}
+              {polylinePoints.map((point, index) => {
+                if (index === 0) return null;
+                const prevPoint = polylinePoints[index - 1];
+                return (
+                  <line
+                    key={`polyline-line-${index}`}
+                    x1={prevPoint.x}
+                    y1={prevPoint.y}
+                    x2={point.x}
+                    y2={point.y}
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    style={{
+                      vectorEffect: 'non-scaling-stroke',
+                    }}
+                  />
+                );
+              })}
+              
+              {/* Draw rubber-band line to current mouse position */}
+              {polylinePreviewPoint && (
+                <line
+                  key="polyline-rubber-band"
+                  x1={polylinePoints[polylinePoints.length - 1].x}
+                  y1={polylinePoints[polylinePoints.length - 1].y}
+                  x2={polylinePreviewPoint.x}
+                  y2={polylinePreviewPoint.y}
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  style={{
+                    vectorEffect: 'non-scaling-stroke',
+                  }}
+                />
+              )}
+              
+              {/* Draw points */}
+              {polylinePoints.map((point, index) => (
+                <circle
+                  key={`polyline-point-${index}`}
+                  cx={point.x}
+                  cy={point.y}
+                  r={11}
+                  fill="#3b82f6"
+                  stroke="#FFFFFF"
+                  strokeWidth={2.5}
+                />
+              ))}
+              
+              {/* Draw preview point at mouse position */}
+              {polylinePreviewPoint && (
+                <circle
+                  key="polyline-preview-point"
+                  cx={polylinePreviewPoint.x}
+                  cy={polylinePreviewPoint.y}
+                  r={11}
+                  fill="#3b82f6"
+                  stroke="#FFFFFF"
+                  strokeWidth={2.5}
+                  fillOpacity={0.5}
+                />
+              )}
+            </>
+          )}
         </svg>
         
         {/* Interaction Layer - Top transparent layer - ALWAYS ACTIVE */}
@@ -904,7 +1588,7 @@ export default function AnnotationCanvas({
             top: 0,
             width: '100%', // Full container width
             height: '100%', // Full container height
-            cursor: activeTool === 'bbox' || activeTool === 'points' ? 'crosshair' : 'default',
+            cursor: activeTool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : (activeTool === 'bbox' || activeTool === 'points' ? 'crosshair' : 'default'),
             touchAction: 'none',
             pointerEvents: 'auto', // ALWAYS ACTIVE - manages all events
           }}
@@ -931,6 +1615,56 @@ export default function AnnotationCanvas({
             }
             handlePointerUp();
           }}
+          onContextMenu={(e) => {
+            e.preventDefault(); // Prevent browser context menu
+            
+            // Handle polyline completion - finish polyline with double click
+            if (activeTool === 'polyline' && isDrawingPolyline && polylinePoints.length >= 2) {
+              const newPolyline: PolylineAnnotation = {
+                id: `polyline-${Date.now()}`,
+                type: 'polyline',
+                points: polylinePoints,
+                label: '',
+              };
+              onAnnotationsChange([...annotations, newPolyline]);
+              onSelect?.(newPolyline.id);
+              setIsDrawingPolyline(false);
+              setPolylinePoints([]);
+            }
+            
+            // Polyline undo - son noktayı sil
+            if (activeTool === 'polyline' && isDrawingPolyline && polylinePoints.length > 0) {
+              setPolylinePoints(prev => prev.slice(0, -1));
+              
+              // Eğer hiç nokta kalmadıysa çizim modundan çık
+              if (polylinePoints.length === 1) {
+                setIsDrawingPolyline(false);
+                setPolylinePoints([]);
+              }
+              return; // Tarayıcı menüsünün açılmasını engellemiş oluyoruz
+            }
+            
+            // Handle polygon undo - remove last point
+            if (activeTool === 'polygon' && isDrawingPolygon && polygonPoints.length > 0) {
+              setPolygonPoints(prev => prev.slice(0, -1));
+              
+              // If only one point left, cancel drawing
+              if (polygonPoints.length === 1) {
+                setIsDrawingPolygon(false);
+                setPolygonPoints([]);
+              }
+            }
+            
+            // Handle points undo - remove last point
+            if (activeTool === 'points' && annotations.length > 0) {
+              // Find the last point annotation
+              const pointAnnotations = annotations.filter((ann: any) => ann.type === 'point');
+              if (pointAnnotations.length > 0) {
+                const lastPointAnnotation = pointAnnotations[pointAnnotations.length - 1];
+                onAnnotationsChange?.(annotations.filter((ann: any) => ann.id !== lastPointAnnotation.id));
+              }
+            }
+          }}
           onWheel={(e) => {
             e.preventDefault(); // Prevent page scroll
             
@@ -942,20 +1676,20 @@ export default function AnnotationCanvas({
               const rect = containerRef.current?.getBoundingClientRect();
               if (!rect) return;
               
+              // Cursor position relative to container
               const mouseX = e.clientX - rect.left;
               const mouseY = e.clientY - rect.top;
               
-              const mouseXInImage = (mouseX - offset.x) / scale;
-              const mouseYInImage = (mouseY - offset.y) / scale;
+              // Image-space point under cursor before zoom
+              const imageX = (mouseX - offset.x) / scale;
+              const imageY = (mouseY - offset.y) / scale;
               
-              const newOffsetX = mouseX - mouseXInImage * newScale;
-              const newOffsetY = mouseY - mouseYInImage * newScale;
+              // New offset to keep same image point under cursor
+              const newOffsetX = mouseX - imageX * newScale;
+              const newOffsetY = mouseY - imageY * newScale;
               
               setScale(newScale);
-              setOffset({
-                x: newOffsetX,
-                y: newOffsetY,
-              });
+              setOffset({ x: newOffsetX, y: newOffsetY });
             }
           }}
         />

@@ -45,6 +45,7 @@ export interface BrushAnnotation {
   type: 'brush';
   points: { x: number; y: number }[];
   label: string;
+  color: string;
   z_index?: number;
 }
 
@@ -59,6 +60,7 @@ interface AnnotationCanvasProps {
   selectedId?: string | null;
   onSelect?: (id: string | null) => void;
   selectedLabel?: string | null;
+  onToolChange?: (tool: Tool) => void;
 }
 
 const MIN_BOX_SIZE = 10;
@@ -82,6 +84,7 @@ export default function AnnotationCanvas({
   selectedId,
   onSelect,
   selectedLabel,
+  onToolChange,
 }: AnnotationCanvasProps) {
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
@@ -113,6 +116,8 @@ export default function AnnotationCanvas({
   
   // Brush drawing state
   const [brushPoints, setBrushPoints] = useState<{ x: number; y: number }[]>([]);
+  const [brushColor, setBrushColor] = useState<string>('#ff0000');
+  const [isPaletteOpen, setIsPaletteOpen] = useState<boolean>(false);
   
   // Active drawing state (tek merkezli yapı)
   const [activeDrawing, setActiveDrawing] = useState<{
@@ -193,506 +198,261 @@ export default function AnnotationCanvas({
     return () => img.removeEventListener('load', handleLoad);
   }, [imageSource?.uri, imageUrl]);
 
-  // Handle mouse down - clean interaction model
+  // Handle mouse down - Tool-Specific Architecture
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      console.log("=== handlePointerDown Başladı ===");
-      console.log("Aktif Araç:", activeTool);
-      console.log("Active Drawing:", activeDrawing);
-      
-      // Block right click from placing points
-      if (e.button === 2) {
-        return;
-      }
-      
-      // Pan mode - screen space only, immediate return
-      if (activeTool === 'pan') {
-        setIsPanning(true);
-        setPanStart({ x: e.clientX, y: e.clientY });
-        setPanStartOffset({ x: offset.x, y: offset.y });
-        (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
-        return;
-      }
-      
-      // Annotation tools - use image space conversion
+      if (e.button === 2 || activeTool === 'pan') return;
       const image = screenToImage(e.clientX, e.clientY);
-      
-      if (activeTool === 'brush') {
-        setIsDrawing(true);
-        const imagePos = screenToImage(e.clientX, e.clientY);
-        setBrushPoints([imagePos]); // İlk noktayı koy
-        return;
-      }
-      
-      // Handle bbox and ellipse drawing
-      if (activeTool === 'bbox' || activeTool === 'ellipse') {
-        // Check if clicking on a handle first (hitbox priority)
-        if (selectedId) {
-          const selectedBox = annotations.find(a => a.id === selectedId && a.type === 'bbox') as BboxAnnotation | undefined;
-          if (selectedBox) {
-            const handle = getHandleAt(image.x, image.y, selectedBox);
-            if (handle) {
-              setIsResizing(true);
-              setResizeHandle(handle);
-              setResizeStartBox(selectedBox);
-              // Set cursor based on handle
-              const cursors: Record<BboxHandle, string> = {
-                'tl': 'nwse-resize', 'tr': 'nesw-resize', 'br': 'nwse-resize', 'bl': 'nesw-resize',
-                't': 'ns-resize', 'r': 'ew-resize', 'b': 'ns-resize', 'l': 'ew-resize'
-              };
-              document.body.style.cursor = cursors[handle];
-              return;
-            }
-          }
-        }
-        
-        // If not clicking on handle, start drawing
-        setIsDrawing(true);
-        setDrawStart({ x: image.x, y: image.y });
-        setDrawPreview({ x: image.x, y: image.y, width: 0, height: 0 });
-        return;
-      }
 
-      // Handle polygon drawing
-      if (activeTool === 'polygon') {
-        const newPoint = { x: image.x, y: image.y };
-        
-        if (!isDrawingPolygon) {
-          // Start new polygon
-          setIsDrawingPolygon(true);
-          setPolygonPoints([newPoint]);
-        } else {
-          // Check if clicking near the first point to close polygon
-          if (polygonPoints.length >= 3) {
-            const firstPoint = polygonPoints[0];
-            const distance = Math.sqrt(
-              Math.pow(newPoint.x - firstPoint.x, 2) + 
-              Math.pow(newPoint.y - firstPoint.y, 2)
-            );
-            
-            if (distance < 10) { // Close polygon if near first point
-              // Create polygon annotation
-              const newPolygon: PolygonAnnotation = {
-                id: `polygon-${Date.now()}`,
-                type: 'polygon',
-                points: polygonPoints,
-                label: '',
-                z_index: Date.now(),
-              };
-              
-              onAnnotationsChange([...annotations, newPolygon]);
-              onSelect?.(newPolygon.id);
-              
-              // Reset polygon drawing state
-              setIsDrawingPolygon(false);
-              setPolygonPoints([]);
-              return;
-            }
-          }
-          
-          // Add new point
-          setPolygonPoints([...polygonPoints, newPoint]);
-        }
-        return;
-      }
-
-      // Handle points tool
-      if (activeTool === 'points') {
-        const newPoint: PointAnnotation = {
-          id: `point-${Date.now()}`,
-          type: 'point',
-          x: image.x,
-          y: image.y,
-          label: '',
-          z_index: Date.now(),
-        };
-        
-        onAnnotationsChange([...annotations, newPoint]);
-        onSelect?.(newPoint.id); // Auto-select the new point
-        return;
-      }
-
-      // Handle polyline drawing
-      if (activeTool === 'polyline') {
-        const pt = screenToImage(e.clientX, e.clientY);
-        if (!isDrawingPolyline) { 
-          setIsDrawingPolyline(true); 
+      // Tool-Specific Initialization
+      switch (activeTool) {
+        case 'brush':
           setIsDrawing(true);
-          setPolylinePoints([pt]); 
-        } else { 
-          setPolylinePoints(prev => [...prev, pt]); 
-        }
-        return;
-      }
+          setBrushPoints([image]);
+          setIsPaletteOpen(false);
+          break;
 
-      // Handle cuboid drawing (3D Kutu)
-      if (activeTool === 'cuboid') {
-        const pt = screenToImage(e.clientX, e.clientY);
-        if (!activeDrawing) { 
-          setActiveDrawing({ tool: 'cuboid', x: pt.x, y: pt.y, width: 0, height: 0, dx: 0, dy: 0, step: 1 });
-          setIsDrawing(true); setDrawStart(pt);
-        } else if (activeDrawing.step === 2) {
-          const newCuboid = { ...activeDrawing, id: `cuboid-${Date.now()}`, type: 'cuboid', label: selectedLabel || '' };
-          onAnnotationsChange([...annotations, newCuboid as any]);
-          setActiveDrawing(null); setIsDrawing(false);
-        }
-        return;
-      }
-
-      // Handle selection and interactions
-      if (activeTool === 'select') {
-        // Check if clicking on a bbox
-        const clicked = annotations.find((a) => {
-          if (a.type === 'bbox') {
-            return image.x >= a.x && image.x <= a.x + a.width &&
-                   image.y >= a.y && image.y <= a.y + a.height;
+        case 'cuboid':
+          if (!activeDrawing) {
+            setIsDrawing(true);
+            setDrawStart(image);
+            setActiveDrawing({ tool: 'cuboid', x: image.x, y: image.y, width: 0, height: 0, dx: 0, dy: 0, step: 1 });
+          } else if (activeDrawing.step === 2) {
+            // Complete cuboid with functional update
+            const newCuboid = { ...activeDrawing, id: `cuboid-${Date.now()}`, type: 'cuboid', label: '' };
+            onAnnotationsChange(prev => [...prev, newCuboid]);
+            setActiveDrawing(null);
+            setIsDrawing(false);
           }
-          if (a.type === 'polygon') {
-            // Simple point-in-polygon test (ray casting algorithm)
-            const points = a.points;
-            let inside = false;
-            for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-              const xi = points[i].x, yi = points[i].y;
-              const xj = points[j].x, yj = points[j].y;
-              const intersect = ((yi > image.y) !== (yj > image.y))
-                  && (image.x < (xj - xi) * (image.y - yi) / (yj - yi) + xi);
-              if (intersect) inside = !inside;
-            }
-            return inside;
-          }
-          if (a.type === 'point') {
-            // Check if click is near the point (within 10px radius)
-            const distance = Math.sqrt(
-              Math.pow(image.x - a.x, 2) + Math.pow(image.y - a.y, 2)
-            );
-            return distance <= 10;
-          }
-          return false;
-        });
+          break;
 
-        if (clicked) {
-          onSelect?.(clicked.id);
-          
-          // Check if clicking on resize handle (only for bbox)
-          if (clicked.type === 'bbox' && clicked.id === selectedId) {
-            const handle = getHandleAt(image.x, image.y, clicked);
-            if (handle) {
-              setIsResizing(true);
-              setResizeHandle(handle);
-              setResizeStartBox(clicked);
-              // Set cursor based on handle
-              const cursors: Record<BboxHandle, string> = {
-                'tl': 'nwse-resize', 'tr': 'nesw-resize', 'br': 'nwse-resize', 'bl': 'nesw-resize',
-                't': 'ns-resize', 'r': 'ew-resize', 'b': 'ns-resize', 'l': 'ew-resize'
-              };
-              document.body.style.cursor = cursors[handle];
-              return;
-            }
-          }
-          
-          // Start dragging the annotation
-          setIsDragging(true);
-          setDragOffset({ x: image.x - (clicked.type === 'bbox' ? clicked.x : 0), y: image.y - (clicked.type === 'bbox' ? clicked.y : 0) });
-        } else {
-          onSelect?.(null);
-        }
-      }
-    },
-    [activeTool, offset, isPanning, panStart, panStartOffset, screenToImage, annotations, selectedId, onSelect, isDrawing, isDragging, isResizing, isDrawingPolygon, polygonPoints]
-  );
+        case 'bbox':
+        case 'ellipse':
+          setIsDrawing(true);
+          setDrawStart(image);
+          setDrawPreview({ ...image, width: 0, height: 0 });
+          break;
 
-  // Handle mouse move - clean interaction model
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      // Pan mode - screen space only, immediate return
-      if (activeTool === 'pan') {
-        if (isPanning && panStart && panStartOffset) {
-          const deltaX = e.clientX - panStart.x;
-          const deltaY = e.clientY - panStart.y;
-          
-          setOffset({
-            x: panStartOffset.x + deltaX,
-            y: panStartOffset.y + deltaY,
-          });
-        }
-        return;
-      }
-      
-      // Annotation tools - use image space conversion
-      if (isResizing) {
-        const image = screenToImage(e.clientX, e.clientY);
-        
-        if (selectedId && resizeHandle && resizeStartBox) {
-          const box = resizeStartBox;
-          const x2 = box.x + box.width;
-          const y2 = box.y + box.height;
-          
-          let newX: number, newY: number, newWidth: number, newHeight: number;
-          
-          switch (resizeHandle) {
-            case 'tl':
-              newX = image.x;
-              newY = image.y;
-              newWidth = x2 - image.x;
-              newHeight = y2 - image.y;
-              break;
-            case 'tr':
-              newX = box.x;
-              newY = image.y;
-              newWidth = image.x - box.x;
-              newHeight = y2 - image.y;
-              break;
-            case 'br':
-              newX = box.x;
-              newY = box.y;
-              newWidth = image.x - box.x;
-              newHeight = image.y - box.y;
-              break;
-            case 'bl':
-              newX = image.x;
-              newY = box.y;
-              newWidth = x2 - image.x;
-              newHeight = image.y - box.y;
-              break;
-            case 't':
-              newX = box.x;
-              newY = image.y;
-              newWidth = box.width;
-              newHeight = y2 - image.y;
-              break;
-            case 'r':
-              newX = box.x;
-              newY = box.y;
-              newWidth = image.x - box.x;
-              newHeight = box.height;
-              break;
-            case 'b':
-              newX = box.x;
-              newY = box.y;
-              newWidth = box.width;
-              newHeight = image.y - box.y;
-              break;
-            case 'l':
-              newX = image.x;
-              newY = box.y;
-              newWidth = x2 - image.x;
-              newHeight = box.height;
-              break;
-            default:
-              return;
-          }
-          
-          onAnnotationsChange(annotations.map(a => {
-            if (a.id === selectedId && a.type === 'bbox') {
-              return { ...a, x: newX, y: newY, width: newWidth, height: newHeight };
-            }
-            return a;
-          }));
-        }
-        return;
-      }
-      
-      const image = screenToImage(e.clientX, e.clientY);
-      
-      if (activeTool === 'brush' && isDrawing) {
-        const imagePos = screenToImage(e.clientX, e.clientY);
-        setBrushPoints((prev) => [...prev, imagePos]);
-        return;
-      }
-      
-      // Handle drawing
-      if (isDrawing && drawStart) {
-        const width = image.x - drawStart.x;
-        const height = image.y - drawStart.y;
-        const x = width < 0 ? image.x : drawStart.x;
-        const y = height < 0 ? image.y : drawStart.y;
-        setDrawPreview({ x, y, width: Math.abs(width), height: Math.abs(height) });
-        return;
-      }
+        case 'points':
+          // Save point immediately with functional update
+          const newPointAnnotation = { id: `point-${Date.now()}`, type: 'point', x: image.x, y: image.y, label: '' };
+          onAnnotationsChange(prev => [...prev, newPointAnnotation]);
+          break;
 
-      // Handle cuboid drawing
-      if (activeTool === 'cuboid' && activeDrawing) {
-        if (activeDrawing.step === 1 && isDrawing && drawStart) {
-          // MouseMove (Step 1): Update width and height only
-          const width = image.x - drawStart.x;
-          const height = image.y - drawStart.y;
-          const x = width < 0 ? image.x : drawStart.x;
-          const y = height < 0 ? image.y : drawStart.y;
-          setDrawPreview({ x, y, width: Math.abs(width), height: Math.abs(height) });
-          
-          // Update activeDrawing with new dimensions
-          setActiveDrawing({
-            ...activeDrawing,
-            x: drawStart.x,
-            y: drawStart.y,
-            width: Math.abs(width),
-            height: Math.abs(height)
-          });
-          return;
-        } else if (activeDrawing.step === 2) {
-          // MouseMove (Step 2): Update depth based on mouse position
-          const dx = image.x - activeDrawing.x;
-          const dy = image.y - activeDrawing.y;
-          
-          setActiveDrawing({
-            ...activeDrawing,
-            dx,
-            dy
-          });
-          return;
-        }
-      }
-
-      // Handle polyline preview point for rubber-band effect
-      if (isDrawingPolyline) {
-        setPolylinePreviewPoint({ x: image.x, y: image.y });
-        return;
-      }
-
-      // Handle cuboid movement (step 2)
-      if (activeTool === 'cuboid' && activeDrawing?.step === 2 && isDrawing) {
-        const dx = image.x - activeDrawing.x;
-        const dy = image.y - activeDrawing.y;
-        setActiveDrawing({ ...activeDrawing, dx, dy });
-        return;
-      }
-
-      // Handle dragging
-      if (isDragging && selectedId && dragOffset) {
-        const newX = Math.max(0, image.x - dragOffset.x);
-        const newY = Math.max(0, image.y - dragOffset.y);
-        
-        onAnnotationsChange(annotations.map(a => {
-          if (a.id === selectedId) {
+        case 'select':
+          // Handle selection logic
+          const clicked = annotations.find((a) => {
             if (a.type === 'bbox') {
-              return { ...a, x: newX, y: newY };
+              return image.x >= a.x && image.x <= a.x + a.width &&
+                     image.y >= a.y && image.y <= a.y + a.height;
+            }
+            if (a.type === 'brush') {
+              return a.points.some(point => {
+                const distance = Math.sqrt(
+                  Math.pow(image.x - point.x, 2) + Math.pow(image.y - point.y, 2)
+                );
+                return distance <= 10;
+              });
             }
             if (a.type === 'polygon') {
-              // Move all points by the same offset
-              const dx = newX - 0; // Since we used 0 as reference in dragOffset
-              const dy = newY - 0;
-              return { 
-                ...a, 
-                points: a.points.map(p => ({ x: p.x + dx, y: p.y + dy }))
-              };
+              const points = a.points;
+              let inside = false;
+              for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+                const xi = points[i].x, yi = points[i].y;
+                const xj = points[j].x, yj = points[j].y;
+                const intersect = ((yi > image.y) !== (yj > image.y))
+                    && (image.x < (xj - xi) * (image.y - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+              }
+              return inside;
             }
             if (a.type === 'point') {
-              return { ...a, x: newX, y: newY };
+              const distance = Math.sqrt(
+                Math.pow(image.x - a.x, 2) + Math.pow(image.y - a.y, 2)
+              );
+              return distance <= 10;
             }
+            return false;
+          });
+
+          if (clicked) {
+            onSelect?.(clicked.id);
+            if (clicked.id === selectedId) {
+              setIsDragging(true);
+              setDragOffset({ x: image.x, y: image.y });
+              (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+            }
+          } else {
+            onSelect?.(null);
+            setIsDragging(false);
+            setDragOffset(null);
           }
-          return a;
-        }));
+          break;
+
+        case 'polygon':
+          const newPoint = { x: image.x, y: image.y };
+          
+          if (!isDrawingPolygon) {
+            setIsDrawingPolygon(true);
+            setPolygonPoints([newPoint]);
+          } else {
+            if (polygonPoints.length >= 3) {
+              const firstPoint = polygonPoints[0];
+              const distance = Math.sqrt(
+                Math.pow(newPoint.x - firstPoint.x, 2) + 
+                Math.pow(newPoint.y - firstPoint.y, 2)
+              );
+              
+              if (distance < 10) {
+                const newPolygon = {
+                  id: `polygon-${Date.now()}`,
+                  type: 'polygon',
+                  points: polygonPoints,
+                  label: '',
+                };
+                onAnnotationsChange(prev => [...prev, newPolygon]);
+                setIsDrawingPolygon(false);
+                setPolygonPoints([]);
+                return;
+              }
+            }
+            
+            setPolygonPoints(prev => [...prev, newPoint]);
+          }
+          break;
+
+        case 'polyline':
+          const polylinePoint = { x: image.x, y: image.y };
+          
+          if (!isDrawingPolyline) {
+            setIsDrawingPolyline(true);
+            setPolylinePoints([polylinePoint]);
+          } else {
+            setPolylinePoints(prev => [...prev, polylinePoint]);
+          }
+          break;
       }
     },
-    [activeTool, isPanning, panStart, panStartOffset, offset, screenToImage, isResizing, selectedId, resizeHandle, resizeStartBox, isDrawing, drawStart, isDragging, dragOffset, annotations, onAnnotationsChange]
+    [activeTool, activeDrawing, screenToImage, selectedLabel, onAnnotationsChange, annotations, onSelect, selectedId, isDrawingPolygon, polygonPoints, isDrawingPolyline, brushPoints, brushColor, drawStart, drawPreview, isDrawing]
   );
+          // Handle mouse move - Tool-Specific Architecture
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isDrawing) return;
+    const image = screenToImage(e.clientX, e.clientY);
 
-  // Handle mouse up - CVAT auto-select
-  const handlePointerUp = useCallback(() => {
-    // Handle drawing completion and auto-select
-    if (isDrawing && drawStart && drawPreview) {
-      const { x, y, width, height } = drawPreview;
-      
-      if (width >= MIN_BOX_SIZE && height >= MIN_BOX_SIZE) {
-        // Determine if this is bbox, ellipse, or cuboid front face based on activeTool
-        if (activeTool === 'bbox') {
-          const newBox: BboxAnnotation = {
-            id: `bbox-${Date.now()}`,
-            type: 'bbox',
-            x,
-            y,
-            width,
-            height,
-            label: '',
-            z_index: Date.now(),
-          };
-          
-          onAnnotationsChange([...annotations, newBox]);
-          onSelect?.(newBox.id); // Auto-select the new box
-        } else if (activeTool === 'ellipse') {
-          // Calculate ellipse parameters from bbox
-          const centerX = x + width / 2;
-          const centerY = y + height / 2;
-          const radiusX = Math.abs(width / 2);
-          const radiusY = Math.abs(height / 2);
-          
-          const newEllipse: any = {
-            id: `ellipse-${Date.now()}`,
-            type: 'ellipse',
-            cx: centerX,
-            cy: centerY,
-            rx: radiusX,
-            ry: radiusY,
-            label: selectedLabel || '',
-            z_index: Date.now(),
-          };
-          
-          onAnnotationsChange([...annotations, newEllipse]);
-          onSelect?.(newEllipse.id); // Auto-select the new ellipse
-        }
-        
-        if (activeTool === 'brush' && brushPoints.length > 1) {
-          const newBrush: BrushAnnotation = {
-            id: `brush-${Date.now()}`,
-            type: 'brush',
-            points: brushPoints,
-            label: selectedLabel || '',
-            z_index: Date.now(),
-          };
-          onAnnotationsChange([...annotations, newBrush]);
-          setIsDrawing(false);
-          setBrushPoints([]); // Geçici noktaları temizle
-        } else if (activeTool === 'cuboid') {
-          // MouseUp (Step 1): Finish drawing, move to step 2
-          if (activeDrawing && activeDrawing.step === 1) {
-            // Update activeDrawing with final dimensions and move to step 2
-            const { x, y, width, height } = drawPreview;
-            setActiveDrawing({
-              ...activeDrawing,
-              x: drawStart.x,
-              y: drawStart.y,
-              width: Math.abs(width),
-              height: Math.abs(height),
-              step: 2
-            });
-            // Don't reset drawing state yet, continue to depth phase
-            return;
+    // Tool-Specific Updates
+    switch (activeTool) {
+      case 'brush':
+        setBrushPoints(prev => [...prev, image]);
+        break;
+
+      case 'cuboid':
+        if (activeDrawing) {
+          if (activeDrawing.step === 1 && drawStart) {
+            const width = Math.abs(image.x - drawStart.x);
+            const height = Math.abs(image.y - drawStart.y);
+            const x = Math.min(image.x, drawStart.x);
+            const y = Math.min(image.y, drawStart.y);
+            setDrawPreview({ x, y, width, height });
+            setActiveDrawing(prev => ({ ...prev, x, y, width, height }));
+          } else if (activeDrawing.step === 2) {
+            setActiveDrawing(prev => ({ ...prev, dx: image.x - prev.x, dy: image.y - prev.y }));
           }
         }
-      }
+        break;
+
+      case 'bbox':
+      case 'ellipse':
+        if (drawStart) {
+          const width = Math.abs(image.x - drawStart.x);
+          const height = Math.abs(image.y - drawStart.y);
+          const x = Math.min(image.x, drawStart.x);
+          const y = Math.min(image.y, drawStart.y);
+          setDrawPreview({ x, y, width, height });
+        }
+        break;
     }
-    
-    // Reset interaction states for bbox/drag/resize
-    // But DON'T reset if we're in cuboid depth phase (step 2)
-    if (!activeDrawing || activeDrawing.step === 1) {
-      setIsDrawing(false);
-      setDrawStart(null);
-      setDrawPreview(null);
+  }, [isDrawing, activeTool, activeDrawing, drawStart, screenToImage]);
+
+  // Handle mouse up - Tool-Specific Architecture
+  const handlePointerUp = useCallback(() => {
+    // Tool-Specific Saving
+    switch (activeTool) {
+      case 'brush':
+        if (brushPoints.length > 1) {
+          const newBrush = { 
+            id: `brush-${Date.now()}`, 
+            type: 'brush', 
+            points: brushPoints, 
+            color: brushColor, 
+            label: '' 
+          };
+          onAnnotationsChange(prev => [...prev, newBrush]);
+          setBrushPoints([]);
+          setIsDrawing(false);
+        }
+        break;
+
+      case 'bbox':
+        if (drawPreview && drawPreview.width > MIN_BOX_SIZE) {
+          const newBbox = { 
+            id: `bbox-${Date.now()}`, 
+            type: 'bbox', 
+            ...drawPreview, 
+            label: '' 
+          };
+          onAnnotationsChange(prev => [...prev, newBbox]);
+        }
+        break;
+
+      case 'ellipse':
+        if (drawPreview && drawPreview.width > MIN_BOX_SIZE) {
+          const newEllipse = { 
+            id: `ellipse-${Date.now()}`, 
+            type: 'ellipse',
+            cx: drawPreview.x + drawPreview.width / 2,
+            cy: drawPreview.y + drawPreview.height / 2,
+            rx: drawPreview.width / 2,
+            ry: drawPreview.height / 2,
+            label: ''
+          };
+          onAnnotationsChange(prev => [...prev, newEllipse]);
+        }
+        break;
+
+      case 'cuboid':
+        if (activeDrawing?.step === 1) {
+          setActiveDrawing(prev => ({ ...prev, step: 2 }));
+          setDrawPreview(null);
+          return; // RESETLEME YAPMA, sadece step 2'ye geç
+        } else if (activeDrawing?.step === 2) {
+          const newCuboid = { 
+            ...activeDrawing, 
+            id: `cuboid-${Date.now()}`, 
+            type: 'cuboid', 
+            label: '' 
+          };
+          onAnnotationsChange(prev => [...prev, newCuboid]);
+          setActiveDrawing(null);
+          setIsDrawing(false);
+        }
+        break;
     }
-    
+
+    // Global Reset
+    setIsDrawing(false);
+    setDrawPreview(null);
+    setDrawStart(null);
     setIsDragging(false);
     setIsResizing(false);
-    setIsPanning(false);
     setDragOffset(null);
     setResizeHandle(null);
-    setResizeStartBox(null);
-    setPanStart(null);
-    setPanStartOffset(null);
-    
-    // Reset polyline preview when interaction ends (güvenlik için)
-    if (isDrawingPolyline) {
-      setPolylinePreviewPoint(null);
-    }
-    
-    // IMPORTANT: DO NOT reset polygon drawing state here.
-    // Do NOT call setIsDrawingPolygon(false) or setPolygonPoints([]) in handlePointerUp.
-    // Polygon drawing is started and finished entirely in handlePointerDown
-    // when the click is near the first point.
-    
-    // Reset cursor globally when interaction ends
     document.body.style.cursor = '';
-  }, [isDrawing, drawStart, drawPreview, annotations, onAnnotationsChange, onSelect, isPanning, panStart, panStartOffset]);
-
+  }, [activeTool, brushPoints, brushColor, drawPreview, selectedLabel, activeDrawing, onAnnotationsChange]);
+                
+  
+           
+  
   // Helper function to get handle at position
   const getHandleAt = (x: number, y: number, box: BboxAnnotation): BboxHandle | null => {
     const handles = [
@@ -726,7 +486,7 @@ export default function AnnotationCanvas({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, annotations, onAnnotationsChange, onSelect]);
+  }, [selectedId, annotations, onAnnotationsChange, onSelect, activeTool, brushPoints, brushColor, isPaletteOpen]);
 
   return (
     <View style={styles.container}>
@@ -741,6 +501,106 @@ export default function AnnotationCanvas({
         }}
         onContextMenu={(e) => e.preventDefault()}
       >
+        {/* Brush Color Picker - Toolbar entegrasyonu */}
+        {activeTool === 'brush' && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 10,
+              left: 50, // Toolbar'ın hemen sağına çektik
+              zIndex: 1001,
+            }}
+          >
+            {/* Toolbar Butonu */}
+            <button
+              onClick={() => {
+                if (onToolChange) {
+                  onToolChange('brush');
+                  setIsPaletteOpen(!isPaletteOpen);
+                }
+              }}
+              style={{
+                width: '40px',
+                height: '40px',
+                backgroundColor: brushColor,
+                border: '2px solid white',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              title="Fırça aracı - Renk seçimi"
+            >
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z" />
+                <path d="M9 12l2 2 4-4" />
+              </svg>
+            </button>
+            
+            {/* Hamburger Menü - Toolbar Entegrasyonu */}
+            {isPaletteOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '50px',
+                  top: '0',
+                  backgroundColor: 'white',
+                  padding: '10px',
+                  zIndex: 9999,
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '5px',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+                }}
+              >
+                {[
+                  { color: '#ff0000', name: 'Kırmızı' },
+                  { color: '#00ff00', name: 'Yeşil' },
+                  { color: '#0000ff', name: 'Mavi' },
+                  { color: '#ffff00', name: 'Sarı' },
+                  { color: '#ffa500', name: 'Turuncu' },
+                  { color: '#ff00ff', name: 'Mor' },
+                  { color: '#ffc0cb', name: 'Pembe' },
+                  { color: '#00ffff', name: 'Turkuaz' },
+                  { color: '#8b4513', name: 'Kahverengi' },
+                  { color: '#000000', name: 'Siyah' },
+                  { color: '#ffffff', name: 'Beyaz' },
+                  { color: '#808080', name: 'Gri' },
+                ].map((item) => (
+                  <button
+                    key={item.color}
+                    onClick={() => {
+                      setBrushColor(item.color);
+                      setIsPaletteOpen(false);
+                    }}
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      backgroundColor: item.color,
+                      border: brushColor === item.color ? '2px solid #2563eb' : '1px solid #e5e7eb',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                    }}
+                    title={item.name}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        
         {/* Image Layer - Bottom layer */}
         <img
           ref={imgRef}
@@ -1098,6 +958,9 @@ export default function AnnotationCanvas({
               const color = getLabelColor((annotation as any).label);
               const { x, y, width, height, dx, dy } = annotation as any;
               
+              // Cuboid render güvenliği
+              if (!x || dx === undefined) return null;
+              
               return (
                 <g key={(annotation as any).id} style={{ pointerEvents: 'none' }}>
                   {/* Front face */}
@@ -1201,13 +1064,12 @@ export default function AnnotationCanvas({
             }
             
             if (annotation.type === 'brush') {
-              const color = getLabelColor(annotation.label);
               return (
                 <polyline
                   key={annotation.id}
                   points={annotation.points.map(p => `${p.x},${p.y}`).join(' ')}
                   fill="none"
-                  stroke={color}
+                  stroke={annotation.color || '#ff0000'}
                   strokeWidth={10 / scale} // Sabit fırça kalınlığı
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -1502,7 +1364,7 @@ export default function AnnotationCanvas({
             <polyline
               points={brushPoints.map(p => `${p.x},${p.y}`).join(' ')}
               fill="none"
-              stroke="#3b82f6"
+              stroke={brushColor}
               strokeWidth={10 / scale}
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -1618,6 +1480,9 @@ export default function AnnotationCanvas({
           onContextMenu={(e) => {
             e.preventDefault(); // Prevent browser context menu
             
+            // Fırça aracını engelle
+            if (activeTool === 'brush') return;
+            
             // Handle polyline completion - finish polyline with double click
             if (activeTool === 'polyline' && isDrawingPolyline && polylinePoints.length >= 2) {
               const newPolyline: PolylineAnnotation = {
@@ -1627,7 +1492,6 @@ export default function AnnotationCanvas({
                 label: '',
               };
               onAnnotationsChange([...annotations, newPolyline]);
-              onSelect?.(newPolyline.id);
               setIsDrawingPolyline(false);
               setPolylinePoints([]);
             }

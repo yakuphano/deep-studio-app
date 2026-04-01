@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { LABEL_COLORS } from '@/constants/annotationLabels';
+import { getHandleAt, getLabelColor } from './AnnotationCanvas-helper-functions';
 
 export type Tool = 'pan' | 'undo' | 'bbox' | 'polygon' | 'points' | 'ellipse' | 'cuboid' | 'polyline' | 'semantic' | 'brush' | 'magic_wand';
 export type BboxHandle = 'tl' | 'tr' | 'br' | 'bl' | 't' | 'r' | 'b' | 'l';
@@ -68,13 +69,6 @@ const MIN_BOX_SIZE = 10;
 const HANDLE_SIZE = 6; // Smaller, more professional
 const HANDLE_HIT_AREA = 20;
 
-// Get color for label with fallback
-const getLabelColor = (label: string | any): string => {
-  const labelStr = typeof label === 'object'
-    ? (label as any).name || (label as any).label || ''
-    : String(label ?? '');
-  return LABEL_COLORS[labelStr] ?? '#94a3b8';
-};
 
 // Export with forwardRef to expose handleUndo
 export default React.forwardRef(function AnnotationCanvas({
@@ -142,11 +136,11 @@ export default React.forwardRef(function AnnotationCanvas({
         setSavedBrushes(prev => prev.slice(0, -1));
       } else if (lastAction?.type === 'annotation') {
         console.log('[AnnotationCanvas] Undo annotation');
-        onAnnotationsChange?.(prev => prev.slice(0, -1));
+        onAnnotationsChange?.((prev: any) => prev.slice(0, -1));
       } else if (lastAction?.type === 'polyline_point') {
         console.log('[AnnotationCanvas] Undo polyline point');
         // Polyline'den son noktayı geri al
-        setPolylinePoints(prev => prev.slice(0, -1));
+        setPolylinePoints((prev: any) => prev.slice(0, -1));
       } else if (lastAction?.type === 'polyline_start') {
         console.log('[AnnotationCanvas] Undo polyline start');
         // Polyline'i tamamen iptal et
@@ -155,7 +149,7 @@ export default React.forwardRef(function AnnotationCanvas({
       } else if (lastAction?.type === 'polygon_point') {
         console.log('[AnnotationCanvas] Undo polygon point');
         // Polygon'dan son noktayı geri al
-        setPolygonPoints(prev => prev.slice(0, -1));
+        setPolygonPoints((prev: any) => prev.slice(0, -1));
       } else if (lastAction?.type === 'polygon_start') {
         console.log('[AnnotationCanvas] Undo polygon start');
         // Polygon'u tamamen iptal et
@@ -164,7 +158,7 @@ export default React.forwardRef(function AnnotationCanvas({
       } else if (lastAction?.type === 'point') {
         console.log('[AnnotationCanvas] Undo point');
         // Point annotation'ı geri al
-        onAnnotationsChange?.(prev => prev.slice(0, -1));
+        onAnnotationsChange?.((prev: any) => prev.slice(0, -1));
       }
       
       setHistory(newHistory);
@@ -257,303 +251,129 @@ export default React.forwardRef(function AnnotationCanvas({
     return () => img.removeEventListener('load', handleLoad);
   }, [imageSource?.uri, imageUrl]);
 
-  // Handle mouse down - Tool-Specific Architecture
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      if (e.button === 2) return;
-      
-      // Undo butonu için özel handling
-      if (activeTool === 'undo') {
-        handleUndo();
-        return;
-      }
-      
-      const image = screenToImage(e.clientX, e.clientY);
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button === 2) return;
+    const image = screenToImage(e.clientX, e.clientY);
+    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
 
-      // Resize kontrolü - selectedId varsa önce resize tutamacı kontrol et
-      if (selectedId) {
-        const selectedAnnotation = annotations.find(ann => ann.id === selectedId);
-        if (selectedAnnotation && (selectedAnnotation.type === 'bbox' || selectedAnnotation.type === 'cuboid')) {
-          const handle = getHandleAt(image.x, image.y, selectedAnnotation as any);
-          if (handle) {
-            console.log('[AnnotationCanvas] Resize handle clicked via getHandleAt:', handle);
-            setIsResizing(true);
-            setResizeHandle(handle);
-            setResizeStartBox(selectedAnnotation as any);
-            return; // Resize başladı, diğer mantıkları çalıştırma
-          }
+    // A. ÖNCE RESIZE KONTROLÜ (Eğer bir nesne seçiliyse ve köşesine tıklandıysa)
+    if (selectedId) {
+      const selectedAnn = annotations.find(ann => ann.id === selectedId);
+      if (selectedAnn && (selectedAnn.type === 'bbox' || selectedAnn.type === 'cuboid')) {
+        const handle = getHandleAt(image.x, image.y, selectedAnn as any);
+        if (handle) {
+          setIsResizing(true);
+          setResizeHandle(handle);
+          setResizeStartBox({ ...selectedAnn } as any);
+          return; // Resize başladı, başka işlem yapma
         }
       }
+    }
 
-      // Tool-Specific Initialization
-      switch (activeTool) {
-        case 'pan':
-          console.log('[AnnotationCanvas] Pan mode - checking annotations at:', image);
-          console.log('[AnnotationCanvas] Total annotations:', annotations.length);
-          console.log('[AnnotationCanvas] SelectedId:', selectedId);
-          // Pan modunda çizimleri seçmek ve taşımak için annotation tespiti
-          const clickedAnnotation = annotations.find(ann => {
-            if ((ann as any).type === 'bbox' || (ann as any).type === 'cuboid') {
-              const hit = image.x >= (ann as any).x && image.x <= (ann as any).x + (ann as any).width &&
-                      image.y >= (ann as any).y && image.y <= (ann as any).y + (ann as any).height;
-              console.log('[AnnotationCanvas] Bbox/Cuboid hit test:', hit, 'coords:', {x: (ann as any).x, y: (ann as any).y, w: (ann as any).width, h: (ann as any).height}, 'click:', image);
-              return hit;
-            } else if ((ann as any).type === 'ellipse') {
-              const left = (ann as any).cx - (ann as any).rx;
-              const right = (ann as any).cx + (ann as any).rx;
-              const top = (ann as any).cy - (ann as any).ry;
-              const bottom = (ann as any).cy + (ann as any).ry;
-              const hit = image.x >= left && image.x <= right &&
-                      image.y >= top && image.y <= bottom;
-              console.log('[AnnotationCanvas] Ellipse hit test:', hit, 'coords:', {cx: (ann as any).cx, cy: (ann as any).cy, rx: (ann as any).rx, ry: (ann as any).ry}, 'click:', image);
-              return hit;
-            } else if ((ann as any).type === 'point') {
-              const hit = Math.abs(image.x - (ann as any).x) < 10 && Math.abs(image.y - (ann as any).y) < 10;
-              console.log('[AnnotationCanvas] Point hit test:', hit, 'coords:', {x: (ann as any).x, y: (ann as any).y}, 'click:', image);
-              return hit;
-            }
-            return false;
-          });
-          
-          console.log('[AnnotationCanvas] Pan mode - clicked annotation:', clickedAnnotation?.id, clickedAnnotation?.type);
-          
-          if (clickedAnnotation) {
-            console.log('[AnnotationCanvas] Selecting and preparing to drag annotation:', clickedAnnotation.id);
-            onSelect?.(clickedAnnotation.id);
-            
-            // Start dragging
-            setIsDragging(true);
-            let offsetX, offsetY;
-            if (clickedAnnotation.type === 'ellipse') {
-              offsetX = image.x - clickedAnnotation.cx;
-              offsetY = image.y - clickedAnnotation.cy;
-            } else {
-              offsetX = image.x - clickedAnnotation.x;
-              offsetY = image.y - clickedAnnotation.y;
-            }
-            setDragOffset({ x: offsetX, y: offsetY });
-          } else {
-            console.log('[AnnotationCanvas] Deselecting all annotations');
-            onSelect?.(null);
-          }
-          break;
+    // B. PAN ARACI - NESNE TAŞIMA VEYA RESİM KAYDIRMA
+    if (activeTool === 'pan') {
+      const clicked = annotations.find(ann => {
+        if (ann.type === 'bbox' || ann.type === 'cuboid') {
+          return image.x >= ann.x && image.x <= ann.x + ann.width &&
+                 image.y >= ann.y && image.y <= ann.y + ann.height;
+        }
+        if (ann.type === 'ellipse') {
+          const dx = image.x - (ann as any).cx;
+          const dy = image.y - (ann as any).cy;
+          const rx = (ann as any).rx;
+          const ry = (ann as any).ry;
+          return (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) <= 1;
+        }
+        return false;
+      });
 
-        case 'brush':
-          setIsDrawing(true);
-          setBrushPoints([image]);
-          setIsPaletteOpen(false);
-          break;
-
-        case 'cuboid':
-          if (!activeDrawing) {
-            setIsDrawing(true);
-            setDrawStart(image);
-            setActiveDrawing({ tool: 'cuboid', x: image.x, y: image.y, width: 0, height: 0, dx: 0, dy: 0, step: 1 });
-          } else if (activeDrawing.step === 2) {
-            // Complete cuboid with functional update
-            const newCuboid = { ...activeDrawing, id: `cuboid-${Date.now()}`, type: 'cuboid', label: '' };
-            onAnnotationsChange(prev => [...prev, newCuboid]);
-            setActiveDrawing(null);
-            setIsDrawing(false);
-          }
-          break;
-
-        case 'bbox':
-        case 'ellipse':
-          setIsDrawing(true);
-          setDrawStart(image);
-          setDrawPreview({ ...image, width: 0, height: 0 });
-          break;
-
-        case 'points':
-          // Save point immediately with functional update
-          const newPointAnnotation = { id: `point-${Date.now()}`, type: 'point', x: image.x, y: image.y, label: '' };
-          onAnnotationsChange(prev => [...prev, newPointAnnotation]);
-          // History'e ekle
-          setHistory(prev => [...prev, { type: 'point', data: newPointAnnotation }]);
-          break;
-
-        case 'polygon':
-          const newPoint = { x: image.x, y: image.y };
-          
-          if (!isDrawingPolygon) {
-            setIsDrawingPolygon(true);
-            setPolygonPoints([newPoint]);
-            // History'e ekle
-            setHistory(prev => [...prev, { type: 'polygon_start', data: [newPoint] }]);
-          } else {
-            if (polygonPoints.length >= 3) {
-              const firstPoint = polygonPoints[0];
-              const distance = Math.sqrt(
-                Math.pow(newPoint.x - firstPoint.x, 2) + 
-                Math.pow(newPoint.y - firstPoint.y, 2)
-              );
-              
-              if (distance < 10) {
-                const newPolygon = {
-                  id: `polygon-${Date.now()}`,
-                  type: 'polygon',
-                  points: polygonPoints,
-                  label: '',
-                };
-                onAnnotationsChange(prev => [...prev, newPolygon]);
-                // History'e ekle
-                setHistory(prev => [...prev, { type: 'annotation', data: newPolygon }]);
-                setIsDrawingPolygon(false);
-                setPolygonPoints([]);
-                return;
-              }
-            }
-            
-            setPolygonPoints(prev => [...prev, newPoint]);
-            // History'e ekle
-            setHistory(prev => [...prev, { type: 'polygon_point', data: newPoint }]);
-          }
-          break;
-
-        case 'polyline':
-          const polylinePoint = { x: image.x, y: image.y };
-          
-          if (!isDrawingPolyline) {
-            setIsDrawingPolyline(true);
-            setPolylinePoints([polylinePoint]);
-            // History'e ekle
-            setHistory(prev => [...prev, { type: 'polyline_start', data: [polylinePoint] }]);
-          } else {
-            setPolylinePoints(prev => [...prev, polylinePoint]);
-            // History'e ekle
-            setHistory(prev => [...prev, { type: 'polyline_point', data: polylinePoint }]);
-          }
-          break;
+      if (clicked) {
+        onSelect?.(clicked.id);
+        setIsDragging(true);
+        // Tıklanan yer ile nesnenin başlangıç noktası arasındaki farkı kaydet (atlamayı önler)
+        const startX = (clicked as any).x ?? (clicked as any).cx ?? 0;
+        const startY = (clicked as any).y ?? (clicked as any).cy ?? 0;
+        setDragOffset({ x: image.x - startX, y: image.y - startY });
+      } else {
+        onSelect?.(null);
+        setIsPanning(true);
+        setPanStart({ x: e.clientX, y: e.clientY });
+        setPanStartOffset({ x: offset.x, y: offset.y });
       }
-    },
-    [activeTool, activeDrawing, screenToImage, selectedLabel, onAnnotationsChange, annotations, onSelect, selectedId, isDrawingPolygon, polygonPoints, isDrawingPolyline, brushPoints, brushColor, drawStart, drawPreview, isDrawing]
-  );
-          // Handle mouse move - Tool-Specific Architecture
-  const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    // Handle resizing
+      return;
+    }
+
+    // C. DİĞER ÇİZİM ARAÇLARI
+    setIsDrawing(true);
+    setDrawStart(image);
+    if (activeTool === 'brush') {
+      setBrushPoints([image]);
+    } else if (activeTool === 'cuboid' && !activeDrawing) {
+      setActiveDrawing({ tool: 'cuboid', x: image.x, y: image.y, width: 0, height: 0, dx: 20, dy: -20, step: 1 });
+    } else if (['bbox', 'ellipse'].includes(activeTool)) {
+      setDrawPreview({ ...image, width: 0, height: 0 });
+    }
+  }, [activeTool, annotations, selectedId, offset, screenToImage, activeDrawing, isDrawingPolygon, polygonPoints, onAnnotationsChange, onSelect]);
+         const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    const image = screenToImage(e.clientX, e.clientY);
+
+    // 1. ÖNCELİK: BOYUTLANDIRMA (RESIZE)
     if (isResizing && resizeHandle && resizeStartBox) {
-      const image = screenToImage(e.clientX, e.clientY);
-      console.log('[AnnotationCanvas] Resizing - handle:', resizeHandle, 'image:', image);
-      
       onAnnotationsChange(prev => prev.map(ann => {
-        if (ann.id === resizeStartBox.id && (ann.type === 'bbox' || ann.type === 'cuboid')) {
-          let newX = resizeStartBox.x;
-          let newY = resizeStartBox.y;
-          let newWidth = resizeStartBox.width;
-          let newHeight = resizeStartBox.height;
-          
-          switch (resizeHandle) {
-            case 'tl':
-              newWidth = resizeStartBox.x + resizeStartBox.width - image.x;
-              newHeight = resizeStartBox.y + resizeStartBox.height - image.y;
-              newX = image.x;
-              newY = image.y;
-              break;
-            case 'tr':
-              newWidth = image.x - resizeStartBox.x;
-              newHeight = resizeStartBox.y + resizeStartBox.height - image.y;
-              newY = image.y;
-              break;
-            case 'br':
-              newWidth = image.x - resizeStartBox.x;
-              newHeight = image.y - resizeStartBox.y;
-              break;
-            case 'bl':
-              newWidth = resizeStartBox.x + resizeStartBox.width - image.x;
-              newHeight = image.y - resizeStartBox.y;
-              newX = image.x;
-              break;
-            case 't':
-              newHeight = resizeStartBox.y + resizeStartBox.height - image.y;
-              newY = image.y;
-              break;
-            case 'r':
-              newWidth = image.x - resizeStartBox.x;
-              break;
-            case 'b':
-              newHeight = image.y - resizeStartBox.y;
-              break;
-            case 'l':
-              newWidth = resizeStartBox.x + resizeStartBox.width - image.x;
-              newX = image.x;
-              break;
-          }
-          
-          // Ensure minimum size
-          newWidth = Math.max(20, newWidth);
-          newHeight = Math.max(20, newHeight);
-          
-          console.log('[AnnotationCanvas] New size:', { newX, newY, newWidth, newHeight });
-          
-          return { ...ann, x: newX, y: newY, width: newWidth, height: newHeight };
+        if (ann.id === selectedId) {
+          let { x, y, width, height } = resizeStartBox;
+          if (resizeHandle.includes('r')) width = image.x - x;
+          if (resizeHandle.includes('l')) { width += x - image.x; x = image.x; }
+          if (resizeHandle.includes('b')) height = image.y - y;
+          if (resizeHandle.includes('t')) { height += y - image.y; y = image.y; }
+          return { ...ann, x, y, width: Math.max(10, width), height: Math.max(10, height) };
         }
         return ann;
       }));
       return;
     }
-    
-    // Handle pan dragging
-    if (isDragging && dragOffset && activeTool === 'pan') {
-      const image = screenToImage(e.clientX, e.clientY);
-      console.log('[AnnotationCanvas] Pan dragging, image:', image, 'dragOffset:', dragOffset);
-      
+
+    // 2. ÖNCELİK: NESNE SÜRÜKLEME (PAN + DRAG)
+    if (isDragging && selectedId && dragOffset && activeTool === 'pan') {
       onAnnotationsChange(prev => prev.map(ann => {
         if (ann.id === selectedId) {
           if (ann.type === 'bbox' || ann.type === 'cuboid') {
-            const newX = image.x - dragOffset.x;
-            const newY = image.y - dragOffset.y;
-            console.log('[AnnotationCanvas] Moving bbox/cuboid to:', { newX, newY });
-            return { ...ann, x: newX, y: newY };
-          } else if (ann.type === 'ellipse') {
-            const newX = image.x - dragOffset.x;
-            const newY = image.y - dragOffset.y;
-            console.log('[AnnotationCanvas] Moving ellipse to:', { newX, newY });
-            return { ...ann, cx: newX, cy: newY };
+            return { ...ann, x: image.x - dragOffset.x, y: image.y - dragOffset.y };
+          }
+          if (ann.type === 'ellipse') {
+            return { ...ann, cx: image.x - dragOffset.x, cy: image.y - dragOffset.y };
           }
         }
         return ann;
       }));
       return;
     }
-    
-    if (!isDrawing) return;
-    const image = screenToImage(e.clientX, e.clientY);
 
-    // Tool-Specific Updates
-    switch (activeTool) {
-      case 'brush':
-        setBrushPoints(prev => [...prev, image]);
-        break;
-
-      case 'cuboid':
-        if (activeDrawing) {
-          if (activeDrawing.step === 1 && drawStart) {
-            const width = Math.abs(image.x - drawStart.x);
-            const height = Math.abs(image.y - drawStart.y);
-            const x = Math.min(image.x, drawStart.x);
-            const y = Math.min(image.y, drawStart.y);
-            setDrawPreview({ x, y, width, height });
-            setActiveDrawing(prev => ({ ...prev, x, y, width, height }));
-          } else if (activeDrawing.step === 2) {
-            setActiveDrawing(prev => ({ ...prev, dx: image.x - prev.x, dy: image.y - prev.y }));
-          }
-        }
-        break;
-
-      case 'bbox':
-      case 'ellipse':
-        if (drawStart) {
-          const width = Math.abs(image.x - drawStart.x);
-          const height = Math.abs(image.y - drawStart.y);
-          const x = Math.min(image.x, drawStart.x);
-          const y = Math.min(image.y, drawStart.y);
-          setDrawPreview({ x, y, width, height });
-        }
-        break;
+    // 3. ÖNCELİK: RESİM KAYDIRMA (CANVAS PAN)
+    if (isPanning && panStart && panStartOffset) {
+      setOffset({
+        x: panStartOffset.x + (e.clientX - panStart.x),
+        y: panStartOffset.y + (e.clientY - panStart.y)
+      });
+      return;
     }
-  }, [isDrawing, activeTool, activeDrawing, drawStart, screenToImage, isResizing, resizeHandle, resizeStartBox, onAnnotationsChange]);
 
+    // 4. ÖNCELİK: ÇİZİM ÖNİZLEME
+    if (isDrawing && drawStart) {
+      if (activeTool === 'brush') {
+        setBrushPoints(prev => [...prev, image]);
+      } else if (activeTool === 'cuboid' && activeDrawing?.step === 2) {
+        setActiveDrawing(p => ({ ...p!, dx: image.x - p!.x, dy: image.y - p!.y }));
+      } else {
+        const x = Math.min(image.x, drawStart.x);
+        const y = Math.min(image.y, drawStart.y);
+        const w = Math.abs(image.x - drawStart.x);
+        const h = Math.abs(image.y - drawStart.y);
+        setDrawPreview({ x, y, width: w, height: h });
+        if (activeTool === 'cuboid') setActiveDrawing(p => ({ ...p!, x, y, width: w, height: h }));
+      }
+    }
+  }, [isResizing, isDragging, isPanning, isDrawing, screenToImage, resizeHandle, resizeStartBox, selectedId, dragOffset, panStart, panStartOffset, drawStart, activeTool, activeDrawing, onAnnotationsChange]);
   // Handle mouse up - Tool-Specific Architecture
   const handlePointerUp = useCallback(() => {
     // Reset resizing state
@@ -598,7 +418,7 @@ export default React.forwardRef(function AnnotationCanvas({
             ...drawPreview, 
             label: '' 
           };
-          onAnnotationsChange(prev => [...prev, newBbox]);
+          onAnnotationsChange((prev: any) => [...prev, newBbox]);
           // History'e ekle
           setHistory(prev => [...prev, { type: 'annotation', data: newBbox }]);
           // Otomatik olarak yeni çizileni seç
@@ -617,7 +437,7 @@ export default React.forwardRef(function AnnotationCanvas({
             ry: drawPreview.height / 2,
             label: ''
           };
-          onAnnotationsChange(prev => [...prev, newEllipse]);
+          onAnnotationsChange((prev: any) => [...prev, newEllipse]);
           // History'e ekle
           setHistory(prev => [...prev, { type: 'annotation', data: newEllipse }]);
           // Otomatik olarak yeni çizileni seç
@@ -637,7 +457,7 @@ export default React.forwardRef(function AnnotationCanvas({
             type: 'cuboid', 
             label: '' 
           };
-          onAnnotationsChange(prev => [...prev, newCuboid]);
+          onAnnotationsChange((prev: any) => [...prev, newCuboid]);
           // History'e ekle
           setHistory(prev => [...prev, { type: 'annotation', data: newCuboid }]);
           // Otomatik olarak yeni çizileni seç
@@ -1782,7 +1602,7 @@ export default React.forwardRef(function AnnotationCanvas({
             
             // Polyline undo - son noktayı sil
             if (activeTool === 'polyline' && isDrawingPolyline && polylinePoints.length > 0) {
-              setPolylinePoints(prev => prev.slice(0, -1));
+              setPolylinePoints((prev: any) => prev.slice(0, -1));
               
               // Eğer hiç nokta kalmadıysa çizim modundan çık
               if (polylinePoints.length === 1) {
@@ -1794,7 +1614,7 @@ export default React.forwardRef(function AnnotationCanvas({
             
             // Handle polygon undo - remove last point
             if (activeTool === 'polygon' && isDrawingPolygon && polygonPoints.length > 0) {
-              setPolygonPoints(prev => prev.slice(0, -1));
+              setPolygonPoints((prev: any) => prev.slice(0, -1));
               
               // If only one point left, cancel drawing
               if (polygonPoints.length === 1) {

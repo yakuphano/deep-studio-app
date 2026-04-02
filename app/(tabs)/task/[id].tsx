@@ -101,7 +101,7 @@ export default function TaskDetailScreen() {
   const [aiFixing, setAiFixing] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [activeTool, setActiveTool] = useState<'pan' | 'select' | 'bbox' | 'polygon' | 'points' | 'ellipse' | 'cuboid' | 'polyline' | 'semantic' | 'brush' | 'magic_wand'>('points');
-  const canvasTool: Tool = activeTool === 'pan' ? 'select' : activeTool;
+  const canvasTool: Tool = activeTool as Tool;
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>('');
   const [isBrushActive, setIsBrushActive] = useState(false);
@@ -191,6 +191,12 @@ export default function TaskDetailScreen() {
         if (e.key === 'n' || e.key === 'N') {
           e.preventDefault();
           setActiveTool('points');
+          setIsBrushActive(false);
+          return;
+        }
+        if (e.key === 'g' || e.key === 'G') {
+          e.preventDefault();
+          setActiveTool('pan');
           setIsBrushActive(false);
           return;
         }
@@ -793,7 +799,7 @@ export default function TaskDetailScreen() {
               style={[styles.toolBtnLarge, activeTool === 'pan' && !isBrushActive && styles.toolBtnActivePurple]}
               onPress={() => { setActiveTool('pan'); setIsBrushActive(false); }}
               activeOpacity={0.8}
-              {...(isWeb ? { accessibilityLabel: 'Pan', title: 'Pan' } as any : {})}
+              {...(isWeb ? { accessibilityLabel: 'Pan (G)', title: 'Pan (G)' } as any : {})}
             >
               <Ionicons name="hand-right-outline" size={20} color="#f1f5f9" />
               <Text style={styles.toolBtnLargeText}>Pan</Text>

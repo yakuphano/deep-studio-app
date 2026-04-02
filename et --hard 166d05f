@@ -1,0 +1,25 @@
+[33mcbeaa52[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m HEAD@{0}: checkout: moving from 166d05f333029af758a28fdad70b8a93a2ba37a0 to main
+[33m166d05f[m[33m ([m[1;32mtemp-branch[m[33m)[m HEAD@{1}: commit: Undo butonu denemesi ve kod düzenlemeleri
+[33md22e74b[m HEAD@{2}: checkout: moving from main to HEAD~1
+[33mcbeaa52[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m HEAD@{3}: reset: moving to HEAD
+[33mcbeaa52[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m HEAD@{4}: commit: Cuboid ve Brush iyileştirmeleri yapıldı - syntax hataları inceleniyor
+[33md22e74b[m HEAD@{5}: commit: Cuboid ve Brush iyileştirmeleri yapıldı - syntax hataları inceleniyor
+[33mdf0d2f0[m HEAD@{6}: commit (merge): Firca ve cuboid uzerinde calismalar yapildi - yarin devam edilecek
+[33mef557e7[m HEAD@{7}: commit: UI: Toolbar guncellendi, BBox ve Polygon hassasiyeti korundu
+[33m6604ae3[m HEAD@{8}: reset: moving to HEAD
+[33m6604ae3[m HEAD@{9}: reset: moving to HEAD
+[33m6604ae3[m HEAD@{10}: reset: moving to HEAD
+[33m6604ae3[m HEAD@{11}: reset: moving to HEAD~1
+[33m24f7f65[m HEAD@{12}: reset: moving to HEAD
+[33m24f7f65[m HEAD@{13}: commit: Fix web pan tool interaction
+[33m6604ae3[m HEAD@{14}: Branch: renamed refs/heads/main to refs/heads/main
+[33m6604ae3[m HEAD@{16}: commit: WIP: annotation canvas changes
+[33mdb2084b[m HEAD@{17}: commit: Fix image annotation label selection UI
+[33m9cdd54e[m HEAD@{18}: commit: feat: Professional CVAT-style Bounding Box with dynamic labels and scaling fix
+[33m0b94171[m HEAD@{19}: commit: Admin paneli toplu yükleme altyapısı kuruldu ve syntax hataları giderildi
+[33mb64926c[m HEAD@{20}: Branch: renamed refs/heads/master to refs/heads/main
+[33mb64926c[m HEAD@{22}: commit: Admin ve Task sayfaları güncellendi
+[33m7e03204[m[33m ([m[1;31morigin/master[m[33m)[m HEAD@{23}: commit: Realtime görev senkronizasyonu, RLS güvenlik kuralları ve kullanıcı bazlı filtreleme iyileştirmeleri yapıldı.
+[33me326f2b[m HEAD@{24}: commit: Gemini API kaldırıldı, Groq Cloud Whisper-v3 entegrasyonu tamamlandı. Halüsinasyon filtresi ve hız optimizasyonu eklendi.
+[33m9f825ee[m HEAD@{25}: commit: Admin paneli özellikleri tamamlandı: Ses kaydı, JSON Export, Firma Filtresi ve Süre Hesaplama
+[33m375b9fd[m HEAD@{26}: commit (initial): Initial commit

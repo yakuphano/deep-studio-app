@@ -288,11 +288,13 @@ export default React.forwardRef(function AnnotationCanvas({
       // Tool-Specific Initialization
       switch (activeTool) {
         case 'pan':
+          console.log('[AnnotationCanvas] PAN MODE ACTIVATED');
           console.log('[AnnotationCanvas] Pan mode - checking annotations at:', image);
           console.log('[AnnotationCanvas] Total annotations:', annotations.length);
           console.log('[AnnotationCanvas] SelectedId:', selectedId);
           // Pan modunda çizimleri seçmek ve taşımak için annotation tespiti
           const clickedAnnotation = annotations.find(ann => {
+            console.log('[AnnotationCanvas] Checking annotation:', ann.id, ann.type);
             if ((ann as any).type === 'bbox' || (ann as any).type === 'cuboid') {
               const hit = image.x >= (ann as any).x && image.x <= (ann as any).x + (ann as any).width &&
                       image.y >= (ann as any).y && image.y <= (ann as any).y + (ann as any).height;
@@ -311,7 +313,15 @@ export default React.forwardRef(function AnnotationCanvas({
               const hit = Math.abs(image.x - (ann as any).x) < 10 && Math.abs(image.y - (ann as any).y) < 10;
               console.log('[AnnotationCanvas] Point hit test:', hit, 'coords:', {x: (ann as any).x, y: (ann as any).y}, 'click:', image);
               return hit;
+            } else if ((ann as any).type === 'polygon' || (ann as any).type === 'polyline') {
+              // Check if click is near any point in the polygon/polyline
+              const hit = (ann as any).points.some((point: any) => 
+                Math.abs(image.x - point.x) < 15 && Math.abs(image.y - point.y) < 15
+              );
+              console.log('[AnnotationCanvas] Polygon/Polyline hit test:', hit, 'points:', (ann as any).points.length, 'click:', image);
+              return hit;
             }
+            console.log('[AnnotationCanvas] Unknown annotation type:', ann.type);
             return false;
           });
           
@@ -321,20 +331,34 @@ export default React.forwardRef(function AnnotationCanvas({
             console.log('[AnnotationCanvas] Selecting and preparing to drag annotation:', clickedAnnotation.id);
             onSelect?.(clickedAnnotation.id);
             
-            // Start dragging
+            // Start dragging annotation
             setIsDragging(true);
             let offsetX, offsetY;
             if (clickedAnnotation.type === 'ellipse') {
               offsetX = image.x - clickedAnnotation.cx;
               offsetY = image.y - clickedAnnotation.cy;
+              console.log('[AnnotationCanvas] Starting ellipse drag - offset:', { offsetX, offsetY });
+            } else if (clickedAnnotation.type === 'polygon' || clickedAnnotation.type === 'polyline') {
+              // For polygon/polyline, calculate offset from first point
+              const firstPoint = (clickedAnnotation as any).points[0];
+              offsetX = image.x - firstPoint.x;
+              offsetY = image.y - firstPoint.y;
+              console.log('[AnnotationCanvas] Starting polygon/polyline drag - offset:', { offsetX, offsetY });
             } else {
-              offsetX = image.x - clickedAnnotation.x;
-              offsetY = image.y - clickedAnnotation.y;
+              offsetX = image.x - (clickedAnnotation as any).x;
+              offsetY = image.y - (clickedAnnotation as any).y;
+              console.log('[AnnotationCanvas] Starting bbox/cuboid/point drag - offset:', { offsetX, offsetY });
             }
             setDragOffset({ x: offsetX, y: offsetY });
+            console.log('[AnnotationCanvas] DRAGGING STARTED - isDragging:', true, 'dragOffset:', { x: offsetX, y: offsetY });
           } else {
-            console.log('[AnnotationCanvas] Deselecting all annotations');
+            console.log('[AnnotationCanvas] Starting viewport pan - no annotation clicked');
             onSelect?.(null);
+            
+            // Start viewport panning
+            setIsPanning(true);
+            setPanStart({ x: e.clientX, y: e.clientY });
+            setPanStartOffset({ x: offset.x, y: offset.y });
           }
           break;
 
@@ -353,6 +377,8 @@ export default React.forwardRef(function AnnotationCanvas({
             // Complete cuboid with functional update
             const newCuboid = { ...activeDrawing, id: `cuboid-${Date.now()}`, type: 'cuboid', label: '' };
             onAnnotationsChange(prev => [...prev, newCuboid]);
+            console.log('[AnnotationCanvas] Cuboid completed in handlePointerDown - selecting:', newCuboid.id);
+            onSelect?.(newCuboid.id);
             setActiveDrawing(null);
             setIsDrawing(false);
           }
@@ -431,6 +457,8 @@ export default React.forwardRef(function AnnotationCanvas({
   );
           // Handle mouse move - Tool-Specific Architecture
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    console.log('[AnnotationCanvas] handlePointerMove called - isDragging:', isDragging, 'activeTool:', activeTool, 'dragOffset:', dragOffset);
+    
     // Handle resizing
     if (isResizing && resizeHandle && resizeStartBox) {
       const image = screenToImage(e.clientX, e.clientY);
@@ -493,23 +521,59 @@ export default React.forwardRef(function AnnotationCanvas({
       return;
     }
     
+    // Handle viewport panning
+    if (isPanning && panStart && panStartOffset && activeTool === 'pan') {
+      const deltaX = e.clientX - panStart.x;
+      const deltaY = e.clientY - panStart.y;
+      const newOffsetX = panStartOffset.x + deltaX;
+      const newOffsetY = panStartOffset.y + deltaY;
+      
+      setOffset({ x: newOffsetX, y: newOffsetY });
+      return;
+    }
+    
     // Handle pan dragging
     if (isDragging && dragOffset && activeTool === 'pan') {
       const image = screenToImage(e.clientX, e.clientY);
-      console.log('[AnnotationCanvas] Pan dragging, image:', image, 'dragOffset:', dragOffset);
+      console.log('[AnnotationCanvas] DRAGGING ANNOTATION - image:', image, 'dragOffset:', dragOffset, 'selectedId:', selectedId);
       
       onAnnotationsChange(prev => prev.map(ann => {
         if (ann.id === selectedId) {
+          console.log('[AnnotationCanvas] Found annotation to move:', ann.id, ann.type);
           if (ann.type === 'bbox' || ann.type === 'cuboid') {
+            console.log('[AnnotationCanvas] Moving bbox/cuboid - old pos:', { x: ann.x, y: ann.y });
             const newX = image.x - dragOffset.x;
             const newY = image.y - dragOffset.y;
-            console.log('[AnnotationCanvas] Moving bbox/cuboid to:', { newX, newY });
+            console.log('[AnnotationCanvas] Moving bbox/cuboid - new pos:', { newX, newY });
             return { ...ann, x: newX, y: newY };
           } else if (ann.type === 'ellipse') {
             const newX = image.x - dragOffset.x;
             const newY = image.y - dragOffset.y;
             console.log('[AnnotationCanvas] Moving ellipse to:', { newX, newY });
             return { ...ann, cx: newX, cy: newY };
+          } else if (ann.type === 'point') {
+            const newX = image.x - dragOffset.x;
+            const newY = image.y - dragOffset.y;
+            console.log('[AnnotationCanvas] Moving point to:', { newX, newY });
+            return { ...ann, x: newX, y: newY };
+          } else if (ann.type === 'polygon' || ann.type === 'polyline') {
+            // Move all points by the same delta
+            const deltaX = image.x - dragOffset.x;
+            const deltaY = image.y - dragOffset.y;
+            console.log('[AnnotationCanvas] Moving polygon/polyline by:', { deltaX, deltaY });
+            
+            // Calculate the original first point position
+            const originalFirstPoint = (ann as any).points[0];
+            const moveDeltaX = deltaX - originalFirstPoint.x;
+            const moveDeltaY = deltaY - originalFirstPoint.y;
+            
+            return { 
+              ...ann, 
+              points: ann.points.map((point: any) => ({
+                x: point.x + moveDeltaX,
+                y: point.y + moveDeltaY
+              }))
+            };
           }
         }
         return ann;
@@ -552,7 +616,7 @@ export default React.forwardRef(function AnnotationCanvas({
         }
         break;
     }
-  }, [isDrawing, activeTool, activeDrawing, drawStart, screenToImage, isResizing, resizeHandle, resizeStartBox, onAnnotationsChange]);
+  }, [isDrawing, activeTool, activeDrawing, drawStart, screenToImage, isResizing, resizeHandle, resizeStartBox, onAnnotationsChange, isDragging, dragOffset, selectedId]);
 
   // Handle mouse up - Tool-Specific Architecture
   const handlePointerUp = useCallback(() => {
@@ -562,6 +626,13 @@ export default React.forwardRef(function AnnotationCanvas({
       setIsResizing(false);
       setResizeHandle(null);
       setResizeStartBox(null);
+    }
+    
+    // Reset panning state
+    if (isPanning) {
+      setIsPanning(false);
+      setPanStart(null);
+      setPanStartOffset(null);
     }
     
     // Reset dragging state
@@ -641,6 +712,7 @@ export default React.forwardRef(function AnnotationCanvas({
           // History'e ekle
           setHistory(prev => [...prev, { type: 'annotation', data: newCuboid }]);
           // Otomatik olarak yeni çizileni seç
+          console.log('[AnnotationCanvas] Cuboid completed - selecting:', newCuboid.id);
           onSelect?.(newCuboid.id);
           setActiveDrawing(null);
           setIsDrawing(false);
@@ -653,8 +725,11 @@ export default React.forwardRef(function AnnotationCanvas({
     setDrawPreview(null);
     setDrawStart(null);
     setIsDragging(false);
+    setIsPanning(false);
     setIsResizing(false);
     setDragOffset(null);
+    setPanStart(null);
+    setPanStartOffset(null);
     setResizeHandle(null);
     document.body.style.cursor = '';
   }, [activeTool, brushPoints, brushColor, drawPreview, selectedLabel, activeDrawing, onAnnotationsChange]);
@@ -1183,6 +1258,7 @@ export default React.forwardRef(function AnnotationCanvas({
             
             if ((annotation as any).type === 'cuboid') {
               const sel = (annotation as any).id === selectedId;
+              console.log('[AnnotationCanvas] Cuboid render - annotation.id:', (annotation as any).id, 'selectedId:', selectedId, 'sel:', sel);
               const color = getLabelColor((annotation as any).label);
               const { x, y, width, height, dx, dy } = annotation as any;
               
@@ -1306,7 +1382,7 @@ export default React.forwardRef(function AnnotationCanvas({
                               cursor,
                               userSelect: 'none',
                             }}
-                            pointerEvents="none" // Sadece görsel, event yok
+                            pointerEvents="auto" // Cuboid için tıklanabilir olmalı
                           />
                           {/* Visible small handle */}
                           <rect

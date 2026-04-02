@@ -108,6 +108,7 @@ export default function TaskDetailScreen() {
   const [collapsedObjects, setCollapsedObjects] = useState<Record<string, boolean>>({});
   const isSeeking = useRef(false);
   const progressBarWidth = useRef(0);
+  const canvasRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
 
   const audioUrl = task?.audio_url ?? null;
@@ -805,15 +806,30 @@ export default function TaskDetailScreen() {
               <Text style={styles.toolBtnLargeText}>Pan</Text>
             </TouchableOpacity>
             
-            {/* Select Tool */}
+            {/* Undo Button */}
             <TouchableOpacity
-              style={[styles.toolBtnLarge, activeTool === 'select' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('select'); setIsBrushActive(false); }}
+              style={[styles.toolBtnLarge, styles.undoToolBtn]}
+              onPress={() => {
+                console.log('[TaskDetail] Undo button clicked');
+                console.log('[TaskDetail] canvasRef.current:', canvasRef.current);
+                console.log('[TaskDetail] canvasRef.current?.handleUndo:', canvasRef.current?.handleUndo);
+                // AnnotationCanvas'ın handleUndo fonksiyonunu çağır
+                if (canvasRef.current?.handleUndo) {
+                  console.log('[TaskDetail] Calling handleUndo');
+                  canvasRef.current.handleUndo();
+                } else {
+                  console.log('[TaskDetail] handleUndo not found, using fallback');
+                  // Fallback: son annotation'ı sil
+                  if (annotations.length > 0) {
+                    setAnnotations(prev => prev.slice(0, -1));
+                  }
+                }
+              }}
               activeOpacity={0.8}
-              {...(isWeb ? { accessibilityLabel: 'Select', title: 'Select' } as any : {})}
+              {...(isWeb ? { accessibilityLabel: 'Undo (V)', title: 'Undo (V)' } as any : {})}
             >
-              <Ionicons name="finger-print-outline" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Select</Text>
+              <Ionicons name="arrow-undo-outline" size={20} color="#f1f5f9" />
+              <Text style={styles.toolBtnLargeText}>Undo (V)</Text>
             </TouchableOpacity>
             
             {/* Bounding Box Tool */}
@@ -936,6 +952,7 @@ export default function TaskDetailScreen() {
                 />
               )}
               <AnnotationCanvas
+                ref={canvasRef}
                 imageUrl={imageUrl ?? undefined}
                 initialAnnotations={task.annotation_data}
                 taskId={task.id}
@@ -946,6 +963,18 @@ export default function TaskDetailScreen() {
                 onSelect={setSelectedAnnotationId}
                 selectedLabel={selectedLabel}
                 isBrushActive={isBrushActive}
+                onUndo={() => {
+                  console.log('[TaskDetail] Undo button clicked');
+                  // AnnotationCanvas'ın handleUndo fonksiyonunu çağır
+                  if (canvasRef.current?.handleUndo) {
+                    canvasRef.current.handleUndo();
+                  } else {
+                    // Fallback: son annotation'ı sil
+                    if (annotations.length > 0) {
+                      setAnnotations(prev => prev.slice(0, -1));
+                    }
+                  }
+                }}
               />
             </View>
           </View>
@@ -1745,5 +1774,9 @@ const styles = StyleSheet.create({
   },
   deleteToolBtnText: {
     color: '#ef4444',
+  },
+  undoToolBtn: {
+    borderColor: '#f59e0b',
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
   },
 });

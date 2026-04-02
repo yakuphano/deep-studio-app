@@ -7,19 +7,19 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-type Tool = 'pan' | 'select' | 'bbox' | 'polygon' | 'point' | 'ellipse' | 'cuboid' | 'polyline' | 'skeleton' | 'magic_wand';
+type Tool = 'pan' | 'bbox' | 'polygon' | 'point' | 'ellipse' | 'cuboid' | 'polyline' | 'skeleton' | 'magic_wand';
 
 interface ToolbarProps {
   activeTool: Tool;
   onToolChange: (tool: Tool) => void;
   selectedAnnotationId: string | null;
   onDeleteSelected: () => void;
+  onUndo?: () => void;
   isWeb: boolean;
 }
 
 const tools: { name: string; icon: string; type: Tool }[] = [
   { name: 'Pan', icon: 'hand-right', type: 'pan' },
-  { name: 'Select', icon: 'hand-left-outline', type: 'select' },
   { name: 'BBox', icon: 'square-outline', type: 'bbox' },
   { name: 'Polygon', icon: 'resize-outline', type: 'polygon' },
   { name: 'Points', icon: 'ellipse-outline', type: 'point' },
@@ -30,7 +30,7 @@ const tools: { name: string; icon: string; type: Tool }[] = [
   { name: 'Magic Wand', icon: 'sparkles', type: 'magic_wand' },
 ];
 
-export default function Toolbar({ activeTool, onToolChange, selectedAnnotationId, onDeleteSelected, isWeb }: ToolbarProps) {
+export default function Toolbar({ activeTool, onToolChange, selectedAnnotationId, onDeleteSelected, onUndo, isWeb }: ToolbarProps) {
   return (
     <View style={styles.imageToolbar}>
       {tools.map((tool) => (
@@ -45,16 +45,27 @@ export default function Toolbar({ activeTool, onToolChange, selectedAnnotationId
           <Text style={styles.imageToolBtnText}>{tool.name}</Text>
         </TouchableOpacity>
       ))}
-      {/* Delete Button */}
+      
+      {/* First Undo Button */}
       <TouchableOpacity
-        style={[styles.imageToolBtn, styles.deleteToolBtn, { opacity: selectedAnnotationId ? 1 : 0.5 }]}
-        onPress={onDeleteSelected}
+        style={[styles.imageToolBtn, styles.undoToolBtn]}
+        onPress={onUndo}
         activeOpacity={0.8}
-        disabled={!selectedAnnotationId}
-        {...(isWeb ? { accessibilityLabel: 'Delete', title: 'Delete' } as any : {})}
+        {...(isWeb ? { accessibilityLabel: 'Undo', title: 'Undo' } as any : {})}
       >
-        <Ionicons name="trash-outline" size={16} color="#ef4444" />
-        <Text style={[styles.imageToolBtnText, styles.deleteToolBtnText]}>Delete</Text>
+        <Ionicons name="arrow-undo-outline" size={16} color="#f1f5f9" />
+        <Text style={styles.imageToolBtnText}>Undo</Text>
+      </TouchableOpacity>
+      
+      {/* Second Undo Button */}
+      <TouchableOpacity
+        style={[styles.imageToolBtn, styles.undoToolBtn]}
+        onPress={onUndo}
+        activeOpacity={0.8}
+        {...(isWeb ? { accessibilityLabel: 'Undo', title: 'Undo' } as any : {})}
+      >
+        <Ionicons name="arrow-undo-outline" size={16} color="#f1f5f9" />
+        <Text style={styles.imageToolBtnText}>Undo</Text>
       </TouchableOpacity>
     </View>
   );
@@ -95,5 +106,8 @@ const styles = StyleSheet.create({
   },
   deleteToolBtnText: {
     color: '#ef4444',
+  },
+  undoToolBtn: {
+    backgroundColor: '#059669',
   },
 });

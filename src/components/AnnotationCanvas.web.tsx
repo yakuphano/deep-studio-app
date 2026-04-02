@@ -138,8 +138,17 @@ export default React.forwardRef(function AnnotationCanvas({
       console.log('[AnnotationCanvas] Last action type:', lastAction?.type);
       
       if (lastAction?.type === 'brush') {
-        console.log('[AnnotationCanvas] Undo brush');
+        console.log('[AnnotationCanvas] Undo brush - removing from savedBrushes');
         setSavedBrushes(prev => prev.slice(0, -1));
+      } else if (lastAction?.type === 'brush_point') {
+        console.log('[AnnotationCanvas] Undo brush point');
+        // Brush'dan son noktayı geri al
+        setBrushPoints(prev => prev.slice(0, -1));
+      } else if (lastAction?.type === 'brush_start') {
+        console.log('[AnnotationCanvas] Undo brush start');
+        // Brush'ı tamamen iptal et
+        setBrushPoints([]);
+        setIsDrawing(false);
       } else if (lastAction?.type === 'annotation') {
         console.log('[AnnotationCanvas] Undo annotation');
         onAnnotationsChange?.(prev => prev.slice(0, -1));
@@ -161,9 +170,8 @@ export default React.forwardRef(function AnnotationCanvas({
         // Polygon'u tamamen iptal et
         setPolygonPoints([]);
         setIsDrawingPolygon(false);
-      } else if (lastAction?.type === 'point') {
-        console.log('[AnnotationCanvas] Undo point');
-        // Point annotation'ı geri al
+      } else {
+        console.log('[AnnotationCanvas] Default undo - remove last annotation');
         onAnnotationsChange?.(prev => prev.slice(0, -1));
       }
       
@@ -171,7 +179,7 @@ export default React.forwardRef(function AnnotationCanvas({
     } else {
       console.log('[AnnotationCanvas] No history to undo');
     }
-  }, [history, onAnnotationsChange]);
+  }, [history, onAnnotationsChange, setSavedBrushes, setPolylinePoints, setIsDrawingPolyline, setPolygonPoints, setIsDrawingPolygon, setBrushPoints, setIsDrawing]);
   
   // Expose handleUndo to parent
   useImperativeHandle(ref, () => ({
@@ -273,7 +281,7 @@ export default React.forwardRef(function AnnotationCanvas({
       // Resize kontrolü - selectedId varsa önce resize tutamacı kontrol et
       if (selectedId) {
         const selectedAnnotation = annotations.find(ann => ann.id === selectedId);
-        if (selectedAnnotation && (selectedAnnotation.type === 'bbox' || selectedAnnotation.type === 'cuboid')) {
+        if (selectedAnnotation && (selectedAnnotation.type === 'bbox' || selectedAnnotation.type === 'cuboid' || selectedAnnotation.type === 'polyline' || selectedAnnotation.type === 'brush' || selectedAnnotation.type === 'point')) {
           const handle = getHandleAt(image.x, image.y, selectedAnnotation as any);
           if (handle) {
             console.log('[AnnotationCanvas] Resize handle clicked via getHandleAt:', handle);
@@ -587,7 +595,41 @@ export default React.forwardRef(function AnnotationCanvas({
     // Tool-Specific Updates
     switch (activeTool) {
       case 'brush':
-        setBrushPoints(prev => [...prev, image]);
+        setBrushPoints(prev => {
+          const newPoints = [...prev, image];
+          // History'e sadece başlangıçta ekle, her nokta değil
+          if (prev.length === 0) {
+            setHistory(historyPrev => [...historyPrev, { type: 'brush_start', data: image }]);
+          }
+          return newPoints;
+        });
+        break;
+
+      case 'polyline':
+        if (activeDrawing) {
+          if (isDrawingPolyline && polylinePoints.length > 0) {
+            setPolylinePoints(prev => {
+              const newPoints = [...prev, image];
+              // History'e her nokta ekle
+              setHistory(historyPrev => [...historyPrev, { type: 'polyline_point', data: image }]);
+              return newPoints;
+            });
+          } else {
+            // Polyline başlat
+            const polylinePoint = image;
+            setIsDrawingPolyline(true);
+            setPolylinePoints([polylinePoint]);
+            // History'e ekle
+            setHistory(prev => [...prev, { type: 'polyline_start', data: [polylinePoint] }]);
+          }
+        } else {
+          // Polyline başlat
+          const polylinePoint = image;
+          setIsDrawingPolyline(true);
+          setPolylinePoints([polylinePoint]);
+          // History'e ekle
+          setHistory(prev => [...prev, { type: 'polyline_start', data: [polylinePoint] }]);
+        }
         break;
 
       case 'cuboid':
@@ -598,9 +640,9 @@ export default React.forwardRef(function AnnotationCanvas({
             const x = Math.min(image.x, drawStart.x);
             const y = Math.min(image.y, drawStart.y);
             setDrawPreview({ x, y, width, height });
-            setActiveDrawing(prev => ({ ...prev, x, y, width, height }));
+            setActiveDrawing(prev => ({ ...prev!, x, y, width, height }));
           } else if (activeDrawing.step === 2) {
-            setActiveDrawing(prev => ({ ...prev, dx: image.x - prev.x, dy: image.y - prev.y }));
+            setActiveDrawing(prev => ({ ...prev!, dx: image.x - (prev?.x || 0), dy: image.y - (prev?.y || 0) }));
           }
         }
         break;
@@ -770,7 +812,53 @@ export default React.forwardRef(function AnnotationCanvas({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, annotations, onAnnotationsChange, onSelect, activeTool, brushPoints, brushColor, isPaletteOpen]);
+  }, [selectedId, annotations, onAnnotationsChange, onSelect]);
+
+  // Global passive olmayan wheel event listener - son çözüm
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // Zoom control with limits (Min: 0.1, Max: 5)
+      const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      const newScale = Math.max(0.1, Math.min(5, scale * scaleFactor));
+      
+      if (newScale !== scale) {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        
+        // Cursor position relative to container
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        // Image-space point under cursor before zoom
+        const imageX = (mouseX - offset.x) / scale;
+        const imageY = (mouseY - offset.y) / scale;
+        
+        // New offset to keep cursor position stable
+        const newOffsetX = mouseX - imageX * newScale;
+        const newOffsetY = mouseY - imageY * newScale;
+        
+        console.log('[AnnotationCanvas] Zoom - scale:', scale, '->', newScale);
+        console.log('[AnnotationCanvas] Zoom - mouse:', { mouseX, mouseY });
+        console.log('[AnnotationCanvas] Zoom - image point:', { imageX, imageY });
+        console.log('[AnnotationCanvas] Zoom - old offset:', { x: offset.x, y: offset.y });
+        console.log('[AnnotationCanvas] Zoom - new offset:', { x: newOffsetX, y: newOffsetY });
+        
+        setScale(newScale);
+        setOffset({ x: newOffsetX, y: newOffsetY });
+      }
+    };
+
+    // Global passive olmayan wheel event listener ekle
+    window.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('wheel', handleWheel, { capture: true } as any);
+    };
+  }, [scale, offset]);
 
   return (
     <View style={styles.container}>
@@ -780,12 +868,10 @@ export default React.forwardRef(function AnnotationCanvas({
           position: 'relative',
           width: '100%',
           height: '100%',
-          overflow: 'hidden', // Critical: prevent scrolling
-          backgroundColor: '#1e293b',
+          overflow: 'hidden', // Sayfa scroll'u engelle
+          touchAction: 'none', // Touch ve wheel action'ları engelle
         }}
-        onContextMenu={(e) => e.preventDefault()}
       >
-        {/* Brush Color Picker - Toolbar entegrasyonu */}
         <div
           style={{
             position: 'absolute',
@@ -930,7 +1016,7 @@ export default React.forwardRef(function AnnotationCanvas({
             top: 0,
             width: imageSize?.w || '100%',
             height: imageSize?.h || '100%',
-            cursor: activeTool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : (activeTool === 'bbox' || activeTool === 'points' ? 'crosshair' : 'default'),
+            cursor: (activeTool as any) === 'pan' ? (isPanning ? 'grabbing' : 'grab') : ((activeTool as any) === 'bbox' || (activeTool as any) === 'points' ? 'crosshair' : 'default'),
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
             transformOrigin: '0 0',
             pointerEvents: 'auto', // Always auto to allow resize handles
@@ -958,7 +1044,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     style={{
                       vectorEffect: 'non-scaling-stroke',
                       pointerEvents: 'auto',
-                      cursor: activeTool === 'select' ? 'move' : 'default',
+                      cursor: (activeTool as any) === 'select' ? 'move' : 'default',
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -1086,7 +1172,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     strokeWidth={3} // Increased thickness for better visibility
                     fill="none"
                     style={{
-                      cursor: activeTool === 'select' ? 'move' : 'default',
+                      cursor: (activeTool as any) === 'select' ? 'move' : 'default',
                       vectorEffect: 'non-scaling-stroke', // Prevent thinning on zoom
                       filter: 'drop-shadow(0px 0px 2px rgba(0,0,0,0.5))', // Shadow for contrast
                       pointerEvents: 'auto', // Override group's pointerEvents
@@ -1217,7 +1303,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     style={{
                       vectorEffect: 'non-scaling-stroke',
                       pointerEvents: 'auto',
-                      cursor: activeTool === 'select' ? 'move' : 'default',
+                      cursor: (activeTool as any) === 'select' ? 'move' : 'default',
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -1440,7 +1526,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     style={{
                       vectorEffect: 'non-scaling-stroke',
                       pointerEvents: 'auto',
-                      cursor: activeTool === 'select' ? 'pointer' : 'default',
+                      cursor: (activeTool as any) === 'select' ? 'pointer' : 'default',
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -1567,8 +1653,8 @@ export default React.forwardRef(function AnnotationCanvas({
                     
                     {/* Back Face */}
                     <rect
-                      x={x + dx}
-                      y={y + dy}
+                      x={x + (dx || 0)}
+                      y={y + (dy || 0)}
                       width={width}
                       height={height}
                       stroke="green"
@@ -1597,10 +1683,10 @@ export default React.forwardRef(function AnnotationCanvas({
                     />
                     {/* 2. Sağ Üst: (x+w,y)->(x+w+dx,y+dy) */}
                     <line
-                      x1={x + width}
-                      y1={y}
-                      x2={x + width + dx}
-                      y2={y + dy}
+                      x1={(x || 0) + (width || 0)}
+                      y1={y || 0}
+                      x2={(x || 0) + (width || 0) + (dx || 0)}
+                      y2={(y || 0) + (dy || 0)}
                       stroke="green"
                       strokeWidth={2}
                       strokeDasharray="5 5"
@@ -1610,10 +1696,10 @@ export default React.forwardRef(function AnnotationCanvas({
                     />
                     {/* 3. Sol Alt: (x,y+h)->(x+dx,y+h+dy) */}
                     <line
-                      x1={x}
-                      y1={y + height}
-                      x2={x + dx}
-                      y2={y + height + dy}
+                      x1={x || 0}
+                      y1={(y || 0) + (height || 0)}
+                      x2={(dx || 0)}
+                      y2={(y || 0) + (height || 0) + (dy || 0)}
                       stroke="green"
                       strokeWidth={2}
                       strokeDasharray="5 5"
@@ -1623,10 +1709,10 @@ export default React.forwardRef(function AnnotationCanvas({
                     />
                     {/* 4. Sağ Alt: (x+w,y+h)->(x+w+dx,y+h+dy) */}
                     <line
-                      x1={x + width}
-                      y1={y + height}
-                      x2={x + width + dx}
-                      y2={y + height + dy}
+                      x1={(x || 0) + (width || 0)}
+                      y1={(y || 0) + (height || 0)}
+                      x2={(x || 0) + (width || 0) + (dx || 0)}
+                      y2={(y || 0) + (height || 0) + (dy || 0)}
                       stroke="green"
                       strokeWidth={2}
                       strokeDasharray="5 5"
@@ -1655,11 +1741,11 @@ export default React.forwardRef(function AnnotationCanvas({
               <rect x={activeDrawing.x} y={activeDrawing.y} width={activeDrawing.width} height={activeDrawing.height} />
               {activeDrawing.step === 2 && (
                 <>
-                  <rect x={activeDrawing.x + activeDrawing.dx} y={activeDrawing.y + activeDrawing.dy} width={activeDrawing.width} height={activeDrawing.height} />
-                  <line x1={activeDrawing.x} y1={activeDrawing.y} x2={activeDrawing.x + activeDrawing.dx} y2={activeDrawing.y + activeDrawing.dy} />
-                  <line x1={activeDrawing.x + activeDrawing.width} y1={activeDrawing.y} x2={activeDrawing.x + activeDrawing.width + activeDrawing.dx} y2={activeDrawing.y + activeDrawing.dy} />
-                  <line x1={activeDrawing.x} y1={activeDrawing.y + activeDrawing.height} x2={activeDrawing.x + activeDrawing.dx} y2={activeDrawing.y + activeDrawing.height + activeDrawing.dy} />
-                  <line x1={activeDrawing.x} y1={activeDrawing.y + activeDrawing.height} x2={activeDrawing.x + activeDrawing.width + activeDrawing.dx} y2={activeDrawing.y + activeDrawing.height + activeDrawing.dy} />
+                  <rect x={(activeDrawing.x || 0) + (activeDrawing.dx || 0)} y={(activeDrawing.y || 0) + (activeDrawing.dy || 0)} width={activeDrawing.width || 0} height={activeDrawing.height || 0} />
+                  <line x1={activeDrawing.x || 0} y1={activeDrawing.y || 0} x2={(activeDrawing.x || 0) + (activeDrawing.dx || 0)} y2={(activeDrawing.y || 0) + (activeDrawing.dy || 0)} />
+                  <line x1={(activeDrawing.x || 0) + (activeDrawing.width || 0)} y1={activeDrawing.y || 0} x2={(activeDrawing.x || 0) + (activeDrawing.width || 0) + (activeDrawing.dx || 0)} y2={(activeDrawing.y || 0) + (activeDrawing.dy || 0)} />
+                  <line x1={activeDrawing.x || 0} y1={(activeDrawing.y || 0) + (activeDrawing.height || 0)} x2={(activeDrawing.x || 0) + (activeDrawing.dx || 0)} y2={(activeDrawing.y || 0) + (activeDrawing.height || 0) + (activeDrawing.dy || 0)} />
+                  <line x1={activeDrawing.x || 0} y1={(activeDrawing.y || 0) + (activeDrawing.height || 0)} x2={(activeDrawing.x || 0) + (activeDrawing.width || 0) + (activeDrawing.dx || 0)} y2={(activeDrawing.y || 0) + (activeDrawing.height || 0) + (activeDrawing.dy || 0)} />
                 </>
               )}
             </g>
@@ -1720,7 +1806,7 @@ export default React.forwardRef(function AnnotationCanvas({
           {savedBrushes.map((brush) => (
             <polyline
               key={brush.id}
-              points={brush.points.map(p => `${p.x},${p.y}`).join(' ')}
+              points={brush.points.map((p: any) => `${p.x},${p.y}`).join(' ')}
               fill="none"
               stroke={brush.color}
               strokeWidth={10 / scale}
@@ -1810,7 +1896,7 @@ export default React.forwardRef(function AnnotationCanvas({
             top: 0,
             width: '100%', // Full container width
             height: '100%', // Full container height
-            cursor: activeTool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : (activeTool === 'bbox' || activeTool === 'points' ? 'crosshair' : 'default'),
+            cursor: (activeTool as any) === 'pan' ? (isPanning ? 'grabbing' : 'grab') : ((activeTool as any) === 'bbox' || (activeTool as any) === 'points' ? 'crosshair' : 'default'),
             touchAction: 'none',
             pointerEvents: 'auto', // ALWAYS ACTIVE - manages all events
           }}
@@ -1887,33 +1973,6 @@ export default React.forwardRef(function AnnotationCanvas({
                 const lastPointAnnotation = pointAnnotations[pointAnnotations.length - 1];
                 onAnnotationsChange?.(annotations.filter((ann: any) => ann.id !== lastPointAnnotation.id));
               }
-            }
-          }}
-          onWheel={(e) => {
-            e.preventDefault(); // Prevent page scroll
-            
-            // Zoom control with limits (Min: 0.1, Max: 5)
-            const scaleFactor = e.deltaY < 0 ? 1.1 : 0.9;
-            const newScale = Math.max(0.1, Math.min(5, scale * scaleFactor));
-            
-            if (newScale !== scale) {
-              const rect = containerRef.current?.getBoundingClientRect();
-              if (!rect) return;
-              
-              // Cursor position relative to container
-              const mouseX = e.clientX - rect.left;
-              const mouseY = e.clientY - rect.top;
-              
-              // Image-space point under cursor before zoom
-              const imageX = (mouseX - offset.x) / scale;
-              const imageY = (mouseY - offset.y) / scale;
-              
-              // New offset to keep same image point under cursor
-              const newOffsetX = mouseX - imageX * newScale;
-              const newOffsetY = mouseY - imageY * newScale;
-              
-              setScale(newScale);
-              setOffset({ x: newOffsetX, y: newOffsetY });
             }
           }}
         />

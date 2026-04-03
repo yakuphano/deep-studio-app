@@ -814,8 +814,11 @@ export default React.forwardRef(function AnnotationCanvas({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedId, annotations, onAnnotationsChange, onSelect]);
 
-  // Global passive olmayan wheel event listener - son çözüm
+  // Canvas üzerinde wheel event listener - sadece canvas üzerinde zoom yap
   useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -825,8 +828,7 @@ export default React.forwardRef(function AnnotationCanvas({
       const newScale = Math.max(0.1, Math.min(5, scale * scaleFactor));
       
       if (newScale !== scale) {
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (!rect) return;
+        const rect = container.getBoundingClientRect();
         
         // Cursor position relative to container
         const mouseX = e.clientX - rect.left;
@@ -851,12 +853,12 @@ export default React.forwardRef(function AnnotationCanvas({
       }
     };
 
-    // Global passive olmayan wheel event listener ekle
-    window.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+    // Sadece container üzerinde wheel event listener ekle
+    container.addEventListener('wheel', handleWheel, { passive: false });
 
     // Cleanup
     return () => {
-      window.removeEventListener('wheel', handleWheel, { capture: true } as any);
+      container.removeEventListener('wheel', handleWheel);
     };
   }, [scale, offset]);
 
@@ -883,6 +885,59 @@ export default React.forwardRef(function AnnotationCanvas({
             alignItems: 'center',
           }}
         >
+          {/* Reset/Center Butonu */}
+          <button
+            onClick={() => {
+              // Resmi ekrana sığdıracak şekilde hesapla
+              const container = containerRef.current;
+              const img = imgRef.current;
+              if (!container || !img) return;
+              
+              const naturalWidth = img.naturalWidth;
+              const naturalHeight = img.naturalHeight;
+              
+              const containerRect = container.getBoundingClientRect();
+              const scaleX = containerRect.width / naturalWidth;
+              const scaleY = containerRect.height / naturalHeight;
+              const initialScale = Math.min(scaleX, scaleY, 1);
+              
+              const offsetX = (containerRect.width - naturalWidth * initialScale) / 2;
+              const offsetY = (containerRect.height - naturalHeight * initialScale) / 2;
+              
+              setScale(initialScale);
+              setOffset({ x: offsetX, y: offsetY });
+              console.log('[AnnotationCanvas] View reset to center - scale:', initialScale, 'offset:', { x: offsetX, y: offsetY });
+            }}
+            style={{
+              width: '32px',
+              height: '32px',
+              backgroundColor: '#2563eb',
+              border: '2px solid white',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s ease',
+            }}
+            title="Görünümü sıfırla - Resmi ortala"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M1 4v6h6M23 20v-6h-6"/>
+              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+            </svg>
+          </button>
+          
           {/* Toolbar Butonu ve Palet Kapsayıcısı */}
           <div style={{ position: 'relative' }}>
             {/* Toolbar Butonu */}

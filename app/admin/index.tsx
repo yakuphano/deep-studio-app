@@ -108,10 +108,11 @@ export default function AdminPanelScreen() {
   const [pickedFileName, setPickedFileName] = useState<string | null>(null);
   const [pickedMimeType, setPickedMimeType] = useState<string | null>(null);
   const [showTaskForm, setShowTaskForm] = useState(false);
-  const [taskType, setTaskType] = useState<'audio' | 'image'>('audio');
+  const [taskType, setTaskType] = useState<'audio' | 'image' | 'video'>('audio');
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [imageUploading, setImageUploading] = useState(false);
   const uploadedUrlRef = useRef<string>('');
+  const [videoFiles, setVideoFiles] = useState<DocumentPicker.DocumentPickerAsset[]>([]);
   const [recentTasks, setRecentTasks] = useState<Array<{ id: string; title: string; category?: string | null; image_url?: string | null }>>([]);
   const [userEarnings, setUserEarnings] = useState<Record<string, number>>({});
   const [annotatorSearchQuery, setAnnotatorSearchQuery] = useState('');
@@ -562,8 +563,23 @@ export default function AdminPanelScreen() {
     processMultipleFiles(files, 'image');
   };
 
+  const handleVideoUpload = async () => {
+    const result = await DocumentPicker.getDocumentAsync({ type: 'video/*', copyToCacheDirectory: true });
+    if (result.canceled) return;
+    
+    const files = result.assets || [];
+    if (files.length === 0) return;
+    
+    setVideoFiles(files);
+    setUploadProgress({ current: 0, total: files.length });
+    setUploadErrors([]);
+    
+    // Start processing multiple files
+    processMultipleFiles(files, 'video');
+  };
+
   // Unified multiple file processing function
-  const processMultipleFiles = async (files: DocumentPicker.DocumentPickerAsset[], fileType: 'audio' | 'image') => {
+  const processMultipleFiles = async (files: DocumentPicker.DocumentPickerAsset[], fileType: 'audio' | 'image' | 'video') => {
     setUploading(true);
     setUploadStatus('Dosyalar yükleniyor...');
     
@@ -618,6 +634,44 @@ export default function AdminPanelScreen() {
               assigned_to: null,
               client_name: clientName || 'Admin Upload',
               image_url: publicUrl,
+            };
+            
+            const { error: taskError } = await supabase.from('tasks').insert(taskData);
+            if (taskError) throw taskError;
+            
+          } else if (fileType === 'video') {
+            // Process video file
+            const res = await fetch(file.uri);
+            const blob = await res.blob();
+            const mimeType = file.mimeType ?? 'video/mp4';
+            const ext = mimeType.includes('mov') ? 'mov' : mimeType.includes('avi') ? 'avi' : mimeType.includes('webm') ? 'webm' : 'mp4';
+            const fileName = (file.name || 'video').replace(/[^a-zA-Z0-9._-]/g, '_');
+            const uniquePath = `videos/${Date.now()}_${fileName}.${ext}`;
+            
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('task-assets')
+              .upload(uniquePath, blob, { contentType: mimeType, upsert: true });
+            
+            if (uploadError) throw uploadError;
+            
+            // Get public URL
+            const { data: urlData } = supabase.storage.from('task-assets').getPublicUrl(uploadData.path);
+            const publicUrl = urlData?.publicUrl ?? '';
+            
+            if (!publicUrl) throw new Error('Public URL alınamadı');
+            
+            // Create task in database
+            const taskData = {
+              title: title || `Video Task - ${fileName}`,
+              status: 'pending',
+              type: 'video',
+              category: 'video',
+              price: parseFloat(taskPrice) || 10,
+              language: selectedLanguage || 'tr',
+              is_pool_task: true,
+              assigned_to: null,
+              client_name: clientName || 'Admin Upload',
+              image_url: publicUrl, // Video URL'si image_url alanında saklanacak
             };
             
             const { error: taskError } = await supabase.from('tasks').insert(taskData);
@@ -711,6 +765,8 @@ export default function AdminPanelScreen() {
       // Reset form
       if (fileType === 'image') {
         setMultipleFiles([]);
+      } else if (fileType === 'video') {
+        setVideoFiles([]);
       } else {
         setAudioMultipleFiles([]);
       }
@@ -841,6 +897,66 @@ export default function AdminPanelScreen() {
           window.alert('Görev Başarıyla Oluşturuldu');
         } else {
           Alert.alert(t('taskDetail.successTitle'), 'Görev Başarıyla Oluşturuldu');
+        }
+        setTitle('');
+        setTaskPrice('10');
+        setClientName('');
+        setImageUrlInput('');
+        uploadedUrlRef.current = '';
+        setShowTaskForm(false);
+        return;
+      }
+
+      if (taskType === 'video') {
+        const videoUrl = (imageUrlInput ?? '').trim();
+
+        if (!videoUrl || videoUrl.length === 0) {
+          const msg = 'Video görevi için video URL gerekli. Lütfen bir video URL girin.';
+          if (typeof window !== 'undefined') {
+            window.alert(msg);
+          } else {
+            Alert.alert(t('login.errorTitle'), msg);
+          }
+          setSubmitting(false);
+          return;
+        }
+
+        const taskData: Record<string, unknown> = {
+          title: title.trim(),
+          status: 'pending',
+          type: 'video',
+          category: 'video',
+          image_url: videoUrl, // Video URL'si image_url alanında saklanacak
+          audio_url: '',
+          transcription: '',
+          price: priceNum,
+          language: langToSave,
+          is_pool_task: isPool,
+          assigned_to: isPool ? null : selectedUser?.id ?? null,
+          client_name: clientName.trim() || null,
+        };
+        console.log('Task Data to Send:', taskData);
+        console.log('[Admin] Creating video task:', taskData);
+        const { error: insertError } = await supabase.from('tasks').insert(taskData);
+        if (insertError) {
+          console.error('[Admin] Video görev insert hatası:', insertError);
+          console.error('[Admin] Gönderilen veri:', taskData);
+          const errMsg = insertError.message ?? 'Görev oluşturulamadı.';
+          if (typeof window !== 'undefined') {
+            window.alert('Hata: ' + errMsg);
+          } else {
+            Alert.alert(t('login.errorTitle'), errMsg);
+          }
+          setSubmitting(false);
+          return;
+        }
+        fetchClientNames();
+        fetchRecentTasks();
+        fetchDashboardStats();
+        if (typeof window !== 'undefined') {
+          window.alert('Video Görevi Başarıyla Oluşturuldu');
+        } else {
+          Alert.alert(t('taskDetail.successTitle'), 'Video Görevi Başarıyla Oluşturuldu');
         }
         setTitle('');
         setTaskPrice('10');
@@ -1141,6 +1257,13 @@ export default function AdminPanelScreen() {
                 <Ionicons name="image" size={18} color={taskType === 'image' ? '#fff' : '#94a3b8'} />
                 <Text style={[styles.taskTypeChipText, taskType === 'image' && styles.taskTypeChipTextActive]}>Görsel</Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.taskTypeChip, taskType === 'video' && styles.taskTypeChipActive]}
+                onPress={() => setTaskType('video')}
+              >
+                <Ionicons name="videocam" size={18} color={taskType === 'video' ? '#fff' : '#94a3b8'} />
+                <Text style={[styles.taskTypeChipText, taskType === 'video' && styles.taskTypeChipTextActive]}>Video</Text>
+              </TouchableOpacity>
             </View>
             <Text style={styles.label}>{t('admin.taskTitle')}</Text>
             <TextInput style={styles.input} placeholder={t('admin.taskTitlePlaceholder')} placeholderTextColor="#64748b" value={title} onChangeText={setTitle} />
@@ -1148,18 +1271,23 @@ export default function AdminPanelScreen() {
             <TextInput style={styles.input} placeholder="10" placeholderTextColor="#64748b" value={taskPrice} onChangeText={setTaskPrice} keyboardType="numeric" />
             <Text style={styles.label}>{t('admin.clientName')}</Text>
             <TextInput style={styles.input} placeholder={t('admin.clientNamePlaceholder')} placeholderTextColor="#64748b" value={clientName} onChangeText={setClientName} />
-            <Text style={styles.label}>{t('admin.taskLanguage')}</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.langChips}>
-              {TASK_LANGUAGES.filter((l) => l.code !== 'unspecified').map((lang) => (
-                <TouchableOpacity
-                  key={lang.code}
-                  style={[styles.langChip, selectedLanguage === lang.code && styles.langChipActive]}
-                  onPress={() => setSelectedLanguage(lang.code)}
-                >
-                  <Text style={[styles.langChipText, selectedLanguage === lang.code && styles.langChipTextActive]}>{t(lang.labelKey)}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            {/* Dil seçeneği sadece ses görevleri için gösterilir */}
+            {taskType === 'audio' && (
+              <>
+                <Text style={styles.label}>{t('admin.taskLanguage')}</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.langChips}>
+                  {TASK_LANGUAGES.filter((l) => l.code !== 'unspecified').map((lang) => (
+                    <TouchableOpacity
+                      key={lang.code}
+                      style={[styles.langChip, selectedLanguage === lang.code && styles.langChipActive]}
+                      onPress={() => setSelectedLanguage(lang.code)}
+                    >
+                      <Text style={[styles.langChipText, selectedLanguage === lang.code && styles.langChipTextActive]}>{t(lang.labelKey)}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            )}
             <Text style={styles.label}>{t('admin.selectEmployee')}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.userScroll}>
               {displayUsers.map((u) => (
@@ -1216,6 +1344,57 @@ export default function AdminPanelScreen() {
                     </View>
                   )}
                 </View>
+              </>
+            ) : taskType === 'video' ? (
+              <>
+                <Text style={styles.label}>Video Yükle veya URL Gir</Text>
+                <View style={styles.imageUploadRow}>
+                  <TouchableOpacity style={styles.uploadImageBtn} onPress={handleVideoUpload} disabled={uploading}>
+                    <>
+                      {uploading ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Ionicons name="folder-open" size={18} color="#fff" />
+                      )}
+                      <Text style={styles.uploadImageBtnText}>
+                        {uploading ? 'İşleniyor...' : 'Video Dosya Seç'}
+                      </Text>
+                    </>
+                  </TouchableOpacity>
+                  <TextInput
+                    style={styles.imageUrlInput}
+                    placeholder="Veya video URL girin"
+                    placeholderTextColor="#64748b"
+                    value={imageUrlInput}
+                    onChangeText={setImageUrlInput}
+                  />
+                </View>
+                
+                {/* Progress Display for Video Files */}
+                {videoFiles && videoFiles.length > 0 && (
+                  <View style={styles.selectedFilesContainer}>
+                    <Text style={styles.selectedFilesTitle}>Seçilen Video Dosyaları ({videoFiles.length}):</Text>
+                    {videoFiles.slice(0, 5).map((file, index) => (
+                      <Text key={index} style={styles.fileNameText}>• {file.name}</Text>
+                    ))}
+                    {videoFiles.length > 5 && (
+                      <Text style={styles.fileNameText}>... ve {videoFiles.length - 5} dosya daha</Text>
+                    )}
+                  </View>
+                )}
+                
+                {/* Upload Progress for Video */}
+                {uploading && videoFiles && videoFiles.length > 0 && (
+                  <View style={styles.queueProgressContainer}>
+                    <Text style={styles.queueProgressText}>{uploadStatus}</Text>
+                    <View style={styles.queueProgressBar}>
+                      <View style={[styles.queueProgressBarFill, { width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }]} />
+                    </View>
+                    <Text style={styles.queueProgressPercent}>
+                      {uploadProgress.current}/{uploadProgress.total} dosya
+                    </Text>
+                  </View>
+                )}
               </>
             ) : (
               <>
@@ -1341,14 +1520,19 @@ export default function AdminPanelScreen() {
               <Text style={[styles.exportLabel, { marginBottom: 8 }]}>Export Format: YOLO (.txt)</Text>
             )}
             <View style={styles.exportField}>
-              <Text style={styles.exportLabel}>{t('admin.exportLanguage')}</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.exportChips}>
-                {['all', ...TASK_LANGUAGES.filter((l) => l.code !== 'unspecified').map((l) => l.code)].map((lang) => (
-                  <TouchableOpacity key={lang} style={[styles.exportChip, exportLang === lang && styles.exportChipActive]} onPress={() => setExportLang(lang)}>
-                    <Text style={[styles.exportChipText, exportLang === lang && styles.exportChipTextActive]} numberOfLines={1}>{lang === 'all' ? 'Tümü' : t(`languages.${lang}`)}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              {/* Dil seçeneği sadece ses görevleri için gösterilir */}
+              {exportTaskType === 'audio' && (
+                <>
+                  <Text style={styles.exportLabel}>{t('admin.exportLanguage')}</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.exportChips}>
+                    {['all', ...TASK_LANGUAGES.filter((l) => l.code !== 'unspecified').map((l) => l.code)].map((lang) => (
+                      <TouchableOpacity key={lang} style={[styles.exportChip, exportLang === lang && styles.exportChipActive]} onPress={() => setExportLang(lang)}>
+                        <Text style={[styles.exportChipText, exportLang === lang && styles.exportChipTextActive]} numberOfLines={1}>{lang === 'all' ? 'Tümü' : t(`languages.${lang}`)}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </>
+              )}
             </View>
             <View style={styles.exportField}>
               <Text style={styles.exportLabel}>{t('admin.exportClient')}</Text>

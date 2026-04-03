@@ -288,11 +288,13 @@
     "selectTaskType": "Görev Seçimi",
     "cardAudioTranscription": "Ses Transkripsiyonu",
     "cardImageAnnotation": "Görsel Etiketleme",
+    "cardVideoAnnotation": "Video Etiketleme",
     "listenToAudio": "Sesi Dinle",
     "transcribeHere": "Metne Dök",
     "pageTitle": "Görevlerim",
     "pageTitleTranscription": "Ses Transkripsiyon Görevleri",
     "pageTitleImage": "Görsel Etiketleme Görevleri",
+    "pageTitleVideo": "Video Etiketleme Görevleri",
     "free": "Ücretsiz"
   },
   "annotation": {

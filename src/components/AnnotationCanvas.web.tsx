@@ -425,19 +425,35 @@ export default React.forwardRef(function AnnotationCanvas({
                 Math.pow(newPoint.y - firstPoint.y, 2)
               );
               
-              if (distance < 10) {
-                const newPolygon = {
-                  id: `polygon-${Date.now()}`,
-                  type: 'polygon',
-                  points: polygonPoints,
-                  label: '',
-                };
-                onAnnotationsChange(prev => [...prev, newPolygon]);
-                // History'e ekle
-                setHistory(prev => [...prev, { type: 'annotation', data: newPolygon }]);
-                setIsDrawingPolygon(false);
-                setPolygonPoints([]);
-                return;
+              // Check if polygon is complete (near first point) and within bounds
+              if (distance < 15) {
+                // Check if all polygon points are within image bounds
+                const withinBounds = imageSize && polygonPoints.every(point => 
+                  point.x >= 0 && 
+                  point.y >= 0 && 
+                  point.x <= imageSize.w && 
+                  point.y <= imageSize.h
+                );
+                
+                if (withinBounds) {
+                  const newPolygon = {
+                    id: `polygon-${Date.now()}`,
+                    type: 'polygon',
+                    points: polygonPoints,
+                    label: '',
+                  };
+                  onAnnotationsChange(prev => [...prev, newPolygon]);
+                  // History'e ekle
+                  setHistory(prev => [...prev, { type: 'annotation', data: newPolygon }]);
+                  setIsDrawingPolygon(false);
+                  setPolygonPoints([]);
+                  return;
+                } else {
+                  console.log('[AnnotationCanvas] Polygon outside image bounds, not saving');
+                  setIsDrawingPolygon(false);
+                  setPolygonPoints([]);
+                  return;
+                }
               }
             }
             
@@ -707,36 +723,58 @@ export default React.forwardRef(function AnnotationCanvas({
 
       case 'bbox':
         if (drawPreview && drawPreview.width > MIN_BOX_SIZE) {
-          const newBbox = { 
-            id: `bbox-${Date.now()}`, 
-            type: 'bbox', 
-            ...drawPreview, 
-            label: '' 
-          };
-          onAnnotationsChange(prev => [...prev, newBbox]);
-          // History'e ekle
-          setHistory(prev => [...prev, { type: 'annotation', data: newBbox }]);
-          // Otomatik olarak yeni çizileni seç
-          onSelect?.(newBbox.id);
+          // Check if bbox is within image bounds
+          const withinBounds = imageSize && 
+            drawPreview.x >= 0 && 
+            drawPreview.y >= 0 && 
+            drawPreview.x + drawPreview.width <= imageSize.w && 
+            drawPreview.y + drawPreview.height <= imageSize.h;
+          
+          if (withinBounds) {
+            const newBbox = { 
+              id: `bbox-${Date.now()}`, 
+              type: 'bbox', 
+              ...drawPreview, 
+              label: '' 
+            };
+            onAnnotationsChange(prev => [...prev, newBbox]);
+            // History'e ekle
+            setHistory(prev => [...prev, { type: 'annotation', data: newBbox }]);
+            // Otomatik olarak yeni çizileni seç
+            onSelect?.(newBbox.id);
+          } else {
+            console.log('[AnnotationCanvas] Bbox outside image bounds, not saving');
+          }
         }
         break;
 
       case 'ellipse':
         if (drawPreview && drawPreview.width > MIN_BOX_SIZE) {
-          const newEllipse = { 
-            id: `ellipse-${Date.now()}`, 
-            type: 'ellipse',
-            cx: drawPreview.x + drawPreview.width / 2,
-            cy: drawPreview.y + drawPreview.height / 2,
-            rx: drawPreview.width / 2,
-            ry: drawPreview.height / 2,
-            label: ''
-          };
-          onAnnotationsChange(prev => [...prev, newEllipse]);
-          // History'e ekle
-          setHistory(prev => [...prev, { type: 'annotation', data: newEllipse }]);
-          // Otomatik olarak yeni çizileni seç
-          onSelect?.(newEllipse.id);
+          // Check if ellipse is within image bounds
+          const withinBounds = imageSize && 
+            drawPreview.x >= 0 && 
+            drawPreview.y >= 0 && 
+            drawPreview.x + drawPreview.width <= imageSize.w && 
+            drawPreview.y + drawPreview.height <= imageSize.h;
+          
+          if (withinBounds) {
+            const newEllipse = { 
+              id: `ellipse-${Date.now()}`, 
+              type: 'ellipse',
+              cx: drawPreview.x + drawPreview.width / 2,
+              cy: drawPreview.y + drawPreview.height / 2,
+              rx: drawPreview.width / 2,
+              ry: drawPreview.height / 2,
+              label: ''
+            };
+            onAnnotationsChange(prev => [...prev, newEllipse]);
+            // History'e ekle
+            setHistory(prev => [...prev, { type: 'annotation', data: newEllipse }]);
+            // Otomatik olarak yeni çizileni seç
+            onSelect?.(newEllipse.id);
+          } else {
+            console.log('[AnnotationCanvas] Ellipse outside image bounds, not saving');
+          }
         }
         break;
 
@@ -746,20 +784,33 @@ export default React.forwardRef(function AnnotationCanvas({
           setDrawPreview(null);
           return; // RESETLEME YAPMA, sadece step 2'ye geç, setIsDrawing false yapma
         } else if (activeDrawing?.step === 2) {
-          const newCuboid = { 
-            ...activeDrawing, 
-            id: `cuboid-${Date.now()}`, 
-            type: 'cuboid', 
-            label: '' 
-          };
-          onAnnotationsChange(prev => [...prev, newCuboid]);
-          // History'e ekle
-          setHistory(prev => [...prev, { type: 'annotation', data: newCuboid }]);
-          // Otomatik olarak yeni çizileni seç
-          console.log('[AnnotationCanvas] Cuboid completed - selecting:', newCuboid.id);
-          onSelect?.(newCuboid.id);
-          setActiveDrawing(null);
-          setIsDrawing(false);
+          // Check if cuboid is within image bounds
+          const withinBounds = imageSize && 
+            activeDrawing.x >= 0 && 
+            activeDrawing.y >= 0 && 
+            activeDrawing.x + activeDrawing.width <= imageSize.w && 
+            activeDrawing.y + activeDrawing.height <= imageSize.h;
+          
+          if (withinBounds) {
+            const newCuboid = { 
+              ...activeDrawing, 
+              id: `cuboid-${Date.now()}`, 
+              type: 'cuboid', 
+              label: '' 
+            };
+            onAnnotationsChange(prev => [...prev, newCuboid]);
+            // History'e ekle
+            setHistory(prev => [...prev, { type: 'annotation', data: newCuboid }]);
+            // Otomatik olarak yeni çizileni seç
+            console.log('[AnnotationCanvas] Cuboid completed - selecting:', newCuboid.id);
+            onSelect?.(newCuboid.id);
+            setActiveDrawing(null);
+            setIsDrawing(false);
+          } else {
+            console.log('[AnnotationCanvas] Cuboid outside image bounds, not saving');
+            setActiveDrawing(null);
+            setIsDrawing(false);
+          }
         }
         break;
     }
@@ -1988,15 +2039,29 @@ export default React.forwardRef(function AnnotationCanvas({
             
             // Handle polyline completion - finish polyline with double click
             if (activeTool === 'polyline' && isDrawingPolyline && polylinePoints.length >= 2) {
-              const newPolyline: PolylineAnnotation = {
-                id: `polyline-${Date.now()}`,
-                type: 'polyline',
-                points: polylinePoints,
-                label: '',
-              };
-              onAnnotationsChange([...annotations, newPolyline]);
-              setIsDrawingPolyline(false);
-              setPolylinePoints([]);
+              // Check if all polyline points are within image bounds
+              const withinBounds = imageSize && polylinePoints.every(point => 
+                point.x >= 0 && 
+                point.y >= 0 && 
+                point.x <= imageSize.w && 
+                point.y <= imageSize.h
+              );
+              
+              if (withinBounds) {
+                const newPolyline: PolylineAnnotation = {
+                  id: `polyline-${Date.now()}`,
+                  type: 'polyline',
+                  points: polylinePoints,
+                  label: '',
+                };
+                onAnnotationsChange([...annotations, newPolyline]);
+                setIsDrawingPolyline(false);
+                setPolylinePoints([]);
+              } else {
+                console.log('[AnnotationCanvas] Polyline outside image bounds, not saving');
+                setIsDrawingPolyline(false);
+                setPolylinePoints([]);
+              }
             }
             
             // Polyline undo - son noktayı sil

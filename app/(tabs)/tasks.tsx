@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 
-type TaskType = 'transcription' | 'image';
+type TaskType = 'transcription' | 'image' | 'video';
 
 function TaskSelectionCards({
   onSelect,
@@ -51,6 +51,19 @@ function TaskSelectionCards({
             <Text style={styles.cardLabel}>{t('tasks.cardImageAnnotation')}</Text>
             <Text style={styles.cardHint}>BBox • Polygon • Segmentation</Text>
           </TouchableOpacity>
+          
+          {/* Video Annotation Card */}
+          <TouchableOpacity
+            style={styles.selectionCard}
+            onPress={() => onSelect('video')}
+            activeOpacity={0.9}
+          >
+            <View style={styles.cardIcon}>
+              <Ionicons name="videocam" size={48} color="#10b981" />
+            </View>
+            <Text style={styles.cardLabel}>{t('tasks.cardVideoAnnotation')}</Text>
+            <Text style={styles.cardHint}>Frame • Object • Tracking</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
@@ -74,6 +87,8 @@ export default function TasksScreen() {
       router.push('/tasks/audio');
     } else if (type === 'image') {
       router.push('/tasks/image');
+    } else if (type === 'video') {
+      router.push('/tasks/video');
     }
   };
 

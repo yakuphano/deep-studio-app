@@ -53,13 +53,73 @@ interface TaskData {
   title: string;
   status?: string;
   price?: number | null;
-  type?: 'audio' | 'image' | string | null;
+  type?: 'audio' | 'image' | 'video' | string | null;
   category?: string | null;
   audio_url?: string;
   image_url?: string | null;
+  video_url?: string | null;
   transcription?: string;
   annotation_data?: unknown;
   language?: string | null;
+}
+
+function WebVideoPlayer({ src, onFrameCapture }: { src: string; onFrameCapture: (frameData: string) => void }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  
+  const captureFrame = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    const frameData = canvas.toDataURL('image/png');
+    onFrameCapture(frameData);
+  };
+  
+  return React.createElement('div', { style: { position: 'relative', width: '100%' } as React.CSSProperties }, [
+    React.createElement('video', {
+      key: 'video',
+      ref: (el: HTMLVideoElement | null) => { videoRef.current = el; },
+      controls: true,
+      src,
+      style: {
+        width: '100%',
+        height: 'auto',
+        backgroundColor: '#1e293b',
+        borderRadius: 8,
+        outline: 'none',
+      } as React.CSSProperties,
+    }),
+    React.createElement('canvas', {
+      key: 'canvas',
+      ref: (el: HTMLCanvasElement | null) => { canvasRef.current = el; },
+      style: { display: 'none' } as React.CSSProperties,
+    }),
+    React.createElement('button', {
+      key: 'capture',
+      onClick: captureFrame,
+      style: {
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        backgroundColor: '#10b981',
+        color: 'white',
+        border: 'none',
+        borderRadius: 4,
+        padding: '8px 12px',
+        cursor: 'pointer',
+        fontSize: '12px',
+        fontWeight: '600',
+      } as React.CSSProperties,
+    }, 'Capture Frame'),
+  ]);
 }
 
 function WebAudioPlayer({ src, playbackRate }: { src: string; playbackRate: number }) {
@@ -111,32 +171,44 @@ export default function TaskDetailScreen() {
   const canvasRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
 
+  const [currentFrame, setCurrentFrame] = useState<string | null>(null);
+  const [videoAnnotations, setVideoAnnotations] = useState<Record<string, Annotation[]>>({});
+  const [currentTimestamp, setCurrentTimestamp] = useState<number>(0);
+
   const audioUrl = task?.audio_url ?? null;
   const imageUrl = task?.image_url ?? null;
+  const videoUrl = task?.video_url ?? null;
 
   // Improved task type detection with debugging
-  const taskType: 'audio' | 'image' = (() => {
+  const taskType: 'audio' | 'image' | 'video' = (() => {
     const hasImageUrl = !!task?.image_url;
+    const hasVideoUrl = !!task?.video_url;
     const typeIsImage = task?.type === 'image';
+    const typeIsVideo = task?.type === 'video';
     const categoryIsImage = (task?.category ?? '').toLowerCase() === 'image';
-    const result = hasImageUrl || typeIsImage || categoryIsImage ? 'image' : 'audio';
+    const categoryIsVideo = (task?.category ?? '').toLowerCase() === 'video';
     
     console.log('[TaskDetail] Task type detection:', {
-      id: task?.id,
-      type: task?.type,
-      category: task?.category,
-      image_url: !!task?.image_url,
-      audio_url: !!task?.audio_url,
       hasImageUrl,
+      hasVideoUrl,
       typeIsImage,
+      typeIsVideo,
       categoryIsImage,
-      detectedType: result
+      categoryIsVideo,
+      taskType: task?.type,
+      taskCategory: task?.category
     });
     
-    return result;
+    // Video priority
+    if (hasVideoUrl || typeIsVideo || categoryIsVideo) return 'video';
+    // Image fallback
+    if (hasImageUrl || typeIsImage || categoryIsImage) return 'image';
+    // Default to audio
+    return 'audio';
   })();
 
   const isImageTask = taskType === 'image';
+  const isVideoTask = taskType === 'video';
   const isWeb = Platform.OS === 'web';
 
   useEffect(() => {
@@ -248,10 +320,11 @@ export default function TaskDetailScreen() {
           title: String(data.title ?? ''),
           status: data.status ?? 'pending',
           price: data.price != null ? Number(data.price) : 0,
-          type: (data.type ?? (cat === 'image' ? 'image' : 'audio')) as 'audio' | 'image',
+          type: (data.type ?? (cat === 'image' ? 'image' : cat === 'video' ? 'video' : 'audio')) as 'audio' | 'image' | 'video',
           category: data.category ?? null,
           audio_url: data.audio_url ?? data.audioUrl,
           image_url: data.image_url ?? data.imageUrl ?? null,
+          video_url: data.video_url ?? data.videoUrl ?? null,
           transcription: displayText,
           annotation_data: data.annotation_data ?? null,
           language: data.language ?? null,
@@ -808,7 +881,7 @@ export default function TaskDetailScreen() {
             
             {/* Undo Button */}
             <TouchableOpacity
-              style={[styles.toolBtnLarge, styles.undoToolBtn]}
+              style={[styles.toolBtnLarge, activeTool === 'undo' && !isBrushActive && styles.toolBtnActivePurple]}
               onPress={() => {
                 console.log('[TaskDetail] Undo button clicked');
                 console.log('[TaskDetail] canvasRef.current:', canvasRef.current);
@@ -1293,19 +1366,311 @@ export default function TaskDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
-  containerFullWidth:
-    Platform.OS === 'web'
-      ? ({
-          width: '100%' as const,
-          maxWidth: '100%' as const,
-          alignSelf: 'stretch' as const,
-          marginHorizontal: 0,
-          paddingHorizontal: 0,
-          marginLeft: 0,
-          marginRight: 0,
-        } as const)
-      : {},
+  container: { 
+    flex: 1, 
+    backgroundColor: '#0f172a',
+  },
+  containerFullWidth: {
+    width: '100%',
+    maxWidth: '100%',
+    alignSelf: 'stretch',
+    marginHorizontal: 0,
+    paddingHorizontal: 0,
+    marginLeft: 0,
+    marginRight: 0,
+  },
+  taskInfoBar: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    zIndex: 1000,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  taskInfoType: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#94a3b8',
+    backgroundColor: 'rgba(148, 163, 184, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  taskInfoPriceBadge: {
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  taskInfoPriceText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#22c55e',
+  },
+  annotationLayout: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  leftToolbarCol: {
+    width: 80,
+    minWidth: 80,
+    maxWidth: 80,
+    padding: 8,
+    backgroundColor: '#0f172a',
+    borderRightWidth: 1,
+    borderRightColor: '#334155',
+    flexDirection: 'column',
+    gap: 8,
+  },
+  toolBtnLarge: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'column',
+    gap: 2,
+  },
+  toolBtnActivePurple: {
+    backgroundColor: '#7c3aed',
+    borderColor: '#7c3aed',
+  },
+  toolBtnLargeText: { fontSize: 9, color: '#f1f5f9', marginTop: 1, fontWeight: '500' },
+  rightSidebar: {
+    width: 280,
+    minWidth: 280,
+    maxWidth: 280,
+    padding: 8,
+    backgroundColor: '#1e293b',
+    borderLeftWidth: 1,
+    borderLeftColor: '#334155',
+    flexDirection: 'column',
+  },
+  rightSidebarTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#f1f5f9',
+    marginBottom: 12,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  objectList: { flex: 1, minHeight: 60 },
+  objectListEmpty: { fontSize: 12, color: '#64748b', fontStyle: 'italic' },
+  objectCardWrap: { marginBottom: 8 },
+  objectCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 0,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  objectCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  objectCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f1f5f9',
+  },
+  selectedLabelBadge: {
+    backgroundColor: '#3b82f6',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    alignSelf: 'flex-start',
+  },
+  selectedLabelText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  labelOptionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  labelOptionChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 16,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+  },
+  labelOptionText: {
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  bottomButtonBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#0f172a',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  bottomLeftActions: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  bottomRightActions: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  exitButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+  },
+  exitButtonText: { fontSize: 14, color: '#ef4444', fontWeight: '600' },
+  submitGroup: { flexDirection: 'row', gap: 12 },
+  submitExitButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#3b82f6',
+  },
+  submitExitButtonText: { fontSize: 14, color: '#fff', fontWeight: '600' },
+  submitButtonGreen: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#22c55e',
+  },
+  submitButtonGreenText: { fontSize: 14, color: '#fff', fontWeight: '600' },
+  footerButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#3b82f6',
+  },
+  footerButtonText: { fontSize: 14, color: '#fff', fontWeight: '600' },
+  sidebarFooter: {
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+    gap: 8,
+    flexDirection: 'column' as const,
+  },
+  kaydetButton: {
+    backgroundColor: '#334155',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  kaydetButtonText: { fontSize: 14, color: '#f1f5f9', fontWeight: '600' },
+  tamamlaButton: {
+    backgroundColor: '#22c55e',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  tamamlaButtonText: { fontSize: 14, color: '#fff', fontWeight: '600' },
+  submittedBadgeCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#22c55e',
+  },
+  submitButtonCompact: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  toolbarFixed: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    backgroundColor: '#0f172a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+    minWidth: 64,
+  },
+  annotationMain: { flex: 1, minWidth: 0, minHeight: 300, padding: 0, margin: 0, marginHorizontal: 0 },
+  toolbar: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  toolBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  toolBtnActive: { borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)' },
+  toolBtnDisabled: { opacity: 0.6 },
+  toolBtnText: { fontSize: 12, color: '#f1f5f9', fontWeight: '600' },
+  annotationCanvasWrap: { flex: 1, minHeight: 400 },
+  annotationCanvasWrapFullWidth: { flex: 1, width: '100%', minHeight: 400, alignSelf: 'stretch' },
+  labelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 },
+  labelRowText: { fontSize: 13, color: '#94a3b8', marginRight: 4 },
+  labelChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  labelChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  labelChipActive: { borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)' },
+  
+  // Video specific styles
+  videoPlayerContainer: {
+    height: 300,
+    backgroundColor: '#1e293b',
+    borderRadius: 8,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  videoPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    borderRadius: 8,
+  },
+  videoPlaceholderText: {
+    fontSize: 14,
+    color: '#64748b',
+    marginTop: 8,
+  },
+  canvasWorkspace: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    borderRadius: 8,
+    overflow: 'hidden',
+  canvasWorkspaceWithGrid: {
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  canvasGridOverlay: {
+    backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px)',
+    backgroundSize: '20px 20px',
+  },
+  // Audio task styles
   scroll: { flex: 1 },
   scrollContent: { padding: 12, paddingBottom: 24 },
   loadingText: { color: '#94a3b8', fontSize: 14, textAlign: 'center', marginTop: 24 },
@@ -1753,30 +2118,91 @@ const styles = StyleSheet.create({
   toolBtnActive: { borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)' },
   toolBtnDisabled: { opacity: 0.6 },
   toolBtnText: { fontSize: 12, color: '#f1f5f9', fontWeight: '600' },
-  annotationCanvasWrap: { flex: 1, minHeight: 400 },
-  annotationCanvasWrapFullWidth: { flex: 1, width: '100%', minHeight: 400, alignSelf: 'stretch' },
-  labelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 },
-  labelRowText: { fontSize: 13, color: '#94a3b8', marginRight: 4 },
-  labelChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  labelChip: {
+    paddingVertical: 8,
     paddingHorizontal: 12,
-    paddingVertical: 6,
     borderRadius: 8,
     backgroundColor: '#1e293b',
     borderWidth: 1,
     borderColor: '#334155',
+    marginRight: 8,
   },
-  labelChipActive: { borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)' },
-  labelChipText: { fontSize: 12, color: '#f1f5f9', fontWeight: '500' },
-  deleteToolBtn: {
-    borderColor: '#ef4444',
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+  backText: { fontSize: 14, color: '#f1f5f9', fontWeight: '600' },
+  headerTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: '#f1f5f9' },
+  taskTitle: { fontSize: 14, color: '#94a3b8', marginBottom: 4 },
+  priceBadge: {
+    alignSelf: 'flex-start', backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginBottom: 8,
   },
-  deleteToolBtnText: {
-    color: '#ef4444',
+  priceBadgeText: { fontSize: 12, fontWeight: '600', color: '#22c55e' },
+  sectionLabel: { fontSize: 12, fontWeight: '600', color: '#94a3b8', marginBottom: 4 },
+  audioSection: { marginBottom: 10 },
+  audioCard: {
+    backgroundColor: '#1e293b', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#334155',
   },
-  undoToolBtn: {
-    borderColor: '#f59e0b',
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+  playerContent: { flexDirection: 'row', alignItems: 'center' },
+  playButton: {
+    width: 44, height: 44, borderRadius: 22, backgroundColor: '#3b82f6',
+    justifyContent: 'center', alignItems: 'center', marginRight: 12,
+  },
+  playIcon: { fontSize: 20, color: '#fff' },
+  playerInfo: { flex: 1 },
+  progressBar: { height: 6, backgroundColor: '#334155', borderRadius: 3, overflow: 'hidden' },
+  progressFill: { height: '100%', backgroundColor: '#3b82f6', borderRadius: 3 },
+  timeText: { fontSize: 11, color: '#94a3b8', marginTop: 4 },
+  noAudioText: { fontSize: 13, color: '#64748b' },
+  speedRow: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#334155' },
+  speedLabel: { fontSize: 11, color: '#94a3b8', marginBottom: 6 },
+  speedControlRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  speedBtn: {
+    width: 36, height: 36, borderRadius: 8, backgroundColor: '#334155',
+    borderWidth: 1, borderColor: '#475569', justifyContent: 'center', alignItems: 'center',
+  },
+  speedBtnDisabled: { opacity: 0.4 },
+  speedBtnText: { fontSize: 18, color: '#f1f5f9', fontWeight: '600' },
+  speedValue: { minWidth: 52, paddingHorizontal: 12, paddingVertical: 6, alignItems: 'center', justifyContent: 'center' },
+  speedValueText: { fontSize: 15, color: '#3b82f6', fontWeight: '700' },
+  transcriptionSection: { marginBottom: 10, overflow: 'visible' as const },
+  transcriptionHeader: { marginBottom: 6 },
+  aiButtonWrapper: {
+    position: 'relative' as const,
+    zIndex: 9999,
+    marginBottom: 8,
+    overflow: 'visible' as const,
+  },
+  aiTranscribeButton: {
+    position: 'relative' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#8b5cf6',
+    alignSelf: 'flex-start',
+    zIndex: 9999,
+  },
+  aiTranscribeButtonDisabled: { opacity: 0.6 },
+  aiTranscribeButtonText: { fontSize: 14, color: '#fff', fontWeight: '600' },
+  transcriptionCard: {
+    backgroundColor: '#1e293b', borderRadius: 8, borderWidth: 1, borderColor: '#334155', overflow: 'hidden',
+  },
+  transcriptionInput: {
+    backgroundColor: 'transparent', borderWidth: 0, padding: 12, fontSize: 15, lineHeight: 22,
+    color: '#f1f5f9', minHeight: 140,
+  },
+  submitContainer: {
+    position: 'absolute',
+    alignSelf: 'flex-end',
+  },
+  submittedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    backgroundColor: '#22c55e',
+    borderWidth: 0,
   },
 });

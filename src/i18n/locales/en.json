@@ -289,11 +289,13 @@
     "selectTaskType": "Select Task Type",
     "cardAudioTranscription": "Audio Transcription",
     "cardImageAnnotation": "Image Annotation",
+    "cardVideoAnnotation": "Video Annotation",
     "listenToAudio": "Listen",
     "transcribeHere": "Transcribe",
     "pageTitle": "My Tasks",
     "pageTitleTranscription": "Audio Transcription Tasks",
     "pageTitleImage": "Image Annotation Tasks",
+    "pageTitleVideo": "Video Annotation Tasks",
     "free": "Free"
   },
   "annotation": {

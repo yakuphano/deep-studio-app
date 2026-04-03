@@ -777,9 +777,9 @@ export default function TaskDetailScreen() {
   const taskTypeLabel = (() => {
     const cat = (task?.category ?? '').toString().toLowerCase();
     const typ = (task?.type ?? '').toString().toLowerCase();
-    if (cat.includes('polygon') || typ.includes('polygon')) return 'Polygon Annotation';
-    if (cat.includes('bbox') || cat.includes('box') || typ.includes('bbox') || typ.includes('box')) return 'Bounding Box';
-    return task?.type === 'image' ? 'Image Annotation' : 'Annotation';
+    if (cat.includes('polygon') || typ.includes('polygon')) return t('annotation.polygonAnnotation');
+    if (cat.includes('bbox') || cat.includes('box') || typ.includes('bbox') || typ.includes('box')) return t('annotation.boundingBox');
+    return task?.type === 'image' ? t('annotation.imageAnnotation') : t('annotation.annotation');
   })();
 
   if (taskType === 'image') {

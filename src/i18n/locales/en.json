@@ -284,5 +284,36 @@
   },
   "errors": {
     "generic": "An error occurred"
+  },
+  "tasks": {
+    "selectTaskType": "Select Task Type",
+    "cardAudioTranscription": "Audio Transcription",
+    "cardImageAnnotation": "Image Annotation",
+    "listenToAudio": "Listen",
+    "transcribeHere": "Transcribe",
+    "pageTitle": "My Tasks",
+    "pageTitleTranscription": "Audio Transcription Tasks",
+    "pageTitleImage": "Image Annotation Tasks",
+    "free": "Free"
+  },
+  "annotation": {
+    "objects": "Objects",
+    "addObject": "Add Object",
+    "deleteObject": "Delete Object",
+    "noObjects": "No objects added yet",
+    "selectTool": "Select Tool",
+    "resetView": "Reset View",
+    "brush": "Brush",
+    "polyline": "Polyline",
+    "rectangle": "Rectangle",
+    "polygon": "Polygon",
+    "point": "Point",
+    "ellipse": "Ellipse",
+    "select": "Select",
+    "undo": "Undo",
+    "boundingBox": "Bounding Box",
+    "polygonAnnotation": "Polygon Annotation",
+    "imageAnnotation": "Image Annotation",
+    "annotation": "Annotation"
   }
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } from 'react';
 import { View, StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { LABEL_COLORS } from '@/constants/annotationLabels';
 
 export type Tool = 'pan' | 'undo' | 'bbox' | 'polygon' | 'points' | 'ellipse' | 'cuboid' | 'polyline' | 'semantic' | 'brush' | 'magic_wand';
@@ -89,6 +90,7 @@ export default React.forwardRef(function AnnotationCanvas({
   onToolChange,
   onUndo,
 }: AnnotationCanvasProps, ref) {
+  const { t } = useTranslation();
   const canvasRef = useRef<{
     handleUndo: () => void;
   } | null>(null);
@@ -921,7 +923,7 @@ export default React.forwardRef(function AnnotationCanvas({
               justifyContent: 'center',
               transition: 'all 0.2s ease',
             }}
-            title="Görünümü sıfırla - Resmi ortala"
+            title={t('annotation.resetView') + ' - ' + t('annotation.objects')}
           >
             <svg
               width="20"

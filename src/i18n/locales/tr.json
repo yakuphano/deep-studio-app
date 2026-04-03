@@ -283,5 +283,36 @@
   },
   "errors": {
     "generic": "Hata Oluştu"
+  },
+  "tasks": {
+    "selectTaskType": "Görev Seçimi",
+    "cardAudioTranscription": "Ses Transkripsiyonu",
+    "cardImageAnnotation": "Görsel Etiketleme",
+    "listenToAudio": "Sesi Dinle",
+    "transcribeHere": "Metne Dök",
+    "pageTitle": "Görevlerim",
+    "pageTitleTranscription": "Ses Transkripsiyon Görevleri",
+    "pageTitleImage": "Görsel Etiketleme Görevleri",
+    "free": "Ücretsiz"
+  },
+  "annotation": {
+    "objects": "Nesneler",
+    "addObject": "Nesne Ekle",
+    "deleteObject": "Nesne Sil",
+    "noObjects": "Henüz nesne eklenmemiş",
+    "selectTool": "Araç Seç",
+    "resetView": "Görünümü Sıfırla",
+    "brush": "Fırça",
+    "polyline": "Çoklu Çizgi",
+    "rectangle": "Dikdörtgen",
+    "polygon": "Çokgen",
+    "point": "Nokta",
+    "ellipse": "Elips",
+    "select": "Seç",
+    "undo": "Geri Al",
+    "boundingBox": "Sınırlayıcı Kutu",
+    "polygonAnnotation": "Çokgen Etiketleme",
+    "imageAnnotation": "Görsel Etiketleme",
+    "annotation": "Etiketleme"
   }
 }

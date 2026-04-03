@@ -22,7 +22,7 @@ function TaskSelectionCards({
 }) {
   return (
     <View style={styles.dashboard}>
-      <Text style={styles.dashboardTitle}>Görev Seçimi</Text>
+      <Text style={styles.dashboardTitle}>{t('tasks.selectTaskType')}</Text>
       <ScrollView 
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
@@ -37,8 +37,8 @@ function TaskSelectionCards({
             <View style={styles.cardIcon}>
               <Ionicons name="mic" size={48} color="#3b82f6" />
             </View>
-            <Text style={styles.cardLabel}>Ses Transkripsiyonu</Text>
-            <Text style={styles.cardHint}>Sesi Dinle • Metne Dök</Text>
+            <Text style={styles.cardLabel}>{t('tasks.cardAudioTranscription')}</Text>
+            <Text style={styles.cardHint}>{t('tasks.listenToAudio')} • {t('tasks.transcribeHere')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.selectionCard}
@@ -48,7 +48,7 @@ function TaskSelectionCards({
             <View style={styles.cardIcon}>
               <Ionicons name="image" size={48} color="#f472b6" />
             </View>
-            <Text style={styles.cardLabel}>Görsel Etiketleme</Text>
+            <Text style={styles.cardLabel}>{t('tasks.cardImageAnnotation')}</Text>
             <Text style={styles.cardHint}>BBox • Polygon • Segmentation</Text>
           </TouchableOpacity>
         </View>

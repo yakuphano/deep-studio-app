@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { ANNOTATION_LABELS, LABEL_COLORS } from '@/constants/annotationLabels';
 import type { Annotation } from '@/components/AnnotationCanvas';
 
@@ -32,12 +33,13 @@ export default function ObjectList({
   onUpdateAnnotationLabel, 
   onDeleteAnnotation 
 }: ObjectListProps) {
+  const { t } = useTranslation();
   return (
     <View style={styles.objectListSidebar}>
-      <Text style={styles.objectListTitle}>OBJECTS</Text>
+      <Text style={styles.objectListTitle}>{t('annotation.objects').toUpperCase()}</Text>
       <ScrollView style={styles.objectListScroll} showsVerticalScrollIndicator={false}>
         {annotations.length === 0 ? (
-          <Text style={styles.objectListEmpty}>No objects yet</Text>
+          <Text style={styles.objectListEmpty}>{t('annotation.noObjects')}</Text>
         ) : (
           annotations.map((annotation, idx) => {
             const labelStr = typeof annotation.label === 'object' 

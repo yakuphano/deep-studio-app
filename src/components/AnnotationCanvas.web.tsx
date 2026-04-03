@@ -868,8 +868,8 @@ export default React.forwardRef(function AnnotationCanvas({
           position: 'relative',
           width: '100%',
           height: '100%',
-          overflow: 'hidden', // Sayfa scroll'u engelle
-          touchAction: 'none', // Touch ve wheel action'ları engelle
+          overflow: 'auto', // Sayfa scroll'unu serbest bırak
+          touchAction: 'auto', // Touch ve wheel action'larını serbest bırak
         }}
       >
         <div

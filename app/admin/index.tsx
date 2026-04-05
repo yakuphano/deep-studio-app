@@ -57,6 +57,8 @@ async function getBlobDuration(blob: Blob): Promise<number | null> {
 // Video dosyasını Supabase videos bucket'ına yükleyen fonksiyon
 async function uploadVideoToSupabase(videoUrl: string): Promise<string | null> {
   try {
+    console.log('🎬 Video upload başlatılıyor:', videoUrl);
+    
     // Video URL'den video dosyasını indir
     const response = await fetch(videoUrl);
     if (!response.ok) {
@@ -67,6 +69,8 @@ async function uploadVideoToSupabase(videoUrl: string): Promise<string | null> {
     const fileName = `video_${Date.now()}.mp4`;
     const filePath = `videos/${fileName}`;
     
+    console.log('📁 Supabase storage\'a yükleniyor:', filePath);
+    
     // Supabase storage'a yükle
     const { data, error } = await supabase.storage
       .from('videos')
@@ -76,17 +80,21 @@ async function uploadVideoToSupabase(videoUrl: string): Promise<string | null> {
       });
     
     if (error) {
+      console.error('❌ Storage upload hatası:', error);
       throw new Error('Video yüklenemedi: ' + error.message);
     }
+    
+    console.log('✅ Storage upload başarılı:', data);
     
     // Public URL oluştur
     const { data: { publicUrl } } = supabase.storage
       .from('videos')
       .getPublicUrl(filePath);
     
+    console.log('🔗 Public URL oluşturuldu:', publicUrl);
     return publicUrl;
   } catch (error) {
-    console.error('Video upload error:', error);
+    console.error('❌ Video upload error:', error);
     return null;
   }
 }
@@ -94,6 +102,9 @@ async function uploadVideoToSupabase(videoUrl: string): Promise<string | null> {
 // Video dosyasını (DocumentPicker asset) Supabase videos bucket'ına yükleyen fonksiyon
 async function uploadVideoFileToSupabase(file: DocumentPicker.DocumentPickerAsset): Promise<string | null> {
   try {
+    console.log('🎬 Video dosya upload başlatılıyor...');
+    console.log('📁 Dosya bilgileri:', { name: file.name, size: file.size, mimeType: file.mimeType });
+    
     if (!file.uri) {
       throw new Error('Dosya URI bulunamadı');
     }
@@ -103,8 +114,6 @@ async function uploadVideoFileToSupabase(file: DocumentPicker.DocumentPickerAsse
       throw new Error('Dosya boyutu çok büyük. Maksimum 50MB olabilir.');
     }
     
-    console.log('Uploading video file:', file.name, 'Size:', file.size, 'Type:', file.mimeType);
-    
     // Web uyumlu veri okuma
     const response = await fetch(file.uri);
     if (!response.ok) {
@@ -113,9 +122,10 @@ async function uploadVideoFileToSupabase(file: DocumentPicker.DocumentPickerAsse
     const arrayBuffer = await response.arrayBuffer();
     
     // Temiz dosya adı oluştur
-    const fileName = `${Date.now()}.mp4`;
+    const fileName = `video_${Date.now()}.mp4`;
     
-    console.log('Uploading to path:', fileName, 'ArrayBuffer size:', arrayBuffer.byteLength);
+    console.log('📤 Supabase storage\'a yükleniyor:', fileName);
+    console.log('📊 ArrayBuffer boyutu:', arrayBuffer.byteLength, 'bytes');
     
     // Supabase storage'a yükle (yol düzeltmesi)
     const { data, error } = await supabase.storage
@@ -126,21 +136,21 @@ async function uploadVideoFileToSupabase(file: DocumentPicker.DocumentPickerAsse
       });
     
     if (error) {
-      console.error('Supabase upload error:', error);
+      console.error('❌ Supabase upload hatası:', error);
       throw new Error('Video yüklenemedi: ' + error.message);
     }
     
-    console.log('Upload successful:', data);
+    console.log('✅ Storage upload başarılı:', data);
     
     // Public URL oluştur
     const { data: { publicUrl } } = supabase.storage
       .from('videos')
       .getPublicUrl(fileName);
     
-    console.log('Public URL:', publicUrl);
+    console.log('🔗 Public URL oluşturuldu:', publicUrl);
     return publicUrl;
   } catch (error) {
-    console.error('DETAYLI HATA:', (error as Error).message, error);
+    console.error('❌ Video dosya upload hatası:', (error as Error).message, error);
     return null;
   }
 }
@@ -1171,8 +1181,9 @@ export default function AdminPanelScreen() {
           status: 'pending',
           type: 'video',
           category: 'video',
-          image_url: finalVideoUrl, // Yüklenen video URL'si
-          audio_url: '',
+          video_url: finalVideoUrl, // ✅ DOĞRU: Video URL'si video_url sütununa kaydediliyor
+          image_url: null, // ✅ Temizlik
+          audio_url: null, // ✅ Temizlik
           transcription: '',
           price: priceNum,
           language: langToSave,
@@ -1180,7 +1191,25 @@ export default function AdminPanelScreen() {
           assigned_to: isPool ? null : selectedUser?.id ?? null,
           client_name: clientName.trim() || null,
         };
-        console.log('Task Data to Send:', taskData);
+        
+        // 🔍 Detaylı debug log'ları
+        console.log('🎬 Video görevi oluşturuluyor...');
+        console.log('📊 Gönderilecek veri:', taskData);
+        console.log('🔗 Final Video URL:', finalVideoUrl);
+        console.log('📝 Görev başlığı:', title.trim());
+        console.log('💰 Fiyat:', priceNum);
+        console.log('🌍 Dil:', langToSave);
+        console.log('👤 Atanan kullanıcı:', selectedUser?.id ?? null);
+        console.log('🏢 Müşteri:', clientName.trim() || null);
+        
+        // URL kontrolü
+        if (!finalVideoUrl || finalVideoUrl.trim() === '') {
+          console.error('❌ HATA: Final Video URL boş!');
+          console.error('❌ Görev veritabanına boş URL ile kaydedilecek!');
+        } else {
+          console.log('✅ Video URL kontrolü başarılı:', finalVideoUrl);
+        }
+        
         console.log('[Admin] Creating video task:', taskData);
         const { error: insertError } = await supabase.from('tasks').insert(taskData);
         if (insertError) {

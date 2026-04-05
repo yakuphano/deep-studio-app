@@ -159,9 +159,16 @@ export default function VideoTasksScreen() {
       >
         <View style={styles.header}>
           <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
+            style={[styles.backButton, { zIndex: 999, elevation: 5 }]}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/(tabs)/tasks'); // Eğer geri gidecek yer yoksa ana görev sekmesine git
+              }
+            }}
             activeOpacity={0.8}
+            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
           >
             <Ionicons name="arrow-back" size={20} color="#f1f5f9" />
             <Text style={styles.backText}>Back</Text>

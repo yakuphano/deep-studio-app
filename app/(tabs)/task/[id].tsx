@@ -1,52 +1,15 @@
-import React, { useEffect, useState, useRef } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  Platform,
-  Alert,
-  Pressable,
-  ActivityIndicator,
-} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput, Pressable, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
 import { supabase } from '@/lib/supabase';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
-import { transcribeWithGroq } from '@/lib/groq';
 import { useAuth } from '@/contexts/AuthContext';
 import AnnotationCanvas, { type Annotation, type Tool } from '@/components/AnnotationCanvas';
 import { ANNOTATION_LABELS, LABEL_COLORS } from '@/constants/annotationLabels';
-
-const PLAYBACK_SPEED_STORAGE_KEY = 'deepstudio_playback_speed';
-const MIN_SPEED = 0.1;
-const MAX_SPEED = 3;
-const SPEED_STEP = 0.1;
-
-const clampSpeed = (n: number) =>
-  Math.min(MAX_SPEED, Math.max(MIN_SPEED, Math.round(n * 10) / 10));
-
-function resolveMimeType(blobType: string, url: string): string {
-  const normalized = blobType?.split(';')[0]?.trim().toLowerCase();
-  if (normalized && ['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/wav', 'audio/webm', 'audio/ogg'].includes(normalized)) {
-    if (normalized === 'audio/mp3') return 'audio/mpeg';
-    if (normalized === 'audio/m4a') return 'audio/mp4';
-    return normalized;
-  }
-  const path = (url || '').toLowerCase();
-  if (path.includes('.mp3')) return 'audio/mpeg';
-  if (path.includes('.webm')) return 'audio/webm';
-  if (path.includes('.wav')) return 'audio/wav';
-  if (path.includes('.m4a') || path.includes('.mp4')) return 'audio/mp4';
-  if (path.includes('.ogg')) return 'audio/ogg';
-  return 'audio/mpeg';
-}
+import AudioPlayer from "../../../components/AudioPlayer";
 
 interface TaskData {
   id: string;
@@ -61,85 +24,8 @@ interface TaskData {
   transcription?: string;
   annotation_data?: unknown;
   language?: string | null;
-}
-
-function WebVideoPlayer({ src, onFrameCapture }: { src: string; onFrameCapture: (frameData: string) => void }) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  
-  const captureFrame = () => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-    
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    const frameData = canvas.toDataURL('image/png');
-    onFrameCapture(frameData);
-  };
-  
-  return React.createElement('div', { style: { position: 'relative', width: '100%' } as React.CSSProperties }, [
-    React.createElement('video', {
-      key: 'video',
-      ref: (el: HTMLVideoElement | null) => { videoRef.current = el; },
-      controls: true,
-      src,
-      style: {
-        width: '100%',
-        height: 'auto',
-        backgroundColor: '#1e293b',
-        borderRadius: 8,
-        outline: 'none',
-      } as React.CSSProperties,
-    }),
-    React.createElement('canvas', {
-      key: 'canvas',
-      ref: (el: HTMLCanvasElement | null) => { canvasRef.current = el; },
-      style: { display: 'none' } as React.CSSProperties,
-    }),
-    React.createElement('button', {
-      key: 'capture',
-      onClick: captureFrame,
-      style: {
-        position: 'absolute',
-        top: 10,
-        right: 10,
-        backgroundColor: '#10b981',
-        color: 'white',
-        border: 'none',
-        borderRadius: 4,
-        padding: '8px 12px',
-        cursor: 'pointer',
-        fontSize: '12px',
-        fontWeight: '600',
-      } as React.CSSProperties,
-    }, 'Capture Frame'),
-  ]);
-}
-
-function WebAudioPlayer({ src, playbackRate }: { src: string; playbackRate: number }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  useEffect(() => {
-    const el = audioRef.current;
-    if (el) el.playbackRate = playbackRate;
-  }, [playbackRate, src]);
-  return React.createElement('audio', {
-    ref: (el: HTMLAudioElement | null) => { audioRef.current = el; },
-    controls: true,
-    src,
-    style: {
-      width: '100%',
-      height: 48,
-      backgroundColor: '#1e293b',
-      borderRadius: 8,
-      outline: 'none',
-    } as React.CSSProperties,
-  });
+  new_field?: string;
+  another_new_field?: string; // Add this line
 }
 
 export default function TaskDetailScreen() {
@@ -149,37 +35,36 @@ export default function TaskDetailScreen() {
   const { t, i18n } = useTranslation();
   const { user, session, signOut, isAdmin } = useAuth();
   const [task, setTask] = useState<TaskData | null>(null);
-  const [transcription, setTranscription] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState<number | null>(null);
-  const [position, setPosition] = useState(0);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [transcribing, setTranscribing] = useState(false);
-  const [aiFixing, setAiFixing] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [activeTool, setActiveTool] = useState<'pan' | 'select' | 'bbox' | 'polygon' | 'points' | 'ellipse' | 'cuboid' | 'polyline' | 'semantic' | 'brush' | 'magic_wand'>('points');
+  const [activeTool, setActiveTool] = useState<'pan' | 'select' | 'bbox' | 'polygon' | 'points' | 'ellipse' | 'cuboid' | 'polyline' | 'semantic' | 'brush' | 'magic_wand'>('pan');
   const canvasTool: Tool = activeTool as Tool;
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>('');
   const [isBrushActive, setIsBrushActive] = useState(false);
-  const [collapsedObjects, setCollapsedObjects] = useState<Record<string, boolean>>({});
-  const isSeeking = useRef(false);
-  const progressBarWidth = useRef(0);
   const canvasRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
+  const isWeb = Platform.OS === 'web';
 
-  const [currentFrame, setCurrentFrame] = useState<string | null>(null);
-  const [videoAnnotations, setVideoAnnotations] = useState<Record<string, Annotation[]>>({});
-  const [currentTimestamp, setCurrentTimestamp] = useState<number>(0);
+  // Audio specific states
+  const [transcription, setTranscription] = useState('');
+  const [transcribing, setTranscribing] = useState(false);
+  const [aiFixing, setAiFixing] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState<number | null>(null);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const progressBarWidth = useRef(0);
+  const MIN_SPEED = 0.5;
+  const MAX_SPEED = 3;
 
-  const audioUrl = task?.audio_url ?? null;
-  const imageUrl = task?.image_url ?? null;
-  const videoUrl = task?.video_url ?? null;
+  const audioUrl = task?.audio_url;
+  const imageUrl = task?.image_url;
+  const videoUrl = task?.video_url;
+  const isImageTask = task?.type === 'image' || (task?.category ?? '').toString().toLowerCase().includes('image');
+  const isSubmitted = task?.status === 'submitted';
 
-  // Improved task type detection with debugging
   const taskType: 'audio' | 'image' | 'video' = (() => {
     const hasImageUrl = !!task?.image_url;
     const hasVideoUrl = !!task?.video_url;
@@ -188,17 +73,6 @@ export default function TaskDetailScreen() {
     const categoryIsImage = (task?.category ?? '').toLowerCase() === 'image';
     const categoryIsVideo = (task?.category ?? '').toLowerCase() === 'video';
     
-    console.log('[TaskDetail] Task type detection:', {
-      hasImageUrl,
-      hasVideoUrl,
-      typeIsImage,
-      typeIsVideo,
-      categoryIsImage,
-      categoryIsVideo,
-      taskType: task?.type,
-      taskCategory: task?.category
-    });
-    
     // Video priority
     if (hasVideoUrl || typeIsVideo || categoryIsVideo) return 'video';
     // Image fallback
@@ -206,86 +80,6 @@ export default function TaskDetailScreen() {
     // Default to audio
     return 'audio';
   })();
-
-  const isImageTask = taskType === 'image';
-  const isVideoTask = taskType === 'video';
-  const isWeb = Platform.OS === 'web';
-
-  useEffect(() => {
-    AsyncStorage.getItem(PLAYBACK_SPEED_STORAGE_KEY).then((v) => {
-      if (v) {
-        const n = clampSpeed(parseFloat(v));
-        setPlaybackSpeed(n);
-      }
-    });
-  }, []);
-
-  const setSpeedAndSave = async (speed: number) => {
-    const clamped = clampSpeed(speed);
-    setPlaybackSpeed(clamped);
-    await AsyncStorage.setItem(PLAYBACK_SPEED_STORAGE_KEY, String(clamped));
-    if (sound && Platform.OS !== 'web') {
-      try {
-        await sound.setRateAsync(clamped, false);
-      } catch (e) {
-        console.warn('setRateAsync:', e);
-      }
-    }
-  };
-
-  const speedUp = () => setSpeedAndSave(playbackSpeed + SPEED_STEP);
-  const speedDown = () => setSpeedAndSave(playbackSpeed - SPEED_STEP);
-  const resetToNormal = () => setSpeedAndSave(1);
-
-  useEffect(() => {
-    if (Platform.OS !== 'web') return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-      if (isImageTask) {
-        if (e.key === 'r' || e.key === 'R') {
-          e.preventDefault();
-          setActiveTool('bbox');
-          setIsBrushActive(false);
-          return;
-        }
-        if (e.key === 'p' || e.key === 'P') {
-          e.preventDefault();
-          setActiveTool('polygon');
-          setIsBrushActive(false);
-          return;
-        }
-        if (e.key === 'v' || e.key === 'V') {
-          e.preventDefault();
-          setActiveTool('select');
-          setIsBrushActive(false);
-          return;
-        }
-        if (e.key === 'n' || e.key === 'N') {
-          e.preventDefault();
-          setActiveTool('points');
-          setIsBrushActive(false);
-          return;
-        }
-        if (e.key === 'g' || e.key === 'G') {
-          e.preventDefault();
-          setActiveTool('pan');
-          setIsBrushActive(false);
-          return;
-        }
-      }
-      if (!audioUrl) return;
-      if (e.key === 'u' || e.key === 'U') {
-        e.preventDefault();
-        setSpeedAndSave(playbackSpeed + SPEED_STEP);
-      } else if (e.key === 'j' || e.key === 'J') {
-        e.preventDefault();
-        setSpeedAndSave(playbackSpeed - SPEED_STEP);
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [playbackSpeed, audioUrl, isImageTask]);
 
   useEffect(() => {
     if (!id) return;
@@ -305,127 +99,97 @@ export default function TaskDetailScreen() {
         }
       }
       if (!error && data) {
-        const trans = data.transcription ?? data.transcription_text ?? '';
-        const desc = data.description ?? '';
-        const isAiTranscription = trans && ![
-          'Metin oluşturulamadı',
-          'Ses kaydedildi, analiz için bakiye bekleniyor',
-          'AI Hatası:',
-          'AI Analizi şu an yapılamıyor',
-        ].some((p) => String(trans).startsWith(p) || trans === p);
-        const displayText = isAiTranscription ? trans : '';
         const cat = (data.category ?? '').toString().toLowerCase();
         const taskData: TaskData = {
           id: String(data.id),
-          title: String(data.title ?? ''),
+          title: String(data.title ?? '') || 'İsimsiz Görev', // Title null ise varsayılan değer
           status: data.status ?? 'pending',
           price: data.price != null ? Number(data.price) : 0,
-          type: (data.type ?? (cat === 'image' ? 'image' : cat === 'video' ? 'video' : 'audio')) as 'audio' | 'image' | 'video',
+          type: (data.type ?? (cat === 'video' ? 'video' : 'audio')) as 'audio' | 'image' | 'video',
           category: data.category ?? null,
           audio_url: data.audio_url ?? data.audioUrl,
           image_url: data.image_url ?? data.imageUrl ?? null,
-          video_url: data.video_url ?? data.videoUrl ?? null,
-          transcription: displayText,
+          transcription: data.transcription ?? '',
           annotation_data: data.annotation_data ?? null,
           language: data.language ?? null,
         };
         setTask(taskData);
-        setTranscription(displayText);
-        console.log('[TaskDetail] Task yüklendi:', { id: taskData.id, type: taskData.type, category: taskData.category, image_url: !!taskData.image_url });
+        setTranscription(taskData.transcription ?? '');
+        if (Array.isArray(taskData.annotation_data)) {
+          setAnnotations(taskData.annotation_data as Annotation[]);
+        }
       }
       setLoading(false);
     };
     fetchTask();
   }, [id]);
 
-  useEffect(() => {
-    if (task?.annotation_data && Array.isArray(task.annotation_data)) {
-      setAnnotations(task.annotation_data as Annotation[]);
-    } else if (task?.annotation_data && typeof task.annotation_data === 'object' && (task.annotation_data as { annotations?: Annotation[] }).annotations) {
-      setAnnotations((task.annotation_data as { annotations: Annotation[] }).annotations);
-    } else {
-      setAnnotations([]);
-    }
-  }, [task?.id, task?.annotation_data]);
+  const togglePlayPause = useCallback(() => {
+    setIsPlaying(prev => !prev);
+  }, []);
 
-  useEffect(() => {
-    return () => {
-      if (sound) sound.unloadAsync();
-    };
-  }, [sound]);
+  const handleSeek = useCallback((e: any) => {
+    if (!duration || !progressBarWidth.current) return;
+    const { locationX } = e.nativeEvent;
+    const percentage = locationX / progressBarWidth.current;
+    setPosition(percentage * duration);
+  }, [duration]);
 
-  const loadAndPlay = async () => {
-    if (!task?.audio_url || isImageTask) {
-      console.log('[TaskDetail] Audio load skipped: no audio URL or image task');
-      return;
-    }
+  const formatTime = useCallback((seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }, []);
+
+  const speedUp = useCallback(() => {
+    setPlaybackSpeed(prev => Math.min(MAX_SPEED, prev + 0.25));
+  }, []);
+
+  const speedDown = useCallback(() => {
+    setPlaybackSpeed(prev => Math.max(MIN_SPEED, prev - 0.25));
+  }, []);
+
+  const resetToNormal = useCallback(() => {
+    setPlaybackSpeed(1);
+  }, []);
+
+  const handleAITranscription = useCallback(async () => {
+    if (!audioUrl) return;
+    setTranscribing(true);
     try {
-      if (sound) await sound.unloadAsync();
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: task.audio_url },
-        { shouldPlay: true, isLooping: false }
-      );
-      await newSound.setRateAsync(playbackSpeed, false);
-      const status = await newSound.getStatusAsync();
-      if (status.isLoaded) setDuration(status.durationMillis ?? null);
-      newSound.setOnPlaybackStatusUpdate((s) => {
-        if (s.isLoaded && !isSeeking.current) {
-          setPosition(s.positionMillis ?? 0);
-          if (s.didJustFinish && !s.isLooping) {
-            setIsPlaying(false);
-            setPosition(0);
-          }
-        }
-      });
-      setSound(newSound);
-      setIsPlaying(true);
+      // Mock AI transcription
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      setTranscription('This is a sample transcription from the AI service.');
     } catch (err) {
-      console.error('Ses yüklenirken hata:', err);
-    }
-  };
-
-  const togglePlayPause = async () => {
-    if (isPlaying && sound) {
-      await sound.pauseAsync();
-      setIsPlaying(false);
-    } else if (sound) {
-      await sound.playAsync();
-      setIsPlaying(true);
-    } else {
-      await loadAndPlay();
-    }
-  };
-
-  const handleSeek = async (evt: { nativeEvent: { locationX: number } }) => {
-    if (!sound || duration == null || duration <= 0) return;
-    const w = progressBarWidth.current;
-    if (w <= 0) return;
-    const { locationX } = evt.nativeEvent;
-    const ratio = Math.max(0, Math.min(1, locationX / w));
-    const newPosition = ratio * duration;
-    isSeeking.current = true;
-    setPosition(newPosition);
-    try {
-      await sound.setPositionAsync(newPosition);
+      console.error('AI Transcription Error:', err);
     } finally {
-      isSeeking.current = false;
+      setTranscribing(false);
     }
-  };
+  }, [audioUrl]);
 
-  const formatTime = (ms: number) => {
-    const secs = Math.floor(ms / 1000);
-    const mins = Math.floor(secs / 60);
-    return `${mins}:${(secs % 60).toString().padStart(2, '0')}`;
-  };
+  const handleAIFix = useCallback(async () => {
+    if (!transcription.trim()) return;
+    setAiFixing(true);
+    try {
+      // Mock AI fix
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      setTranscription(prev => prev + ' (AI Fixed)');
+    } catch (err) {
+      console.error('AI Fix Error:', err);
+    } finally {
+      setAiFixing(false);
+    }
+  }, [transcription]);
 
-  const handleSaveDraft = async () => {
+  const handleSaveDraft = useCallback(async () => {
     if (!id || !user?.id) return;
     setSaving(true);
     try {
       const { error } = await supabase
         .from('tasks')
         .update({
-          annotation_data: { annotations },
+          transcription,
+          annotation_data: annotations,
           updated_at: new Date().toISOString(),
         })
         .eq('id', id);
@@ -445,32 +209,26 @@ export default function TaskDetailScreen() {
     } finally {
       setSaving(false);
     }
-  };
+  }, [id, user?.id, transcription, annotations, t]);
 
-  const handleSubmit = async (navigateToNext: boolean = false) => {
+  const handleSubmit = useCallback(async (navigateToNext: boolean = false) => {
     if (!id || !user?.id) return;
     setSaving(true);
     try {
-      const payload: Record<string, unknown> = {
-        status: 'submitted',
-        updated_at: new Date().toISOString(),
-      };
-      if (isImageTask) {
-        payload.annotation_data = { annotations };
-      } else {
-        payload.transcription = transcription.trim();
-      }
       const { error } = await supabase
         .from('tasks')
-        .update(payload)
+        .update({
+          status: 'submitted',
+          transcription,
+          annotation_data: annotations,
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', id);
       if (error) throw error;
       setTask((prev) => (prev ? { ...prev, status: 'submitted' } : null));
       triggerEarningsRefresh();
-      // Silent success - no alert
 
       if (navigateToNext) {
-        // Atomic update to claim next available pool task
         const { data: claimedTask, error: claimError } = await supabase
           .from('tasks')
           .update({ 
@@ -481,44 +239,15 @@ export default function TaskDetailScreen() {
           .is('is_pool_task', true)
           .neq('status', 'submitted')
           .neq('status', 'completed')
-          .neq('id', id) // Exclude current task
+          .neq('id', id)
           .order('created_at', { ascending: false })
           .limit(1)
           .select('id')
           .single();
         
         if (claimError) {
-          // Check if it's "No rows returned" error (someone else claimed the task)
           if (claimError.code === 'PGRST116') {
-            // Try once more to get the next available task
-            const { data: retryTask, error: retryError } = await supabase
-              .from('tasks')
-              .update({ 
-                assigned_to: user.id, 
-                is_pool_task: false 
-              })
-              .is('assigned_to', null)
-              .is('is_pool_task', true)
-              .neq('status', 'submitted')
-              .neq('status', 'completed')
-              .neq('id', id) // Exclude current task
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .select('id')
-              .single();
-            
-            if (retryError || !retryTask) {
-              // No more tasks available
-              if (typeof window !== 'undefined') {
-                window.alert('All tasks completed!');
-              } else {
-                Alert.alert('Completed', 'All tasks completed!');
-              }
-              router.replace('/tasks');
-              return;
-            }
-            
-            router.replace(`/task/${retryTask.id}`);
+            router.replace('/tasks');
             return;
           } else {
             throw claimError;
@@ -528,11 +257,6 @@ export default function TaskDetailScreen() {
         if (claimedTask) {
           router.replace(`/task/${claimedTask.id}`);
         } else {
-          if (typeof window !== 'undefined') {
-            window.alert('All tasks completed!');
-          } else {
-            Alert.alert('Completed', 'All tasks completed!');
-          }
           router.replace('/tasks');
         }
       }
@@ -546,291 +270,28 @@ export default function TaskDetailScreen() {
     } finally {
       setSaving(false);
     }
-  };
+  }, [id, user?.id, transcription, annotations, t, router]);
 
-  const handleSubmitAndExit = async () => {
-    await handleSubmit(false);
-    router.replace('/tasks');
-  };
-
-  const handleSubmitNext = async () => {
-    if (!id || !user?.id) return;
-    setSaving(true);
-    try {
-      const payload: Record<string, unknown> = {
-        status: 'submitted',
-        updated_at: new Date().toISOString(),
-      };
-      if (isImageTask) {
-        payload.annotation_data = { annotations };
-      } else {
-        payload.transcription = transcription.trim();
-      }
-      const { error } = await supabase
-        .from('tasks')
-        .update(payload)
-        .eq('id', id);
-      if (error) throw error;
-      triggerEarningsRefresh();
-      // Silent success - no alert
-      // Atomic update to claim next available pool task
-      const { data: claimedTask, error: claimError } = await supabase
-        .from('tasks')
-        .update({ 
-          assigned_to: user.id, 
-          is_pool_task: false 
-        })
-        .is('assigned_to', null)
-        .is('is_pool_task', true)
-        .neq('status', 'submitted')
-        .neq('status', 'completed')
-        .neq('id', id) // Exclude current task
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .select('id')
-        .single();
-      
-      if (claimError) {
-        // Check if it's "No rows returned" error (someone else claimed the task)
-        if (claimError.code === 'PGRST116') {
-          // Try once more to get the next available task
-          const { data: retryTask, error: retryError } = await supabase
-            .from('tasks')
-            .update({ 
-              assigned_to: user.id, 
-              is_pool_task: false 
-            })
-            .is('assigned_to', null)
-            .is('is_pool_task', true)
-            .neq('status', 'submitted')
-            .neq('status', 'completed')
-            .neq('id', id) // Exclude current task
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .select('id')
-            .single();
-          
-          if (retryError || !retryTask) {
-            // No more tasks available
-            if (typeof window !== 'undefined') {
-              window.alert('All tasks completed!');
-            } else {
-              Alert.alert('Completed', 'All tasks completed!');
-            }
-            router.replace('/tasks');
-            return;
-          }
-          
-          router.replace(`/task/${retryTask.id}`);
-          return;
-        } else {
-          throw claimError;
-        }
-      }
-      
-      if (claimedTask) {
-        router.replace(`/task/${claimedTask.id}`);
-      } else {
-        if (typeof window !== 'undefined') {
-          window.alert('All tasks completed!');
-        } else {
-          Alert.alert('Completed', 'All tasks completed!');
-        }
-        router.replace('/tasks');
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      if (typeof window !== 'undefined') {
-        window.alert(t('login.errorTitle') + ': ' + errorMessage);
-      } else {
-        Alert.alert(t('login.errorTitle'), errorMessage);
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
+  const handleSubmitAndExit = () => handleSubmit(false);
+  const handleSubmitNext = () => handleSubmit(true);
   const handleExit = () => {
-    router.replace('/tasks');
-  };
-
-  const handleAITranscription = async () => {
-    if (transcribing) return;
-
-    const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-    if (!apiKey || apiKey === 'gsk_your_key_here' || (typeof apiKey === 'string' && apiKey.trim() === '')) {
-      const msg = 'Groq API anahtarı (.env EXPO_PUBLIC_GROQ_API_KEY) tanımlı değil.';
-      if (typeof window !== 'undefined') {
-        window.alert(msg);
-      } else {
-        Alert.alert(t('login.errorTitle'), msg);
-      }
-      return;
-    }
-
-    if (!audioUrl) {
-      if (typeof window !== 'undefined') {
-        window.alert(t('taskDetail.noAudio'));
-      } else {
-        Alert.alert(t('login.errorTitle'), t('taskDetail.noAudio'));
-      }
-      return;
-    }
-    setTranscribing(true);
     try {
-      const result = await transcribeWithGroq({
-        fileUrl: audioUrl,
-        language: task?.language ?? undefined,
-      });
-      if (!result.error && result.text?.trim()) {
-        setTranscription(result.text.trim());
-        await supabase
-          .from('tasks')
-          .update({
-            transcription: result.text.trim(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', id);
-        // Silent success - no alert
-      } else {
-        const msg = result.error ?? t('adminErrors.aiAnalysisFailed');
-        console.error('[Groq] transcribeWithGroq hatası:', msg);
-        const displayMsg = /meşgul|quota|429|rate/i.test(msg) ? 'Groq servisi şu an meşgul' : msg;
-        if (typeof window !== 'undefined') {
-          window.alert(displayMsg);
-        } else {
-          Alert.alert(t('login.errorTitle'), displayMsg);
-        }
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error('[Groq] transcribe hatası (detay):', err);
-      const displayMsg = /meşgul|quota|429|rate/i.test(msg) ? 'Groq servisi şu an meşgul' : (msg || 'Ses dosyası okunamadı veya API hatası.');
-      if (typeof window !== 'undefined') {
-        window.alert(displayMsg);
-      } else {
-        Alert.alert(t('login.errorTitle'), displayMsg);
-      }
-    } finally {
-      setTranscribing(false);
-    }
+      router.back();
+    } catch (_) {}
   };
 
-  const handleAIFix = async () => {
-    if (aiFixing || !transcription.trim()) return;
+  const handleDeleteAnnotation = useCallback((id: string) => {
+    setAnnotations(prev => prev.filter(a => a.id !== id));
+    if (selectedAnnotationId === id) setSelectedAnnotationId(null);
+  }, [selectedAnnotationId]);
 
-    const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-    if (!apiKey || apiKey === 'gsk_your_key_here' || (typeof apiKey === 'string' && apiKey.trim() === '')) {
-      const msg = 'Groq API anahtarı (.env EXPO_PUBLIC_GROQ_API_KEY) tanımlı değil.';
-      if (typeof window !== 'undefined') {
-        window.alert(msg);
-      } else {
-        Alert.alert(t('login.errorTitle'), msg);
-      }
-      return;
-    }
-
-    setAiFixing(true);
-    try {
-      // Try primary model first, fallback to instant model if needed
-      const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
-      let lastError: Error | null = null;
-      
-      for (const model of models) {
-        try {
-          console.log(`Trying model: ${model}`);
-          const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${apiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: model,
-              messages: [
-                {
-                  role: 'system',
-                  content: 'Sen profesyonel bir editörsün. Sana verilen bozuk Türkçe ses dökümünü (transcription) anlamı bozmadan, sadece imla hatalarını düzelterek, noktalama işaretlerini ekleyerek ve büyük-küçük harf düzenlemesini yaparak geri döndür. Sadece düzeltilmiş metni ver, başka açıklama yapma.'
-                },
-                {
-                  role: 'user',
-                  content: `Metin: ${transcription}`
-                }
-              ]
-            }),
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            console.log(`Groq API Error with ${model}:`, errorData);
-            lastError = new Error(`Groq API error with ${model}: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
-            continue; // Try next model
-          }
-
-          const data = await response.json();
-          console.log(`Groq API Success with ${model}:`, data);
-          const fixedText = data.choices?.[0]?.message?.content?.trim();
-          
-          if (fixedText) {
-            setTranscription(fixedText);
-            // Silent success - no alert
-            return; // Success, exit the function
-          } else {
-            lastError = new Error('No response from Groq API');
-            continue; // Try next model
-          }
-        } catch (err) {
-          console.log(`Error with ${model}:`, err);
-          lastError = err instanceof Error ? err : new Error(String(err));
-          continue; // Try next model
-        }
-      }
-      
-      // If we get here, all models failed
-      throw lastError || new Error('All models failed');
-      
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      console.log('AI Fix Error:', errorMessage);
-      if (typeof window !== 'undefined') {
-        window.alert('AI Fix Error: ' + errorMessage);
-      } else {
-        Alert.alert('AI Fix Error', errorMessage);
-      }
-    } finally {
-      setAiFixing(false);
-    }
-  };
-
-  if (!task) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.loadingText}>Görev bulunamadı. (ID: {id ?? 'yok'})</Text>
-      </View>
-    );
-  }
-
-  const isSubmitted = task?.status === 'completed' || task?.status === 'submitted';
-
-  const handleUpdateAnnotationLabel = (annotationId: string, label: string) => {
-    setAnnotations((prev) =>
-      prev.map((a) => (a.id === annotationId ? { ...a, label: typeof label === 'object' ? (label as any).name || (label as any).label || JSON.stringify(label) : label } : a))
-    );
-  };
-
-  const handleDeleteAnnotation = (annotationId: string) => {
-    setAnnotations((prev) => prev.filter((a) => a.id !== annotationId));
-    if (selectedAnnotationId === annotationId) {
-      setSelectedAnnotationId(null);
-    }
-  };
+  const handleUpdateAnnotationLabel = useCallback((id: string, label: string) => {
+    setAnnotations(prev => prev.map(a => a.id === id ? { ...a, label } : a));
+  }, []);
 
   const getObjectDisplayName = (a: Annotation, idx: number) => {
-    const n = idx + 1;
-    if (a.type === 'bbox') return `Bounding Box #${n}`;
-    if (a.type === 'polygon') return `Polygon #${n}`;
-    if (a.type === 'point') return `Point #${n}`;
-    return `Object #${n}`;
+    const labelStr = typeof a.label === 'object' ? (a.label as any).name || (a.label as any).label : a.label;
+    return labelStr || `${a.type} ${idx + 1}`;
   };
 
   const getAnnotationTypeName = (type: string) => {
@@ -854,6 +315,59 @@ export default function TaskDetailScreen() {
     if (cat.includes('bbox') || cat.includes('box') || typ.includes('bbox') || typ.includes('box')) return t('annotation.boundingBox');
     return task?.type === 'image' ? t('annotation.imageAnnotation') : t('annotation.annotation');
   })();
+
+  useEffect(() => {
+    if (!id) return;
+    const fetchTask = async () => {
+      const taskId = String(id);
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', taskId)
+        .single();
+      if (error) {
+        console.log('Detay Hatası:', error);
+        if (typeof window !== 'undefined') {
+          window.alert('Supabase Detay Hatası: ' + error.message);
+        } else {
+          Alert.alert('Hata', 'Supabase Detay Hatası: ' + error.message);
+        }
+      }
+      if (!error && data) {
+        const cat = (data.category ?? '').toString().toLowerCase();
+        const taskData: TaskData = {
+          id: String(data.id),
+          title: String(data.title ?? '') || 'İsimsiz Görev', // Title null ise varsayılan değer
+          status: data.status ?? 'pending',
+          price: data.price != null ? Number(data.price) : 0,
+          type: (data.type ?? (cat === 'video' ? 'video' : 'audio')) as 'audio' | 'image' | 'video',
+          category: data.category ?? null,
+          audio_url: data.audio_url ?? data.audioUrl,
+          image_url: data.image_url ?? data.imageUrl ?? null,
+          transcription: data.transcription ?? '',
+          annotation_data: data.annotation_data ?? null,
+          language: data.language ?? null,
+        };
+        setTask(taskData);
+        setTranscription(taskData.transcription ?? '');
+        if (Array.isArray(taskData.annotation_data)) {
+          setAnnotations(taskData.annotation_data as Annotation[]);
+        }
+      }
+      setLoading(false);
+    };
+    fetchTask();
+  }, [id]);
+
+  // Loading guard - TÜM Hook'lardan sonra
+  if (loading || !task) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color="#3b82f6" />
+        <Text style={styles.loadingText}>Görev yükleniyor...</Text>
+      </View>
+    );
+  }
 
   if (taskType === 'image') {
     return (
@@ -1154,30 +668,42 @@ export default function TaskDetailScreen() {
     );
   }
 
-  if (taskType === 'audio') {
+  if (taskType === 'video') {
+    console.log(' Video görevi tespit edildi, yönlendiriliyor...');
+    console.log(' Video ID:', id);
+    console.log(' Yönlendirme yapılıyor: /video-annotation/' + id);
+    
+    // Yönlendirme yapılıyor
+    router.replace('/video-annotation/' + id);
+    
+    // Yönlendirme öncesi loading göster
     return (
       <View style={styles.container}>
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 8, paddingBottom: 80 }]}
-          keyboardShouldPersistTaps="handled"
-        >
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => {
-              try {
-                router.back();
-              } catch (_) {}
-            }}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="arrow-back" size={20} color="#f1f5f9" />
-            <Text style={styles.backText}>{t('taskDetail.back')}</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>{t('common.taskDetail')}</Text>
-        </View>
+        <ActivityIndicator size="large" color="#3b82f6" />
+        <Text style={styles.loadingText}>Yönlendiriliyor...</Text>
+      </View>
+    );
+  }
 
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => {
+            try {
+              router.back();
+            } catch (_) {}
+          }}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="arrow-back" size={20} color="#f1f5f9" />
+          <Text style={styles.backText}>{t('taskDetail.back')}</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{t('common.taskDetail')}</Text>
+      </View>
+
+      <ScrollView style={styles.content}>
         {task.title ? (
           <Text style={styles.taskTitle} numberOfLines={2}>
             {task.title}
@@ -1193,7 +719,7 @@ export default function TaskDetailScreen() {
             {audioUrl && !isImageTask ? (
               <>
                 {isWeb ? (
-                  <WebAudioPlayer src={audioUrl} playbackRate={playbackSpeed} />
+                  <AudioPlayer uri={audioUrl} />
                 ) : (
                   <View style={styles.playerContent}>
                     <TouchableOpacity
@@ -1332,39 +858,34 @@ export default function TaskDetailScreen() {
           </View>
         </View>
       </ScrollView>
-      <View style={[styles.submitContainer, { bottom: insets.bottom + 20, left: 20, right: 20 }]}>
+
+      <View style={styles.footer}>
         {isSubmitted ? (
           <View style={styles.submittedBadge}>
             <Ionicons name="checkmark-circle" size={18} color="#fff" />
             <Text style={styles.submittedText}>{t('tasks.submitted')}</Text>
           </View>
         ) : (
-          <View style={[styles.bottomButtonBar, { justifyContent: 'space-between', flexDirection: 'row', width: '100%', paddingHorizontal: 20 }]}>
-  {/* SOL GRUP: Exit ve Submit & Exit yan yana */}
-  <View style={{ flexDirection: 'row', gap: 10 }}>
-    <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
-      <Text style={styles.exitButtonText}>Exit</Text>
-    </TouchableOpacity>
-    
-    <TouchableOpacity style={styles.submitExitButton} onPress={() => handleSubmit(false)}>
-      <Text style={styles.submitExitButtonText}>Submit & Exit</Text>
-    </TouchableOpacity>
-  </View>
-
-  {/* SAĞ GRUP: Sadece Submit butonu */}
-  <TouchableOpacity style={styles.submitButtonGreen} onPress={() => handleSubmit(true)}>
-    <Text style={styles.submitButtonGreenText}>Submit</Text>
-  </TouchableOpacity>
-</View>
+          <View style={styles.bottomButtonBar}>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
+                <Text style={styles.exitButtonText}>Exit</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.submitExitButton} onPress={() => handleSubmit(false)}>
+                <Text style={styles.submitExitButtonText}>Submit & Exit</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <TouchableOpacity style={styles.submitButtonGreen} onPress={() => handleSubmit(true)}>
+              <Text style={styles.submitButtonGreenText}>Submit</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     </View>
   );
-  }
-
-  return null;
-}
-
+};
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
@@ -1379,6 +900,29 @@ const styles = StyleSheet.create({
     marginLeft: 0,
     marginRight: 0,
   },
+  loadingText: { 
+    color: '#94a3b8', 
+    fontSize: 14, 
+    textAlign: 'center', 
+    marginTop: 24 
+  },
+  
+  // Content styles
+  content: {
+    flex: 1,
+    padding: 16,
+  },
+  
+  // Footer styles
+  footer: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    backgroundColor: '#0f172a',
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+  
+  // Task info bar
   taskInfoBar: {
     position: 'absolute',
     top: 16,
@@ -1408,6 +952,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#22c55e',
   },
+  
+  // Annotation layout
   annotationLayout: {
     flex: 1,
     flexDirection: 'row',
@@ -1439,7 +985,55 @@ const styles = StyleSheet.create({
     backgroundColor: '#7c3aed',
     borderColor: '#7c3aed',
   },
-  toolBtnLargeText: { fontSize: 9, color: '#f1f5f9', marginTop: 1, fontWeight: '500' },
+  toolBtnLargeText: { 
+    fontSize: 9, 
+    color: '#f1f5f9', 
+    marginTop: 1, 
+    fontWeight: '500' 
+  },
+  deleteToolBtn: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: '#ef4444',
+  },
+  deleteToolBtnText: { 
+    color: '#ef4444' 
+  },
+  
+  // Center area
+  annotationMain: { 
+    flex: 1, 
+    minWidth: 0, 
+    minHeight: 300 
+  },
+  annotationCanvasWrapFullWidth: { 
+    flex: 1, 
+    width: '100%', 
+    minHeight: 400, 
+    alignSelf: 'stretch' 
+  },
+  canvasWorkspace: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  canvasWorkspaceWithGrid: {
+    position: 'relative',
+  },
+  canvasGridOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px)',
+    backgroundSize: '20px 20px',
+    pointerEvents: 'none',
+  },
+  
+  // Right sidebar
   rightSidebar: {
     width: 280,
     minWidth: 280,
@@ -1458,9 +1052,18 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
-  objectList: { flex: 1, minHeight: 60 },
-  objectListEmpty: { fontSize: 12, color: '#64748b', fontStyle: 'italic' },
-  objectCardWrap: { marginBottom: 8 },
+  objectList: { 
+    flex: 1, 
+    minHeight: 60 
+  },
+  objectListEmpty: { 
+    fontSize: 12, 
+    color: '#64748b', 
+    fontStyle: 'italic' 
+  },
+  objectCardWrap: { 
+    marginBottom: 8 
+  },
   objectCard: {
     backgroundColor: '#1e293b',
     borderRadius: 12,
@@ -1480,18 +1083,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#f1f5f9',
   },
-  selectedLabelBadge: {
-    backgroundColor: '#3b82f6',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    alignSelf: 'flex-start',
-  },
-  selectedLabelText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
   labelOptionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1508,6 +1099,8 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '500',
   },
+  
+  // Bottom buttons
   bottomButtonBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1536,50 +1129,36 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ef4444',
   },
-  exitButtonText: { fontSize: 14, color: '#ef4444', fontWeight: '600' },
-  submitGroup: { flexDirection: 'row', gap: 12 },
+  exitButtonText: { 
+    fontSize: 14, 
+    color: '#ef4444', 
+    fontWeight: '600' 
+  },
   submitExitButton: {
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 8,
     backgroundColor: '#3b82f6',
   },
-  submitExitButtonText: { fontSize: 14, color: '#fff', fontWeight: '600' },
+  submitExitButtonText: { 
+    fontSize: 14, 
+    color: '#fff', 
+    fontWeight: '600' 
+  },
   submitButtonGreen: {
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 8,
     backgroundColor: '#22c55e',
   },
-  submitButtonGreenText: { fontSize: 14, color: '#fff', fontWeight: '600' },
-  footerButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#3b82f6',
+  submitButtonGreenText: { 
+    fontSize: 14, 
+    color: '#fff', 
+    fontWeight: '600' 
   },
-  footerButtonText: { fontSize: 14, color: '#fff', fontWeight: '600' },
-  sidebarFooter: {
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#334155',
-    gap: 8,
-    flexDirection: 'column' as const,
+  submitButtonDisabled: { 
+    opacity: 0.6 
   },
-  kaydetButton: {
-    backgroundColor: '#334155',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  kaydetButtonText: { fontSize: 14, color: '#f1f5f9', fontWeight: '600' },
-  tamamlaButton: {
-    backgroundColor: '#22c55e',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  tamamlaButtonText: { fontSize: 14, color: '#fff', fontWeight: '600' },
   submittedBadgeCompact: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1589,620 +1168,210 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: '#22c55e',
   },
-  submitButtonCompact: {
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
+  submittedText: { 
+    fontSize: 14, 
+    color: '#fff', 
+    fontWeight: '600' 
   },
-  toolbarFixed: {
+  
+  // Audio specific styles
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
+  header: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 6,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: '#0f172a',
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
-    minWidth: 64,
-  },
-  annotationMain: { flex: 1, minWidth: 0, minHeight: 300, padding: 0, margin: 0, marginHorizontal: 0 },
-  toolbar: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  toolBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  toolBtnActive: { borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)' },
-  toolBtnDisabled: { opacity: 0.6 },
-  toolBtnText: { fontSize: 12, color: '#f1f5f9', fontWeight: '600' },
-  annotationCanvasWrap: { flex: 1, minHeight: 400 },
-  annotationCanvasWrapFullWidth: { flex: 1, width: '100%', minHeight: 400, alignSelf: 'stretch' },
-  labelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 },
-  labelRowText: { fontSize: 13, color: '#94a3b8', marginRight: 4 },
-  labelChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  labelChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  labelChipActive: { borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)' },
-  
-  // Video specific styles
-  videoPlayerContainer: {
-    height: 300,
-    backgroundColor: '#1e293b',
-    borderRadius: 8,
-    marginBottom: 16,
-    overflow: 'hidden',
-  },
-  videoPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#1e293b',
-    borderRadius: 8,
-  },
-  videoPlaceholderText: {
-    fontSize: 14,
-    color: '#64748b',
-    marginTop: 8,
-  },
-  canvasWorkspace: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-    borderRadius: 8,
-    overflow: 'hidden',
-  canvasWorkspaceWithGrid: {
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  canvasGridOverlay: {
-    backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px)',
-    backgroundSize: '20px 20px',
-  },
-  // Audio task styles
-  scroll: { flex: 1 },
-  scrollContent: { padding: 12, paddingBottom: 24 },
-  loadingText: { color: '#94a3b8', fontSize: 14, textAlign: 'center', marginTop: 24 },
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  imageHeaderCompact: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  annotBadge: {
-    backgroundColor: 'rgba(30, 41, 59, 0.9)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  annotBadgeCorner: {
-    backgroundColor: 'rgba(30, 41, 59, 0.9)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  annotBadgeText: { fontSize: 11, color: '#94a3b8' },
-  annotationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    backgroundColor: '#0f172a',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
-  },
-  headerCenterMenu: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 20,
-  },
-  headerNavItem: { fontSize: 14, color: '#f1f5f9', fontWeight: '500' },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  yonetimBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: '#7c3aed',
-  },
-  yonetimText: { fontSize: 13, color: '#fff', fontWeight: '600' },
-  langRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  langBtn: { fontSize: 13, color: '#94a3b8', fontWeight: '500' },
-  langBtnActive: { color: '#f1f5f9', fontWeight: '600' },
-  langSep: { fontSize: 12, color: '#64748b' },
-  cikisBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-  },
-  cikisText: { fontSize: 13, color: '#ef4444', fontWeight: '600' },
-  balanceIndicator: { marginLeft: 4 },
-  balanceText: { fontSize: 13, fontWeight: '600', color: '#22c55e' },
-  canvasTopBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#0f172a',
-  },
-  canvasTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginBottom: 0,
-  },
-  backLink: { padding: 4 },
-  backLinkText: { fontSize: 12, color: '#94a3b8' },
-  canvasWorkspace: {
-    borderWidth: 0,
-    overflow: 'hidden',
-  },
-  canvasWorkspaceWithGrid: { position: 'relative' as const },
-  canvasGridOverlay:
-    Platform.OS === 'web'
-      ? ({
-          backgroundImage:
-            'linear-gradient(rgba(51,65,85,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(51,65,85,0.18) 1px, transparent 1px)',
-          backgroundSize: '24px 24px',
-        } as any)
-      : {},
-  backButtonCompact: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingVertical: 4,
-    paddingHorizontal: 6,
-  },
-  backTextCompact: { fontSize: 12, color: '#f1f5f9', fontWeight: '600' },
-  imageHeaderCenter: { flex: 1, marginLeft: 4 },
-  headerTitleCompact: { fontSize: 12, color: '#94a3b8', marginBottom: 2 },
-  priceBadgeCompact: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
-    marginRight: 8,
-  },
-  backText: { fontSize: 14, color: '#f1f5f9', fontWeight: '600' },
-  headerTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: '#f1f5f9' },
-  taskTitle: { fontSize: 14, color: '#94a3b8', marginBottom: 4 },
-  priceBadge: {
-    alignSelf: 'flex-start', backgroundColor: 'rgba(34, 197, 94, 0.15)',
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginBottom: 8,
-  },
-  priceBadgeText: { fontSize: 12, fontWeight: '600', color: '#22c55e' },
-  sectionLabel: { fontSize: 12, fontWeight: '600', color: '#94a3b8', marginBottom: 4 },
-  audioSection: { marginBottom: 10 },
-  audioCard: {
-    backgroundColor: '#1e293b', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#334155',
-  },
-  playerContent: { flexDirection: 'row', alignItems: 'center' },
-  playButton: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: '#3b82f6',
-    justifyContent: 'center', alignItems: 'center', marginRight: 12,
-  },
-  playIcon: { fontSize: 20, color: '#fff' },
-  playerInfo: { flex: 1 },
-  progressBar: { height: 6, backgroundColor: '#334155', borderRadius: 3, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: '#3b82f6', borderRadius: 3 },
-  timeText: { fontSize: 11, color: '#94a3b8', marginTop: 4 },
-  noAudioText: { fontSize: 13, color: '#64748b' },
-  speedRow: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#334155' },
-  speedLabel: { fontSize: 11, color: '#94a3b8', marginBottom: 6 },
-  speedControlRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  speedBtn: {
-    width: 36, height: 36, borderRadius: 8, backgroundColor: '#334155',
-    borderWidth: 1, borderColor: '#475569', justifyContent: 'center', alignItems: 'center',
-  },
-  speedBtnDisabled: { opacity: 0.4 },
-  speedBtnText: { fontSize: 18, color: '#f1f5f9', fontWeight: '600' },
-  speedValue: { minWidth: 52, paddingHorizontal: 12, paddingVertical: 6, alignItems: 'center', justifyContent: 'center' },
-  speedValueText: { fontSize: 15, color: '#3b82f6', fontWeight: '700' },
-  transcriptionSection: { marginBottom: 10, overflow: 'visible' as const },
-  transcriptionHeader: { marginBottom: 6 },
-  aiButtonWrapper: {
-    position: 'relative' as const,
-    zIndex: 9999,
-    marginBottom: 8,
-    overflow: 'visible' as const,
-  },
-  aiTranscribeButton: {
-    position: 'relative' as const,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: '#8b5cf6',
-    alignSelf: 'flex-start',
-    zIndex: 9999,
   },
-  aiTranscribeButtonDisabled: { opacity: 0.6 },
-  aiTranscribeButtonText: { fontSize: 14, color: '#fff', fontWeight: '600' },
-  transcriptionCard: {
-    backgroundColor: '#1e293b', borderRadius: 8, borderWidth: 1, borderColor: '#334155', overflow: 'hidden',
-  },
-  transcriptionInput: {
-    backgroundColor: 'transparent', borderWidth: 0, padding: 12, fontSize: 15, lineHeight: 22,
-    color: '#f1f5f9', minHeight: 140,
-  },
-  submitContainer: {
-    position: 'absolute',
-    alignSelf: 'flex-end',
-  },
-  submitButton: {
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-    borderRadius: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  submitButtonDisabled: { opacity: 0.6 },
-  submitButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  submittedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 24,
-    backgroundColor: '#22c55e',
-    borderWidth: 0,
-  },
-  submittedText: { fontSize: 14, color: '#fff', fontWeight: '600' },
-  annotationLayout: {
-    flex: 1,
-    flexDirection: 'row' as const,
-    minHeight: 0,
-    backgroundColor: '#0f172a',
-    gap: 0,
-    width: '100%' as const,
-  },
-  annotationLayoutColumn: { flex: 1, flexDirection: 'column', minHeight: 400 },
-  taskInfoBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#0f172a',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
-  },
-  taskInfoType: { fontSize: 14, color: '#94a3b8', fontWeight: '500' },
-  taskInfoPriceBadge: {
-    backgroundColor: 'rgba(34, 197, 94, 0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  taskInfoPriceText: { fontSize: 13, fontWeight: '700', color: '#22c55e' },
-  leftToolbarCol: {
-    width: 80,
-    flexDirection: 'column' as const,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    backgroundColor: '#1a2332',
-    borderRightWidth: 1,
-    borderRightColor: '#334155',
-    gap: 4,
-  },
-  toolBtnLarge: {
-    width: 45,
-    height: 45,
-    minWidth: 45,
-    minHeight: 45,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 8,
-    backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  toolBtnActivePurple: {
-    backgroundColor: '#7c3aed',
-    borderColor: '#7c3aed',
-  },
-  toolBtnLargeText: { fontSize: 9, color: '#f1f5f9', marginTop: 1, fontWeight: '500' },
-  rightSidebar: {
-    width: 280,
-    minWidth: 280,
-    maxWidth: 280,
-    padding: 8,
-    backgroundColor: '#1e293b',
-    borderLeftWidth: 1,
-    borderLeftColor: '#334155',
-    flexDirection: 'column',
-  },
-  rightSidebarTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#f1f5f9',
-    marginBottom: 12,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-  objectList: { flex: 1, minHeight: 60 },
-  objectListEmpty: { fontSize: 12, color: '#64748b', fontStyle: 'italic' },
-  objectCardWrap: { marginBottom: 8 },
-  objectCard: {
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 0,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  objectCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  objectCardTitle: {
-    fontSize: 14,
+  backText: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#f1f5f9',
   },
-  selectedLabelBadge: {
-    backgroundColor: '#3b82f6',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    alignSelf: 'flex-start',
-  },
-  selectedLabelText: {
-    fontSize: 12,
+  headerTitle: {
+    fontSize: 18,
     fontWeight: '700',
-    color: '#ffffff',
+    color: '#f1f5f9',
+    marginLeft: 16,
+    flex: 1,
+    textAlign: 'center',
   },
-  labelOptionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
+  taskTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#f1f5f9',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    lineHeight: 28,
   },
-  labelOptionChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 16,
-    backgroundColor: 'transparent',
+  priceBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginLeft: 16,
+    marginBottom: 16,
+  },
+  priceBadgeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#22c55e',
+  },
+  audioSection: {
+    paddingHorizontal: 16,
+    marginBottom: 24,
+  },
+  sectionLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#f1f5f9',
+    marginBottom: 12,
+  },
+  audioCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
     borderWidth: 1,
+    borderColor: '#334155',
   },
-  labelOptionText: {
-    fontSize: 10,
-    fontWeight: '500',
+  playerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
   },
-  bottomButtonBar: {
+  playButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#3b82f6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playIcon: {
+    fontSize: 20,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  playerInfo: {
+    flex: 1,
+  },
+  progressBar: {
+    height: 4,
+    backgroundColor: '#334155',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#3b82f6',
+  },
+  timeText: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginTop: 8,
+  },
+  speedRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#0f172a',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    marginTop: 16,
   },
-  bottomLeftActions: {
+  speedLabel: {
+    fontSize: 14,
+    color: '#f1f5f9',
+  },
+  speedControlRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
-    alignItems: 'center',
   },
-  bottomRightActions: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center',
-  },
-  exitButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#ef4444',
-  },
-  exitButtonText: { fontSize: 14, color: '#ef4444', fontWeight: '600' },
-  submitGroup: { flexDirection: 'row', gap: 12 },
-  submitExitButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#3b82f6',
-  },
-  submitExitButtonText: { fontSize: 14, color: '#fff', fontWeight: '600' },
-  submitButtonGreen: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#22c55e',
-  },
-  submitButtonGreenText: { fontSize: 14, color: '#fff', fontWeight: '600' },
-  footerButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#3b82f6',
-  },
-  footerButtonText: { fontSize: 14, color: '#fff', fontWeight: '600' },
-  sidebarFooter: {
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#334155',
-    gap: 8,
-    flexDirection: 'column' as const,
-  },
-  kaydetButton: {
-    backgroundColor: '#334155',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  kaydetButtonText: { fontSize: 14, color: '#f1f5f9', fontWeight: '600' },
-  tamamlaButton: {
-    backgroundColor: '#22c55e',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  tamamlaButtonText: { fontSize: 14, color: '#fff', fontWeight: '600' },
-  submittedBadgeCompact: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#22c55e',
-  },
-  submitButtonCompact: {
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  toolbarFixed: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    backgroundColor: '#0f172a',
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-    minWidth: 64,
-  },
-  annotationMain: { flex: 1, minWidth: 0, minHeight: 300, padding: 0, margin: 0, marginHorizontal: 0 },
-  toolbar: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  toolBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  toolBtnActive: { borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)' },
-  toolBtnDisabled: { opacity: 0.6 },
-  toolBtnText: { fontSize: 12, color: '#f1f5f9', fontWeight: '600' },
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
-    marginRight: 8,
-  },
-  backText: { fontSize: 14, color: '#f1f5f9', fontWeight: '600' },
-  headerTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: '#f1f5f9' },
-  taskTitle: { fontSize: 14, color: '#94a3b8', marginBottom: 4 },
-  priceBadge: {
-    alignSelf: 'flex-start', backgroundColor: 'rgba(34, 197, 94, 0.15)',
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginBottom: 8,
-  },
-  priceBadgeText: { fontSize: 12, fontWeight: '600', color: '#22c55e' },
-  sectionLabel: { fontSize: 12, fontWeight: '600', color: '#94a3b8', marginBottom: 4 },
-  audioSection: { marginBottom: 10 },
-  audioCard: {
-    backgroundColor: '#1e293b', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#334155',
-  },
-  playerContent: { flexDirection: 'row', alignItems: 'center' },
-  playButton: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: '#3b82f6',
-    justifyContent: 'center', alignItems: 'center', marginRight: 12,
-  },
-  playIcon: { fontSize: 20, color: '#fff' },
-  playerInfo: { flex: 1 },
-  progressBar: { height: 6, backgroundColor: '#334155', borderRadius: 3, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: '#3b82f6', borderRadius: 3 },
-  timeText: { fontSize: 11, color: '#94a3b8', marginTop: 4 },
-  noAudioText: { fontSize: 13, color: '#64748b' },
-  speedRow: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#334155' },
-  speedLabel: { fontSize: 11, color: '#94a3b8', marginBottom: 6 },
-  speedControlRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   speedBtn: {
-    width: 36, height: 36, borderRadius: 8, backgroundColor: '#334155',
-    borderWidth: 1, borderColor: '#475569', justifyContent: 'center', alignItems: 'center',
-  },
-  speedBtnDisabled: { opacity: 0.4 },
-  speedBtnText: { fontSize: 18, color: '#f1f5f9', fontWeight: '600' },
-  speedValue: { minWidth: 52, paddingHorizontal: 12, paddingVertical: 6, alignItems: 'center', justifyContent: 'center' },
-  speedValueText: { fontSize: 15, color: '#3b82f6', fontWeight: '700' },
-  transcriptionSection: { marginBottom: 10, overflow: 'visible' as const },
-  transcriptionHeader: { marginBottom: 6 },
-  aiButtonWrapper: {
-    position: 'relative' as const,
-    zIndex: 9999,
-    marginBottom: 8,
-    overflow: 'visible' as const,
-  },
-  aiTranscribeButton: {
-    position: 'relative' as const,
-    flexDirection: 'row',
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: '#8b5cf6',
-    alignSelf: 'flex-start',
-    zIndex: 9999,
   },
-  aiTranscribeButtonDisabled: { opacity: 0.6 },
-  aiTranscribeButtonText: { fontSize: 14, color: '#fff', fontWeight: '600' },
+  speedBtnDisabled: {
+    opacity: 0.5,
+  },
+  speedBtnText: {
+    fontSize: 16,
+    color: '#f1f5f9',
+    fontWeight: '600',
+  },
+  speedValue: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 6,
+  },
+  speedValueText: {
+    fontSize: 12,
+    color: '#f1f5f9',
+    fontWeight: '600',
+  },
+  noAudioText: {
+    fontSize: 14,
+    color: '#64748b',
+    textAlign: 'center',
+    paddingVertical: 24,
+  },
+  transcriptionSection: {
+    paddingHorizontal: 16,
+    marginBottom: 24,
+  },
+  transcriptionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    fontWeight: '600',
+    color: '#fff',
+  },
   transcriptionCard: {
-    backgroundColor: '#1e293b', borderRadius: 8, borderWidth: 1, borderColor: '#334155', overflow: 'hidden',
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+    marginBottom: 12,
   },
   transcriptionInput: {
-    backgroundColor: 'transparent', borderWidth: 0, padding: 12, fontSize: 15, lineHeight: 22,
-    color: '#f1f5f9', minHeight: 140,
+    fontSize: 14,
+    color: '#f1f5f9',
+    minHeight: 120,
+    textAlignVertical: 'top',
   },
   submitContainer: {
     position: 'absolute',
-    alignSelf: 'flex-end',
+    left: 20,
+    right: 20,
   },
   submittedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 24,
     backgroundColor: '#22c55e',
-    borderWidth: 0,
+    borderRadius: 8,
   },
 });

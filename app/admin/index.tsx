@@ -54,6 +54,97 @@ async function getBlobDuration(blob: Blob): Promise<number | null> {
   });
 }
 
+// Video dosyasını Supabase videos bucket'ına yükleyen fonksiyon
+async function uploadVideoToSupabase(videoUrl: string): Promise<string | null> {
+  try {
+    // Video URL'den video dosyasını indir
+    const response = await fetch(videoUrl);
+    if (!response.ok) {
+      throw new Error('Video indirilemedi');
+    }
+    
+    const blob = await response.blob();
+    const fileName = `video_${Date.now()}.mp4`;
+    const filePath = `videos/${fileName}`;
+    
+    // Supabase storage'a yükle
+    const { data, error } = await supabase.storage
+      .from('videos')
+      .upload(filePath, blob, {
+        contentType: 'video/mp4',
+        upsert: true
+      });
+    
+    if (error) {
+      throw new Error('Video yüklenemedi: ' + error.message);
+    }
+    
+    // Public URL oluştur
+    const { data: { publicUrl } } = supabase.storage
+      .from('videos')
+      .getPublicUrl(filePath);
+    
+    return publicUrl;
+  } catch (error) {
+    console.error('Video upload error:', error);
+    return null;
+  }
+}
+
+// Video dosyasını (DocumentPicker asset) Supabase videos bucket'ına yükleyen fonksiyon
+async function uploadVideoFileToSupabase(file: DocumentPicker.DocumentPickerAsset): Promise<string | null> {
+  try {
+    if (!file.uri) {
+      throw new Error('Dosya URI bulunamadı');
+    }
+    
+    // Dosya boyutunu kontrol et (max 50MB)
+    if (file.size && file.size > 50 * 1024 * 1024) {
+      throw new Error('Dosya boyutu çok büyük. Maksimum 50MB olabilir.');
+    }
+    
+    console.log('Uploading video file:', file.name, 'Size:', file.size, 'Type:', file.mimeType);
+    
+    // Web uyumlu veri okuma
+    const response = await fetch(file.uri);
+    if (!response.ok) {
+      throw new Error('Dosya okunamadı: ' + response.statusText);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    
+    // Temiz dosya adı oluştur
+    const fileName = `${Date.now()}.mp4`;
+    
+    console.log('Uploading to path:', fileName, 'ArrayBuffer size:', arrayBuffer.byteLength);
+    
+    // Supabase storage'a yükle (yol düzeltmesi)
+    const { data, error } = await supabase.storage
+      .from('videos')
+      .upload(fileName, arrayBuffer, {
+        contentType: file.mimeType || 'video/mp4',
+        upsert: true
+      });
+    
+    if (error) {
+      console.error('Supabase upload error:', error);
+      throw new Error('Video yüklenemedi: ' + error.message);
+    }
+    
+    console.log('Upload successful:', data);
+    
+    // Public URL oluştur
+    const { data: { publicUrl } } = supabase.storage
+      .from('videos')
+      .getPublicUrl(fileName);
+    
+    console.log('Public URL:', publicUrl);
+    return publicUrl;
+  } catch (error) {
+    console.error('DETAYLI HATA:', (error as Error).message, error);
+    return null;
+  }
+}
+
 const CARD_STYLE = {
   backgroundColor: 'rgba(255,255,255,0.08)',
   borderRadius: 12,
@@ -113,7 +204,8 @@ export default function AdminPanelScreen() {
   const [imageUploading, setImageUploading] = useState(false);
   const uploadedUrlRef = useRef<string>('');
   const [videoFiles, setVideoFiles] = useState<DocumentPicker.DocumentPickerAsset[]>([]);
-  const [recentTasks, setRecentTasks] = useState<Array<{ id: string; title: string; category?: string | null; image_url?: string | null }>>([]);
+  const [recentTasks, setRecentTasks] = useState<Array<{ id: string; title: string; category?: string | null; image_url?: string | null; type?: string }>>([]);
+  const [selectedTaskCategory, setSelectedTaskCategory] = useState<'all' | 'video' | 'audio' | 'image'>('all');
   const [userEarnings, setUserEarnings] = useState<Record<string, number>>({});
   const [annotatorSearchQuery, setAnnotatorSearchQuery] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -372,18 +464,108 @@ export default function AdminPanelScreen() {
   }, [fetchClientNames]);
 
   const fetchRecentTasks = useCallback(async () => {
-    const { data } = await supabase
-      .from('tasks')
-      .select('id, title, category, image_url')
-      .eq('is_pool_task', true)
-      .order('created_at', { ascending: false })
-      .limit(5);
-    setRecentTasks(data ?? []);
+    try {
+      // FİLTRESİZ SORGU - Tüm görevleri çek, hiçbir where filtresi yok
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*') // Tüm alanları çek
+        .order('created_at', { ascending: false })
+        .limit(15);
+      
+      if (error) {
+        console.error('Sorgu Hatası:', error);
+        console.error('Hata detayı:', JSON.stringify(error, null, 2));
+        return;
+      }
+      
+      // HAM VERİ LOGU - Hiçbir filtreye girmeden önce
+      console.log('SUPABASE GELEN HAM VERİ:', data);
+      console.log('Ham veri sayısı:', data?.length || 0);
+      
+      // State güncelleme kontrolü
+      console.log('State güncelleniyor mu?');
+      setRecentTasks(data ?? []);
+      console.log('State güncellendi');
+      
+      // Veri kontrolü
+      if (!data || data.length === 0) {
+        console.error('DİKKAT: Veritabanından hiç görev dönmedi!');
+      } else {
+        console.log('✅ Veri başarıyla geldi, ilk görev:', data[0]);
+        console.log('İlk 3 görevin tipleri:', data.slice(0, 3).map(t => ({ id: t.id, title: t.title, type: t.type, status: t.status })));
+      }
+    } catch (err) {
+      console.error('fetchRecentTasks hatası:', err);
+    }
+  }, []);
+
+  // Filtreleme mantığı
+  const filteredTasks = useMemo(() => {
+    // Debug log
+    console.log('Mevcut Görev Tipleri:', recentTasks.map(t => ({ id: t.id, title: t.title, type: t.type, status: t.status })));
+    
+    return recentTasks.filter(task => {
+      const taskType = task.type?.toLowerCase() || '';
+      
+      if (selectedTaskCategory === 'all') {
+        return true; // Hepsi - hiç filtreleme yok
+      } else if (selectedTaskCategory === 'video') {
+        return taskType.includes('video');
+      } else if (selectedTaskCategory === 'audio') {
+        // GARANTİLİ AUDIO FİLTRESİ
+        const isAudio = taskType.includes('audio') || 
+                       taskType.includes('transcription') || 
+                       taskType.includes('ses');
+        console.log(`🎵 Audio kontrolü - Task: ${task.title}, Type: "${taskType}", isAudio: ${isAudio}`);
+        return isAudio;
+      } else if (selectedTaskCategory === 'image') {
+        return taskType.includes('image') || taskType.includes('görsel') || taskType.includes('foto');
+      }
+      return false;
+    });
+  }, [recentTasks, selectedTaskCategory]);
+
+  const handleDeleteTask = useCallback(async (taskId: string) => {
+    const confirmed = window.confirm('Bu görevi silmek istediğinize emin misiniz?');
+    if (!confirmed) return;
+    
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', taskId);
+      
+      if (error) {
+        throw error;
+      }
+      
+      // Anlık güncelleme: listeden görevi kaldır
+      setRecentTasks(prev => prev.filter(task => task.id !== taskId));
+      
+      if (typeof window !== 'undefined') {
+        window.alert('Görev başarıyla silindi');
+      }
+    } catch (error) {
+      console.error('Delete task error:', error);
+      if (typeof window !== 'undefined') {
+        window.alert('Görev silinirken hata oluştu: ' + (error as Error).message);
+      }
+    }
   }, []);
 
   useEffect(() => {
-    if (showTaskForm) fetchRecentTasks();
+    console.log('🔄 useEffect tetiklendi - showTaskForm:', showTaskForm);
+    if (showTaskForm) {
+      console.log('📞 fetchRecentTasks çağrılıyor...');
+      fetchRecentTasks();
+    }
   }, [showTaskForm, fetchRecentTasks]);
+
+  // Test için component mount edildiğinde veri çek
+  useEffect(() => {
+    console.log('🚀 Component mount edildi, fetchRecentTasks çağrılıyor...');
+    fetchRecentTasks();
+  }, [fetchRecentTasks]);
 
   const parseAnnotations = (data: unknown): Annotation[] => {
     if (Array.isArray(data)) return data as Annotation[];
@@ -909,16 +1091,79 @@ export default function AdminPanelScreen() {
 
       if (taskType === 'video') {
         const videoUrl = (imageUrlInput ?? '').trim();
+        const hasVideoFile = videoFiles && videoFiles.length > 0;
 
-        if (!videoUrl || videoUrl.length === 0) {
-          const msg = 'Video görevi için video URL gerekli. Lütfen bir video URL girin.';
-          if (typeof window !== 'undefined') {
-            window.alert(msg);
-          } else {
-            Alert.alert(t('login.errorTitle'), msg);
-          }
-          setSubmitting(false);
-          return;
+        // Video kaynağı kontrolü
+        const hasVideoSource = (videoUrl && videoUrl.trim() !== '') || (videoFiles && videoFiles.length > 0);
+
+        if (!hasVideoSource) {
+            const msg = 'Video görevi için video URL veya dosya seçimi gerekli. Lütfen bir video URL girin veya dosya seçin.';
+            if (typeof window !== 'undefined') {
+                window.alert(msg);
+            } else {
+                Alert.alert(t('login.errorTitle'), msg);
+            }
+            setSubmitting(false);
+            return;
+        }
+
+        console.log('Video validation check:', { videoUrl, hasVideoFile, videoFiles: videoFiles?.length, hasVideoSource });
+
+        let finalVideoUrl = videoUrl;
+
+        // Eğer dosya seçilmişse, önce yükle
+        if (hasVideoFile) {
+            console.log('Video file detected, uploading...');
+            // Loading state'i güncelle
+            setSubmitting(true);
+            if (typeof window !== 'undefined') {
+                // Buton text'ini güncelle
+                const submitButton = document.querySelector('button[type="submit"]') as HTMLButtonElement;
+                if (submitButton) {
+                    submitButton.textContent = 'Video yükleniyor...';
+                    submitButton.disabled = true;
+                }
+            }
+
+            // Dosyayı yükle
+            const file = videoFiles[0]; // İlk dosyayı al
+            const uploadedUrl = await uploadVideoFileToSupabase(file);
+            
+            if (!uploadedUrl) {
+                const errMsg = 'Dosya yükleme başarısız oldu. Lütfen tekrar deneyin.';
+                if (typeof window !== 'undefined') {
+                    window.alert('Hata: ' + errMsg);
+                    // Butonu eski haline getir
+                    const submitButton = document.querySelector('button[type="submit"]') as HTMLButtonElement;
+                    if (submitButton) {
+                        submitButton.textContent = 'Gönder';
+                        submitButton.disabled = false;
+                    }
+                } else {
+                    Alert.alert(t('login.errorTitle'), errMsg);
+                }
+                setSubmitting(false);
+                return;
+            }
+
+            finalVideoUrl = uploadedUrl;
+            console.log('Video file uploaded successfully:', uploadedUrl);
+        } else if (videoUrl) {
+            console.log('Video URL detected, uploading from URL...');
+            // URL varsa, onu Supabase'e yükle
+            const publicUrl = await uploadVideoToSupabase(videoUrl);
+            if (!publicUrl) {
+                const errMsg = 'Video yüklenemedi. Lütfen tekrar deneyin.';
+                if (typeof window !== 'undefined') {
+                    window.alert('Hata: ' + errMsg);
+                } else {
+                    Alert.alert(t('login.errorTitle'), errMsg);
+                }
+                setSubmitting(false);
+                return;
+            }
+            finalVideoUrl = publicUrl;
+            console.log('Video URL uploaded successfully:', publicUrl);
         }
 
         const taskData: Record<string, unknown> = {
@@ -926,7 +1171,7 @@ export default function AdminPanelScreen() {
           status: 'pending',
           type: 'video',
           category: 'video',
-          image_url: videoUrl, // Video URL'si image_url alanında saklanacak
+          image_url: finalVideoUrl, // Yüklenen video URL'si
           audio_url: '',
           transcription: '',
           price: priceNum,
@@ -1235,6 +1480,136 @@ export default function AdminPanelScreen() {
           <ActionCard icon="time" iconColor="#f59e0b" label="Onay Bekleyen Ödemeler" onPress={() => Alert.alert('Onay Bekleyen Ödemeler', `${dashboardStats.pendingPayments} bekleyen ödeme var`)} />
           <ActionCard icon="checkmark-circle" iconColor="#10b981" label="Tamamlanan Görevler" onPress={() => setShowCompletedTasks(true)} />
           <ActionCard icon="chatbubbles" iconColor="#22c55e" label={t('nav.messages')} onPress={() => router.push('/messages' as any)} />
+        </View>
+
+        {/* Recent Tasks List */}
+        <View style={[styles.sectionCard, CARD_STYLE]}>
+          <Text style={styles.sectionTitle}>Son Görevler</Text>
+          
+          {/* Debug Info */}
+          <View style={{ padding: 8, backgroundColor: '#0f172a', borderRadius: 4, marginBottom: 8 }}>
+            <Text style={{ color: '#fff', fontSize: 12 }}>
+              Container Render Edildi - recentTasks: {recentTasks.length}, selectedCategory: {selectedTaskCategory}
+            </Text>
+          </View>
+          
+          {/* Kategori Sekmeleri */}
+          <View style={styles.taskCategoryTabs}>
+            <TouchableOpacity
+              style={[styles.categoryTab, selectedTaskCategory === 'all' && styles.categoryTabActive]}
+              onPress={() => {
+                console.log('Hepsi sekmesine tıklandı');
+                setSelectedTaskCategory('all');
+              }}
+            >
+              <Ionicons name="list" size={16} color={selectedTaskCategory === 'all' ? '#fff' : '#94a3b8'} />
+              <Text style={[styles.categoryTabText, selectedTaskCategory === 'all' && styles.categoryTabTextActive]}>Hepsi</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.categoryTab, selectedTaskCategory === 'video' && styles.categoryTabActive]}
+              onPress={() => {
+                console.log('Video sekmesine tıklandı');
+                setSelectedTaskCategory('video');
+              }}
+            >
+              <Ionicons name="videocam" size={16} color={selectedTaskCategory === 'video' ? '#fff' : '#94a3b8'} />
+              <Text style={[styles.categoryTabText, selectedTaskCategory === 'video' && styles.categoryTabTextActive]}>Video Tasks</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.categoryTab, selectedTaskCategory === 'audio' && styles.categoryTabActive]}
+              onPress={() => {
+                console.log('Audio sekmesine tıklandı');
+                setSelectedTaskCategory('audio');
+              }}
+            >
+              <Ionicons name="mic" size={16} color={selectedTaskCategory === 'audio' ? '#fff' : '#94a3b8'} />
+              <Text style={[styles.categoryTabText, selectedTaskCategory === 'audio' && styles.categoryTabTextActive]}>Audio Tasks</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.categoryTab, selectedTaskCategory === 'image' && styles.categoryTabActive]}
+              onPress={() => {
+                console.log('Image sekmesine tıklandı');
+                setSelectedTaskCategory('image');
+              }}
+            >
+              <Ionicons name="image" size={16} color={selectedTaskCategory === 'image' ? '#fff' : '#94a3b8'} />
+              <Text style={[styles.categoryTabText, selectedTaskCategory === 'image' && styles.categoryTabTextActive]}>Image Tasks</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Görev Listesi */}
+          <View>
+            {(() => {
+              console.log('=== DEBUG INFO ===');
+              console.log('Toplam Görev Sayısı:', recentTasks.length);
+              console.log('Seçili Kategori:', selectedTaskCategory);
+              console.log('Filtrelenmiş Görev Sayısı:', filteredTasks.length);
+              console.log('Tüm Görevler:', recentTasks.map(t => ({ id: t.id, title: t.title, type: t.type, category: t.category })));
+              console.log('Filtrelenmiş Görevler:', filteredTasks.map(t => ({ id: t.id, title: t.title, type: t.type, category: t.category })));
+              console.log('================');
+              return null;
+            })()}
+            
+            {/* Basit Text Listesi - Debug için */}
+            <View style={{ padding: 16, backgroundColor: '#1e293b', borderRadius: 8, marginBottom: 16 }}>
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 8 }}>
+                DEBUG: Filtrelenmiş Görevler ({filteredTasks.length})
+              </Text>
+              <Text style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>
+                Seçili Kategori: {selectedTaskCategory}
+              </Text>
+              {filteredTasks.map((task, index) => (
+                <Text key={task.id} style={{ color: '#94a3b8', fontSize: 14, marginBottom: 4 }}>
+                  {index + 1}. {task.title} (Type: "{task.type || 'N/A'}", Status: "{task.status || 'N/A'}", Category: "{task.category || 'N/A'}")
+                </Text>
+              ))}
+              {filteredTasks.length === 0 && (
+                <View>
+                  <Text style={{ color: '#ef4444', fontSize: 14, marginBottom: 4 }}>
+                    GÖREV BULUNAMADI!
+                  </Text>
+                  <Text style={{ color: '#f59e0b', fontSize: 12 }}>
+                    Tüm görev sayısı: {recentTasks.length}
+                  </Text>
+                  <Text style={{ color: '#f59e0b', fontSize: 12 }}>
+                    İlk 5 görevin tipleri: {recentTasks.slice(0, 5).map(t => t.type || 'N/A').join(', ')}
+                  </Text>
+                  <Text style={{ color: '#10b981', fontSize: 12 }}>
+                    Seçili kategori: {selectedTaskCategory}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Normal Görev Listesi */}
+            {filteredTasks.length > 0 ? (
+              filteredTasks.map((task) => (
+                <View key={task.id} style={styles.taskItem}>
+                  <View style={styles.taskItemHeader}>
+                    <Text style={styles.taskItemTitle} numberOfLines={2}>{task.title || 'İsimsiz Görev'}</Text>
+                    <TouchableOpacity 
+                      style={styles.deleteButton} 
+                      onPress={() => handleDeleteTask(task.id)}
+                    >
+                      <Ionicons name="trash" size={16} color="#ef4444" />
+                      <Text style={styles.deleteButtonText}>Sil</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.taskItemDetails}>
+                    <Text style={styles.taskItemType}>Tip: {task.type || task.category || 'Bilinmeyen'}</Text>
+                    <Text style={styles.taskItemStatus}>Durum: {task.status || 'Bilinmeyen'}</Text>
+                    {task.image_url && (
+                      <Text style={styles.taskItemImage}>📎 Görsel var</Text>
+                    )}
+                  </View>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyCategoryContainer}>
+                <Text style={styles.emptyCategoryText}>Bu kategoride henüz görev yok</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Görev Atama Formu (açılır) */}
@@ -1929,6 +2304,101 @@ const styles = StyleSheet.create({
   },
   queueProgressPercent: {
     fontSize: 12,
+    color: '#94a3b8',
+    textAlign: 'center',
+  },
+  
+  // Recent Tasks styles
+  taskItem: {
+    padding: 12,
+    marginBottom: 8,
+    backgroundColor: '#1e293b',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  taskItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  taskItemTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f8fafc',
+    flex: 1,
+    marginRight: 12,
+  },
+  taskItemDetails: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  taskItemType: {
+    fontSize: 12,
+    color: '#94a3b8',
+  },
+  taskItemStatus: {
+    fontSize: 12,
+    color: '#f59e0b',
+  },
+  taskItemImage: {
+    fontSize: 12,
+    color: '#10b981',
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: '#ef4444',
+    borderRadius: 6,
+  },
+  deleteButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  
+  // Task Category Tabs styles
+  taskCategoryTabs: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  categoryTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: 'rgba(15,23,42,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  categoryTabActive: {
+    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
+  },
+  categoryTabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  categoryTabTextActive: {
+    color: '#fff',
+  },
+  emptyCategoryContainer: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  emptyCategoryText: {
+    fontSize: 14,
     color: '#94a3b8',
     textAlign: 'center',
   },

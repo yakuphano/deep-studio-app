@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Animated,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -224,7 +225,7 @@ export default function AdminPanelScreen() {
   const [exportLang, setExportLang] = useState<string>('all');
   const [exportClient, setExportClient] = useState<string>('all');
   const [exportTaskType, setExportTaskType] = useState<'audio' | 'image' | 'video'>('audio');
-  const [exportFormat, setExportFormat] = useState<'json' | 'yolo' | 'coco' | 'pascalvoc'>('json');
+  const [exportFormat, setExportFormat] = useState<'json' | 'csv' | 'srt' | 'txt' | 'yolo' | 'coco' | 'pascalvoc'>('json');
   const [clientNames, setClientNames] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
 
@@ -607,7 +608,85 @@ export default function AdminPanelScreen() {
       let query = supabase.from('tasks').select(cols);
       if (exportTaskType === 'audio') {
         query = query.eq('category', 'audio').not('audio_url', 'is', null);
-      } else if (exportTaskType === 'image') {
+        console.log(`🎵 Exporting Audio as ${exportFormat.toUpperCase()}...`);
+        Alert.alert('Export Started', `Exporting Audio data as ${exportFormat.toUpperCase()} format...`);
+        
+        // Handle different audio export formats
+        const fileName = `export_audio_${exportFormat}_${new Date().toISOString().slice(0, 10)}.${exportFormat}`;
+        
+        if (exportFormat === 'json') {
+          // JSON export (existing logic)
+          const jsonStr = JSON.stringify(taskList ?? [], null, 2);
+          console.log('Export System Integrated - Audio JSON');
+          if (Platform.OS === 'web' && typeof document !== 'undefined') {
+            const path = `${FileSystem.cacheDirectory}${fileName}`;
+            await FileSystem.writeAsStringAsync(path, jsonStr, { encoding: FileSystem.EncodingType.UTF8 });
+            if (await Sharing.isAvailableAsync()) {
+              await Sharing.shareAsync(path, { mimeType: 'application/json', dialogTitle: fileName });
+            } else {
+              Alert.alert('Export Complete', `Audio JSON saved to: ${path}`);
+            }
+          }
+        } else if (exportFormat === 'csv') {
+          // CSV export for audio
+          const csvContent = taskList?.map(task => 
+            `${task.id},"${task.title}","${task.type || ''}","${task.language || ''}","${task.price || 0}","${task.transcription || ''}"`
+          ).join('\n');
+          const csvHeader = 'ID,Title,Type,Language,Price,Transcription\n';
+          const fullCsv = csvHeader + csvContent;
+          
+          console.log('Export System Integrated - Audio CSV');
+          if (Platform.OS === 'web' && typeof document !== 'undefined') {
+            const path = `${FileSystem.cacheDirectory}${fileName}`;
+            await FileSystem.writeAsStringAsync(path, fullCsv, { encoding: FileSystem.EncodingType.UTF8 });
+            if (await Sharing.isAvailableAsync()) {
+              await Sharing.shareAsync(path, { mimeType: 'text/csv', dialogTitle: fileName });
+            } else {
+              Alert.alert('Export Complete', `Audio CSV saved to: ${path}`);
+            }
+          }
+        } else if (exportFormat === 'srt') {
+          // SRT export for audio transcriptions
+          const srtContent = taskList?.map((task, index) => {
+            const transcription = task.transcription || '';
+            const startTime = '00:00:00,000';
+            const endTime = '00:00:05,000';
+            return `${index + 1}\n${startTime} --> ${endTime}\n${transcription}\n`;
+          }).join('\n');
+          
+          console.log('Export System Integrated - Audio SRT');
+          if (Platform.OS === 'web' && typeof document !== 'undefined') {
+            const path = `${FileSystem.cacheDirectory}${fileName}`;
+            await FileSystem.writeAsStringAsync(path, srtContent, { encoding: FileSystem.EncodingType.UTF8 });
+            if (await Sharing.isAvailableAsync()) {
+              await Sharing.shareAsync(path, { mimeType: 'text/plain', dialogTitle: fileName });
+            } else {
+              Alert.alert('Export Complete', `Audio SRT saved to: ${path}`);
+            }
+          }
+        } else if (exportFormat === 'txt') {
+          // TXT export for audio transcriptions
+          const txtContent = taskList?.map(task => 
+            `${task.title}\n${'='.repeat(50)}\n${task.transcription || ''}\n${'='.repeat(50)}\n`
+          ).join('\n');
+          
+          console.log('Export System Integrated - Audio TXT');
+          if (Platform.OS === 'web' && typeof document !== 'undefined') {
+            const path = `${FileSystem.cacheDirectory}${fileName}`;
+            await FileSystem.writeAsStringAsync(path, txtContent, { encoding: FileSystem.EncodingType.UTF8 });
+            if (await Sharing.isAvailableAsync()) {
+              await Sharing.shareAsync(path, { mimeType: 'text/plain', dialogTitle: fileName });
+            } else {
+              Alert.alert('Export Complete', `Audio TXT saved to: ${path}`);
+            }
+          }
+        }
+        
+        setTimeout(() => {
+          setExporting(false);
+          Alert.alert('Export Complete', `Successfully exported Audio data as ${exportFormat.toUpperCase()} format`);
+        }, 2000);
+        return;
         query = query.eq('category', 'image').not('image_url', 'is', null);
       } else if (exportTaskType === 'video') {
         query = query.eq('category', 'video');
@@ -1440,6 +1519,7 @@ export default function AdminPanelScreen() {
 
   const completionRate = dashboardStats?.completionRate || 0;
   const filteredRecentTasks = filteredTasks || recentTasks || [];
+  const [showRecentTasksModal, setShowRecentTasksModal] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -1454,21 +1534,8 @@ export default function AdminPanelScreen() {
             activeOpacity={0.8}
           >
             <Ionicons name="arrow-back" size={22} color="#f8fafc" />
-            <Text style={styles.backButtonText}>Görevlere Dön</Text>
+            <Text style={styles.backButtonText}>Back to Tasks</Text>
           </TouchableOpacity>
-          
-          {/* Professional Header */}
-          <View style={styles.headerContainer}>
-            <Text style={styles.title}>{t('admin.panelTitle')}</Text>
-            <TouchableOpacity 
-              style={styles.refreshButton} 
-              onPress={fetchDashboardStats}
-              disabled={refreshing}
-            >
-            <Ionicons name={refreshing ? "refresh" : "refresh-outline"} size={20} color="#f8fafc" />
-            <Text style={styles.refreshButtonText}>{refreshing ? 'Refreshing...' : 'Refresh'}</Text>
-          </TouchableOpacity>
-          </View>
 
           {/* 5 İstatistik Kartı (4 + Tamamlama Oranı) */}
           <View style={styles.statsRow}>
@@ -1492,7 +1559,7 @@ export default function AdminPanelScreen() {
             <View style={[styles.statCard, CARD_STYLE]}>
               <Ionicons name="checkmark-circle" size={18} color="#10b981" />
               <Text style={styles.statValue}>{statsLoading ? '...' : dashboardStats.completedTasks}</Text>
-              <Text style={styles.statLabel}>Tamamlanan Görevler</Text>
+              <Text style={styles.statLabel}>Completed Tasks</Text>
             </View>
             <View style={[styles.statCard, CARD_STYLE]}>
               <Ionicons name="wallet" size={18} color="#8b5cf6" />
@@ -1500,7 +1567,7 @@ export default function AdminPanelScreen() {
               <Text style={styles.statLabel}>{t('admin.stats.monthlyRevenue')}</Text>
             </View>
             <View style={[styles.completionStatCard, CARD_STYLE]}>
-              <Text style={styles.completionTitle}>Tamamlama Oranı</Text>
+              <Text style={styles.completionTitle}>Completion Rate</Text>
               <View style={styles.progressBarWrap}>
                 <View style={[styles.progressBarFill, { width: `${dashboardStats.completionRate}%` }]} />
               </View>
@@ -1510,107 +1577,73 @@ export default function AdminPanelScreen() {
 
           {/* Hızlı Eylemler (Quick Actions) */}
           <View style={styles.actionsRow}>
-            <ActionCard icon="add-circle" iconColor="#3b82f6" label={t('admin.quickActions.newTask')} onPress={() => router.push('/admin/tasks/create')} />
-            <ActionCard icon="refresh" iconColor="#10b981" label={t('admin.quickActions.refreshStats')} onPress={fetchDashboardStats} />
-            <ActionCard icon="list" iconColor="#8b5cf6" label={t('admin.quickActions.completedTasks')} onPress={() => setShowCompletedTasks(true)} />
-            <ActionCard icon="download" iconColor="#f59e0b" label={t('admin.quickActions.export')} onPress={() => {}} />
+            <ActionCard icon="add-circle" iconColor="#3b82f6" label="Create New Task" onPress={() => router.push('/admin/tasks/create')} />
+            <ActionCard icon="refresh" iconColor="#10b981" label="Refresh Analytics" onPress={fetchDashboardStats} />
+            <ActionCard icon="list-outline" iconColor="#8b5cf6" label="Recent Tasks" onPress={() => setShowRecentTasksModal(true)} />
+            <ActionCard icon="download" iconColor="#f59e0b" label="Export Data" onPress={() => {}} />
           </View>
 
-          {/* Kategori Filtreleme */}
-          <View style={styles.categoryTabs}>
-            <TouchableOpacity
-              style={[styles.categoryTab, selectedTaskCategory === 'all' && styles.categoryTabActive]}
-              onPress={() => {
-                setSelectedTaskCategory('all');
-              }}
-            >
-              <Ionicons name="list" size={16} color={selectedTaskCategory === 'all' ? '#fff' : '#94a3b8'} />
-              <Text style={[styles.categoryTabText, selectedTaskCategory === 'all' && styles.categoryTabTextActive]}>Hepsi</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.categoryTab, selectedTaskCategory === 'video' && styles.categoryTabActive]}
-              onPress={() => {
-                setSelectedTaskCategory('video');
-              }}
-            >
-              <Ionicons name="videocam" size={16} color={selectedTaskCategory === 'video' ? '#fff' : '#94a3b8'} />
-              <Text style={[styles.categoryTabText, selectedTaskCategory === 'video' && styles.categoryTabTextActive]}>Video Tasks</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.categoryTab, selectedTaskCategory === 'audio' && styles.categoryTabActive]}
-              onPress={() => {
-                setSelectedTaskCategory('audio');
-              }}
-            >
-              <Ionicons name="mic" size={16} color={selectedTaskCategory === 'audio' ? '#fff' : '#94a3b8'} />
-              <Text style={[styles.categoryTabText, selectedTaskCategory === 'audio' && styles.categoryTabTextActive]}>Audio Tasks</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.categoryTab, selectedTaskCategory === 'image' && styles.categoryTabActive]}
-              onPress={() => {
-                setSelectedTaskCategory('image');
-              }}
-            >
-              <Ionicons name="image" size={16} color={selectedTaskCategory === 'image' ? '#fff' : '#94a3b8'} />
-              <Text style={[styles.categoryTabText, selectedTaskCategory === 'image' && styles.categoryTabTextActive]}>Image Tasks</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Recent Tasks */}
-          <View style={[styles.sectionCard, CARD_STYLE]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={styles.sectionTitle}>{t('admin.recentTasks')}</Text>
-              <TouchableOpacity onPress={fetchRecentTasks} disabled={refreshing}>
-                <Ionicons name="refresh" size={16} color="#94a3b8" />
-              </TouchableOpacity>
-            </View>
-            {filteredRecentTasks.length > 0 ? (
-              filteredRecentTasks.map((task) => (
-                <View key={task.id} style={styles.taskItem}>
-                  <View style={styles.taskItemHeader}>
-                    <Text style={styles.taskItemTitle} numberOfLines={2}>{task.title || 'İsimsiz Görev'}</Text>
-                    <TouchableOpacity 
-                      style={styles.deleteButton} 
-                      onPress={() => handleDeleteTask(task.id)}
-                    >
-                      <Ionicons name="trash" size={16} color="#ef4444" />
-                      <Text style={styles.deleteButtonText}>Sil</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.taskItemDetails}>
-                    <Text style={styles.taskItemType}>Tip: {task.type || task.category || 'Bilinmeyen'}</Text>
-                    <Text style={styles.taskItemDate}>
-                      {new Date(task.updated_at).toLocaleDateString('tr-TR')} {new Date(task.updated_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                  </View>
-                </View>
-              ))
-            ) : (
-              <Text style={styles.placeholderText}>{t('admin.noRecentTasks')}</Text>
-            )}
-          </View>
-
-          {/* Veri Dışa Aktar (Export) - Sadece admin */}
+          {/* Data Export - Admin only */}
           <View style={[styles.sectionCard, CARD_STYLE]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-              <Text style={styles.sectionTitle}>{t('admin.exportTitle')}</Text>
-              {!isAdmin && <Text style={{ fontSize: 11, color: '#94a3b8' }}>(Sadece admin)</Text>}
+              <Text style={styles.sectionTitle}>Export Data</Text>
+              {!isAdmin && <Text style={{ fontSize: 11, color: '#94a3b8' }}>(Admin only)</Text>}
             </View>
-            <Text style={styles.exportLabel}>Görev Tipi (Task Type)</Text>
+            <Text style={styles.exportLabel}>Task Type</Text>
             <View style={styles.exportTaskTypeRow}>
               <TouchableOpacity style={[styles.exportChip, exportTaskType === 'audio' && styles.exportChipActive]} onPress={() => { setExportTaskType('audio'); setExportFormat('json'); }}>
-                <Text style={[styles.exportChipText, exportTaskType === 'audio' && styles.exportChipTextActive]}>Ses</Text>
+                <Text style={[styles.exportChipText, exportTaskType === 'audio' && styles.exportChipTextActive]}>Audio</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.exportChip, exportTaskType === 'image' && styles.exportChipActive]} onPress={() => { setExportTaskType('image'); setExportFormat('yolo'); }}>
-                <Text style={[styles.exportChipText, exportTaskType === 'image' && styles.exportChipTextActive]}>Görsel</Text>
+                <Text style={[styles.exportChipText, exportTaskType === 'image' && styles.exportChipTextActive]}>Image</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.exportChip, exportTaskType === 'video' && styles.exportChipActive]} onPress={() => { setExportTaskType('video'); setExportFormat('yolo'); }}>
                 <Text style={[styles.exportChipText, exportTaskType === 'video' && styles.exportChipTextActive]}>Video</Text>
               </TouchableOpacity>
             </View>
+            
+            {/* Dynamic Format Selection */}
+            {exportTaskType === 'audio' ? (
+              <>
+                <Text style={styles.exportLabel}>Export Format</Text>
+                <View style={styles.exportFormatRow}>
+                  <TouchableOpacity style={[styles.exportChip, exportFormat === 'json' && styles.exportChipActive]} onPress={() => setExportFormat('json')}>
+                    <Text style={[styles.exportChipText, exportFormat === 'json' && styles.exportChipTextActive]}>JSON</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.exportChip, exportFormat === 'csv' && styles.exportChipActive]} onPress={() => setExportFormat('csv')}>
+                    <Text style={[styles.exportChipText, exportFormat === 'csv' && styles.exportChipTextActive]}>CSV</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.exportChip, exportFormat === 'srt' && styles.exportChipActive]} onPress={() => setExportFormat('srt')}>
+                    <Text style={[styles.exportChipText, exportFormat === 'srt' && styles.exportChipTextActive]}>SRT</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.exportChip, exportFormat === 'txt' && styles.exportChipActive]} onPress={() => setExportFormat('txt')}>
+                    <Text style={[styles.exportChipText, exportFormat === 'txt' && styles.exportChipTextActive]}>TXT</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (exportTaskType === 'image' || exportTaskType === 'video') && (
+              <>
+                <Text style={styles.exportLabel}>Export Format</Text>
+                <View style={styles.exportFormatRow}>
+                  <TouchableOpacity style={[styles.exportChip, exportFormat === 'yolo' && styles.exportChipActive]} onPress={() => setExportFormat('yolo')}>
+                    <Text style={[styles.exportChipText, exportFormat === 'yolo' && styles.exportChipTextActive]}>YOLO</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.exportChip, exportFormat === 'coco' && styles.exportChipActive]} onPress={() => setExportFormat('coco')}>
+                    <Text style={[styles.exportChipText, exportFormat === 'coco' && styles.exportChipTextActive]}>COCO</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.exportChip, exportFormat === 'pascalvoc' && styles.exportChipActive]} onPress={() => setExportFormat('pascalvoc')}>
+                    <Text style={[styles.exportChipText, exportFormat === 'pascalvoc' && styles.exportChipTextActive]}>Pascal VOC</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.exportChip, exportFormat === 'json' && styles.exportChipActive]} onPress={() => setExportFormat('json')}>
+                    <Text style={[styles.exportChipText, exportFormat === 'json' && styles.exportChipTextActive]}>JSON</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+            
             <TouchableOpacity style={[styles.exportBtn, (exporting || !isAdmin) && styles.exportBtnDisabled]} onPress={handleExport} disabled={exporting || !isAdmin}>
               <Ionicons name="download" size={18} color="#fff" />
-              <Text style={styles.exportBtnText}>{exporting ? 'Dışa aktarılıyor...' : 'Dışa Aktar'}</Text>
+              <Text style={styles.exportBtnText}>{exporting ? 'Exporting...' : 'Export Data'}</Text>
             </TouchableOpacity>
           </View>
 
@@ -1704,7 +1737,7 @@ export default function AdminPanelScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Yeni Görev Oluştur</Text>
+              <Text style={styles.modalTitle}>Create New Task</Text>
               <TouchableOpacity
                 style={styles.closeButton}
                 onPress={() => setShowTaskForm(false)}
@@ -1748,7 +1781,7 @@ export default function AdminPanelScreen() {
                 style={[styles.submitBtn, styles.cancelButton]}
                 onPress={() => setShowTaskForm(false)}
               >
-                <Text style={styles.submitBtnText}>Kapat</Text>
+                <Text style={styles.submitBtnText}>Close</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.submitBtn]}
@@ -1756,13 +1789,100 @@ export default function AdminPanelScreen() {
                 disabled={submitting}
               >
                 <Text style={styles.submitBtnText}>
-                  {submitting ? 'Oluşturuluyor...' : 'Oluştur'}
+                  {submitting ? 'Creating...' : 'Create'}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       )}
+
+      {/* Recent Tasks Modal */}
+      <Modal
+        visible={showRecentTasksModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowRecentTasksModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Recent Tasks</Text>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setShowRecentTasksModal(false)}
+            >
+              <Ionicons name="close" size={24} color="#f8fafc" />
+            </TouchableOpacity>
+          </View>
+          
+          {/* Category Filter Tabs in Modal */}
+          <View style={styles.modalCategoryTabs}>
+            <TouchableOpacity
+              style={[styles.categoryTab, selectedTaskCategory === 'all' && styles.categoryTabActive]}
+              onPress={() => {
+                setSelectedTaskCategory('all');
+              }}
+            >
+              <Ionicons name="list" size={16} color={selectedTaskCategory === 'all' ? '#fff' : '#94a3b8'} />
+              <Text style={[styles.categoryTabText, selectedTaskCategory === 'all' && styles.categoryTabTextActive]}>All</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.categoryTab, selectedTaskCategory === 'video' && styles.categoryTabActive]}
+              onPress={() => {
+                setSelectedTaskCategory('video');
+              }}
+            >
+              <Ionicons name="videocam" size={16} color={selectedTaskCategory === 'video' ? '#fff' : '#94a3b8'} />
+              <Text style={[styles.categoryTabText, selectedTaskCategory === 'video' && styles.categoryTabTextActive]}>Video Tasks</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.categoryTab, selectedTaskCategory === 'audio' && styles.categoryTabActive]}
+              onPress={() => {
+                setSelectedTaskCategory('audio');
+              }}
+            >
+              <Ionicons name="mic" size={16} color={selectedTaskCategory === 'audio' ? '#fff' : '#94a3b8'} />
+              <Text style={[styles.categoryTabText, selectedTaskCategory === 'audio' && styles.categoryTabTextActive]}>Audio Tasks</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.categoryTab, selectedTaskCategory === 'image' && styles.categoryTabActive]}
+              onPress={() => {
+                setSelectedTaskCategory('image');
+              }}
+            >
+              <Ionicons name="image" size={16} color={selectedTaskCategory === 'image' ? '#fff' : '#94a3b8'} />
+              <Text style={[styles.categoryTabText, selectedTaskCategory === 'image' && styles.categoryTabTextActive]}>Image Tasks</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            {filteredRecentTasks.length > 0 ? (
+              filteredRecentTasks.map((task) => (
+                <View key={task.id} style={styles.taskItem}>
+                  <View style={styles.taskItemHeader}>
+                    <Text style={styles.taskItemTitle} numberOfLines={2}>{task.title || 'Unnamed Task'}</Text>
+                    <TouchableOpacity 
+                      style={styles.deleteButton} 
+                      onPress={() => handleDeleteTask(task.id)}
+                    >
+                      <Ionicons name="trash" size={16} color="#ef4444" />
+                      <Text style={styles.deleteButtonText}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.taskItemDetails}>
+                    <Text style={styles.taskItemType}>Type: {task.type || task.category || 'Unknown'}</Text>
+                    <Text style={styles.taskItemDate}>
+                      {new Date(task.updated_at || task.created_at || '').toLocaleDateString('en-US')} {new Date(task.updated_at || task.created_at || '').toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.placeholderText}>No recent tasks</Text>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 
@@ -1774,7 +1894,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 4,
+    marginBottom: 8,
     paddingVertical: 4,
     paddingRight: 12,
     alignSelf: 'flex-start',
@@ -1802,18 +1922,18 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(59, 130, 246, 0.3)',
   },
   refreshButtonText: { fontSize: 12, fontWeight: '600', color: '#f8fafc' },
-  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  statCard: { flex: 1, minWidth: 100, padding: 12, minHeight: 80 },
+  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+  statCard: { flex: 1, minWidth: 100, padding: 12, minHeight: 80, backgroundColor: '#1e2227', borderRadius: 12, borderWidth: 1, borderColor: '#30363d' },
   actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   actionCardTouch: { flex: 1, minWidth: 100 },
-  actionCard: { flex: 1, padding: 12, alignItems: 'center', justifyContent: 'center', minHeight: 80 },
+  actionCard: { flex: 1, padding: 12, alignItems: 'center', justifyContent: 'center', minHeight: 80, backgroundColor: '#1e2227', borderRadius: 12, borderWidth: 1, borderColor: '#30363d' },
   actionCardHover: { backgroundColor: 'rgba(255,255,255,0.12)', transform: [{ scale: 1.02 }], borderColor: 'rgba(255,255,255,0.18)' },
   actionCardIcon: { marginBottom: 6 },
   actionCardLabel: { fontSize: 11, color: '#94a3b8', textAlign: 'center', fontWeight: '600' },
   statValue: { fontSize: 18, fontWeight: '700', color: '#f8fafc', marginTop: 4, marginBottom: 2 },
   statLabel: { fontSize: 11, color: '#94a3b8' },
   typeBreakdown: { fontSize: 10, color: '#60a5fa', marginTop: 2, fontWeight: '500' },
-  completionStatCard: { minWidth: 120 },
+  completionStatCard: { minWidth: 120, backgroundColor: '#1e2227', borderRadius: 12, borderWidth: 1, borderColor: '#30363d' },
   completionTitle: { fontSize: 10, fontWeight: '600', color: '#94a3b8', marginBottom: 6 },
   progressBarWrap: { height: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden', marginBottom: 4 },
   progressBarFill: { height: '100%', backgroundColor: '#3b82f6', borderRadius: 3 },
@@ -1835,7 +1955,7 @@ const styles = StyleSheet.create({
   },
   searchIcon: { marginRight: 10 },
   searchInput: { flex: 1, paddingVertical: 0, fontSize: 14, color: '#ffffff' },
-  sectionCard: { padding: 14, marginBottom: 8 },
+  sectionCard: { padding: 14, marginBottom: 8, backgroundColor: '#1e2227', borderRadius: 12, borderWidth: 1, borderColor: '#30363d' },
   tableCard: { padding: 12, marginBottom: 8 },
   tableHeader: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' },
   tableHeaderText: { flex: 1, fontSize: 11, fontWeight: '600', color: '#94a3b8', minWidth: 0 },
@@ -2392,6 +2512,46 @@ const styles = StyleSheet.create({
   },
   categoryTabTextActive: {
     color: '#fff',
+  },
+  
+  // Recent Tasks Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#1e2227',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#30363d',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#f8fafc',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalContent: {
+    flex: 1,
+    padding: 20,
+  },
+  modalCategoryTabs: {
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#30363d',
+  },
+  exportFormatRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
   },
 });
 

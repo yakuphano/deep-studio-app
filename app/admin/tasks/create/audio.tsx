@@ -31,6 +31,8 @@ export default function CreateAudioTaskScreen() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
+  const [sourceType, setSourceType] = useState<'local' | 'remote'>('local');
+  const [remoteUrl, setRemoteUrl] = useState('');
 
   const handleBack = () => {
     router.back();
@@ -83,8 +85,24 @@ export default function CreateAudioTaskScreen() {
       return;
     }
     
+    if (sourceType === 'local' && !selectedFile) {
+      Alert.alert('Error', 'Please select an audio file');
+      return;
+    }
+    
+    if (sourceType === 'remote' && !remoteUrl) {
+      Alert.alert('Error', 'Please enter an audio URL');
+      return;
+    }
+    
     // Save task logic here
-    console.log('Audio task data:', { ...taskData, selectedFile });
+    const taskPayload = { 
+      ...taskData, 
+      sourceType,
+      ...(sourceType === 'local' ? { selectedFile } : { remoteUrl })
+    };
+    
+    console.log('Audio task data:', taskPayload);
     Alert.alert('Success', 'Audio task created successfully');
     router.push('/admin');
   };
@@ -179,24 +197,67 @@ export default function CreateAudioTaskScreen() {
 
             {/* File Upload Section */}
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Audio File</Text>
-              <TouchableOpacity 
-                style={[
-                  styles.uploadButton,
-                  focusedInput === 'upload' && styles.uploadButtonFocused
-                ]} 
-                onPress={handleFileSelect}
-                disabled={isUploading}
-                onFocus={() => setFocusedInput('upload')}
-                onBlur={() => setFocusedInput(null)}
-              >
-                <Ionicons name="folder" size={24} color="#facc15" />
-                <Text style={styles.uploadButtonText}>
-                  {selectedFile ? selectedFile.name : 'Click to Upload Audio File'}
-                </Text>
-              </TouchableOpacity>
+              <Text style={styles.label}>Audio Source</Text>
+              
+              {/* Source Type Selector */}
+              <View style={styles.sourceSelector}>
+                <TouchableOpacity
+                  style={[styles.sourceButton, sourceType === 'local' && styles.sourceButtonActive]}
+                  onPress={() => setSourceType('local')}
+                >
+                  <Ionicons name="cloud-upload" size={16} color={sourceType === 'local' ? '#fff' : '#9ca3af'} />
+                  <Text style={[styles.sourceButtonText, sourceType === 'local' && styles.sourceButtonTextActive]}>
+                    Local File
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.sourceButton, sourceType === 'remote' && styles.sourceButtonActive]}
+                  onPress={() => setSourceType('remote')}
+                >
+                  <Ionicons name="link" size={16} color={sourceType === 'remote' ? '#fff' : '#9ca3af'} />
+                  <Text style={[styles.sourceButtonText, sourceType === 'remote' && styles.sourceButtonTextActive]}>
+                    Remote URL
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
-              {selectedFile && (
+              {/* Dynamic Content Based on Source Type */}
+              {sourceType === 'local' ? (
+                <TouchableOpacity 
+                  style={[
+                    styles.uploadButton,
+                    focusedInput === 'upload' && styles.uploadButtonFocused
+                  ]} 
+                  onPress={handleFileSelect}
+                  disabled={isUploading}
+                  onFocus={() => setFocusedInput('upload')}
+                  onBlur={() => setFocusedInput(null)}
+                >
+                  <Ionicons name="folder" size={24} color="#facc15" />
+                  <Text style={styles.uploadButtonText}>
+                    {selectedFile ? selectedFile.name : 'Click to Upload Audio File'}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.urlInputContainer}>
+                  <Ionicons name="link" size={16} color="#9ca3af" style={styles.urlInputIcon} />
+                  <TextInput
+                    style={[
+                      styles.input,
+                      styles.urlInput,
+                      focusedInput === 'url' && styles.inputFocused
+                    ]}
+                    value={remoteUrl}
+                    onChangeText={setRemoteUrl}
+                    placeholder="Paste Audio URL"
+                    placeholderTextColor="#9ca3af"
+                    onFocus={() => setFocusedInput('url')}
+                    onBlur={() => setFocusedInput(null)}
+                  />
+                </View>
+              )}
+
+              {selectedFile && sourceType === 'local' && (
                 <View style={styles.fileInfo}>
                   <Text style={styles.fileName}>{selectedFile.name}</Text>
                   <Text style={styles.fileSize}>
@@ -380,7 +441,7 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 12,
-    color: '#10b981',
+    color: '#f8fafc',
     fontWeight: '600',
     minWidth: 40,
   },
@@ -396,6 +457,56 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#000000',
+  },
+  
+  // Source Selector Styles
+  sourceSelector: {
+    flexDirection: 'row',
+    backgroundColor: '#1f2937',
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 12,
+  },
+  sourceButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    gap: 6,
+  },
+  sourceButtonActive: {
+    backgroundColor: '#3b82f6',
+  },
+  sourceButtonText: {
+    fontSize: 12,
+    color: '#9ca3af',
+    fontWeight: '600',
+  },
+  sourceButtonTextActive: {
+    color: '#fff',
+  },
+  
+  // URL Input Styles
+  urlInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1f2937',
+    borderWidth: 1,
+    borderColor: '#30363d',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  urlInputIcon: {
+    marginRight: 8,
+  },
+  urlInput: {
+    flex: 1,
+    color: '#f8fafc',
+    fontSize: 14,
   },
   
   // Save Button

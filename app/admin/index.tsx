@@ -17,9 +17,9 @@ import { useTranslation } from 'react-i18next';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
-import JSZip from 'jszip';
+// import { Audio } from 'expo-av'; // Gerekirse aktif edin
+// import JSZip from 'jszip'; // Gerekirse aktif edin
 import { supabase } from '@/lib/supabase';
 import { transcribeWithGroq } from '@/lib/groq';
 import { useAuth } from '@/contexts/AuthContext';
@@ -1328,10 +1328,11 @@ export default function AdminPanelScreen() {
     }).catch(() => setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, is_active: next } : x))));
   };
 
+  
   const showEditOptions = (u: User) => {
     Alert.alert(
       u.email || u.id,
-      undefined,
+      'Kullanıcı ayarlarını düzenle',
       [
         { text: t('login.cancel'), style: 'cancel' },
         {
@@ -1437,97 +1438,89 @@ export default function AdminPanelScreen() {
     }
   }, [isRecording]);
 
+  const completionRate = dashboardStats?.completionRate || 0;
+  const filteredRecentTasks = filteredTasks || recentTasks || [];
+
   return (
-  <>
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => router.replace('/tasks' as any)}
-        activeOpacity={0.8}
+    <View style={styles.container}>
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <Ionicons name="arrow-back" size={22} color="#f8fafc" />
-        <Text style={styles.backButtonText}>Görevlere Dön</Text>
-      </TouchableOpacity>
-      
-      {/* Professional Header */}
-      <View style={styles.headerContainer}>
-        <Text style={styles.title}>{t('admin.panelTitle')}</Text>
-        <TouchableOpacity 
-          style={styles.refreshButton} 
-          onPress={fetchDashboardStats}
-          disabled={refreshing}
-        >
-        <Ionicons name={refreshing ? "refresh" : "refresh-outline"} size={20} color="#f8fafc" />
-        <Text style={styles.refreshButtonText}>{refreshing ? 'Refreshing...' : 'Refresh'}</Text>
-      </TouchableOpacity>
-      </View>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps='handled'>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.replace('/tasks' as any)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="arrow-back" size={22} color="#f8fafc" />
+            <Text style={styles.backButtonText}>Görevlere Dön</Text>
+          </TouchableOpacity>
+          
+          {/* Professional Header */}
+          <View style={styles.headerContainer}>
+            <Text style={styles.title}>{t('admin.panelTitle')}</Text>
+            <TouchableOpacity 
+              style={styles.refreshButton} 
+              onPress={fetchDashboardStats}
+              disabled={refreshing}
+            >
+            <Ionicons name={refreshing ? "refresh" : "refresh-outline"} size={20} color="#f8fafc" />
+            <Text style={styles.refreshButtonText}>{refreshing ? 'Refreshing...' : 'Refresh'}</Text>
+          </TouchableOpacity>
+          </View>
 
-      {/* 5 İstatistik Kartı (4 + Tamamlama Oranı) */}
-      <View style={styles.statsRow}>
-        <View style={[styles.statCard, CARD_STYLE]}>
-          <Ionicons name="people" size={18} color="#60a5fa" />
-          <Text style={styles.statValue}>{statsLoading ? '...' : dashboardStats.totalUsers}</Text>
-          <Text style={styles.statLabel}>{t('admin.stats.totalUsers')}</Text>
-          </View>
-          <View style={[styles.statCard, CARD_STYLE]}>
-            <Ionicons name="document-text" size={18} color="#22c55e" />
-            <Text style={styles.statValue}>{statsLoading ? '...' : dashboardStats.activeTasks}</Text>
-            <Text style={styles.statLabel}>{t('admin.stats.activeTasks')}</Text>
-            {!statsLoading && Object.keys(dashboardStats.activeTasksTypeBreakdown).length > 0 && (
-              <Text style={styles.typeBreakdown}>
-                {Object.entries(dashboardStats.activeTasksTypeBreakdown)
-                  .map(([type, count]) => `${count} ${type}`)
-                  .join(', ')}
-              </Text>
-            )}
-          </View>
-          <View style={[styles.statCard, CARD_STYLE]}>
-            <Ionicons name="checkmark-circle" size={18} color="#10b981" />
-            <Text style={styles.statValue}>{statsLoading ? '...' : dashboardStats.completedTasks}</Text>
-            <Text style={styles.statLabel}>Tamamlanan Görevler</Text>
-          </View>
-          <View style={[styles.statCard, CARD_STYLE]}>
-            <Ionicons name="wallet" size={18} color="#8b5cf6" />
-            <Text style={styles.statValue}>{statsLoading ? '...' : dashboardStats.monthlyRevenue} TL</Text>
-            <Text style={styles.statLabel}>{t('admin.stats.monthlyRevenue')}</Text>
-          </View>
-          <View style={[styles.statCard, styles.completionStatCard, CARD_STYLE]}>
-            <Text style={styles.completionTitle}>{t('admin.chartTitle')}</Text>
-            <View style={styles.progressBarWrap}>
-              <View style={[styles.progressBarFill, { width: `${statsLoading ? 0 : dashboardStats.completionRate}%` }]} />
+          {/* 5 İstatistik Kartı (4 + Tamamlama Oranı) */}
+          <View style={styles.statsRow}>
+            <View style={[styles.statCard, CARD_STYLE]}>
+              <Ionicons name="people" size={18} color="#60a5fa" />
+              <Text style={styles.statValue}>{statsLoading ? '...' : dashboardStats.totalUsers}</Text>
+              <Text style={styles.statLabel}>{t('admin.stats.totalUsers')}</Text>
+              </View>
+            <View style={[styles.statCard, CARD_STYLE]}>
+              <Ionicons name="document-text" size={18} color="#22c55e" />
+              <Text style={styles.statValue}>{statsLoading ? '...' : dashboardStats.activeTasks}</Text>
+              <Text style={styles.statLabel}>{t('admin.stats.activeTasks')}</Text>
+              {!statsLoading && Object.keys(dashboardStats.activeTasksTypeBreakdown).length > 0 && (
+                <Text style={styles.typeBreakdown}>
+                  {Object.entries(dashboardStats.activeTasksTypeBreakdown)
+                    .map(([type, count]) => `${count} ${type}`)
+                    .join(', ')}
+                </Text>
+              )}
             </View>
-            <Text style={styles.completionText}>{t('admin.completionLabel', { percent: statsLoading ? 0 : dashboardStats.completionRate })}</Text>
+            <View style={[styles.statCard, CARD_STYLE]}>
+              <Ionicons name="checkmark-circle" size={18} color="#10b981" />
+              <Text style={styles.statValue}>{statsLoading ? '...' : dashboardStats.completedTasks}</Text>
+              <Text style={styles.statLabel}>Tamamlanan Görevler</Text>
+            </View>
+            <View style={[styles.statCard, CARD_STYLE]}>
+              <Ionicons name="wallet" size={18} color="#8b5cf6" />
+              <Text style={styles.statValue}>{statsLoading ? '...' : dashboardStats.monthlyRevenue} TL</Text>
+              <Text style={styles.statLabel}>{t('admin.stats.monthlyRevenue')}</Text>
+            </View>
+            <View style={[styles.completionStatCard, CARD_STYLE]}>
+              <Text style={styles.completionTitle}>Tamamlama Oranı</Text>
+              <View style={styles.progressBarWrap}>
+                <View style={[styles.progressBarFill, { width: `${dashboardStats.completionRate}%` }]} />
+              </View>
+              <Text style={styles.completionText}>{dashboardStats.completionRate}%</Text>
+            </View>
           </View>
-        </View>
 
-        {/* Hızlı İşlemler - İstatistik kartlarıyla aynı boyut */}
-        <View style={styles.actionsRow}>
-          <ActionCard icon="add-circle" iconColor="#3b82f6" label={t('admin.quickActions.newTask')} onPress={() => setShowTaskForm(!showTaskForm)} />
-          <ActionCard icon="person-add" iconColor="#22c55e" label={t('admin.quickActions.addStaff')} onPress={() => Alert.alert(t('admin.panelTitle'), t('admin.quickActions.addStaff'))} />
-          <ActionCard icon="stats-chart" iconColor="#8b5cf6" label={t('admin.quickActions.financialReport')} onPress={() => Alert.alert(t('admin.panelTitle'), t('admin.quickActions.financialReport'))} />
-          <ActionCard icon="time" iconColor="#f59e0b" label="Onay Bekleyen Ödemeler" onPress={() => Alert.alert('Onay Bekleyen Ödemeler', `${dashboardStats.pendingPayments} bekleyen ödeme var`)} />
-          <ActionCard icon="checkmark-circle" iconColor="#10b981" label="Tamamlanan Görevler" onPress={() => setShowCompletedTasks(true)} />
-          <ActionCard icon="chatbubbles" iconColor="#22c55e" label={t('nav.messages')} onPress={() => router.push('/messages' as any)} />
-        </View>
-
-        {/* Recent Tasks List */}
-        <View style={[styles.sectionCard, CARD_STYLE]}>
-          <Text style={styles.sectionTitle}>Son Görevler</Text>
-          
-          {/* Debug Info */}
-          <View style={{ padding: 8, backgroundColor: '#0f172a', borderRadius: 4, marginBottom: 8 }}>
-            <Text style={{ color: '#fff', fontSize: 12 }}>
-              Container Render Edildi - recentTasks: {recentTasks.length}, selectedCategory: {selectedTaskCategory}
-            </Text>
+          {/* Hızlı Eylemler (Quick Actions) */}
+          <View style={styles.actionsRow}>
+            <ActionCard icon="add-circle" iconColor="#3b82f6" label={t('admin.quickActions.newTask')} onPress={() => setShowTaskForm(true)} />
+            <ActionCard icon="refresh" iconColor="#10b981" label={t('admin.quickActions.refreshStats')} onPress={fetchDashboardStats} />
+            <ActionCard icon="list" iconColor="#8b5cf6" label={t('admin.quickActions.completedTasks')} onPress={() => setShowCompletedTasks(true)} />
+            <ActionCard icon="download" iconColor="#f59e0b" label={t('admin.quickActions.export')} onPress={() => {}} />
           </View>
-          
-          {/* Kategori Sekmeleri */}
-          <View style={styles.taskCategoryTabs}>
+
+          {/* Kategori Filtreleme */}
+          <View style={styles.categoryTabs}>
             <TouchableOpacity
               style={[styles.categoryTab, selectedTaskCategory === 'all' && styles.categoryTabActive]}
               onPress={() => {
-                console.log('Hepsi sekmesine tıklandı');
                 setSelectedTaskCategory('all');
               }}
             >
@@ -1537,7 +1530,6 @@ export default function AdminPanelScreen() {
             <TouchableOpacity
               style={[styles.categoryTab, selectedTaskCategory === 'video' && styles.categoryTabActive]}
               onPress={() => {
-                console.log('Video sekmesine tıklandı');
                 setSelectedTaskCategory('video');
               }}
             >
@@ -1547,7 +1539,6 @@ export default function AdminPanelScreen() {
             <TouchableOpacity
               style={[styles.categoryTab, selectedTaskCategory === 'audio' && styles.categoryTabActive]}
               onPress={() => {
-                console.log('Audio sekmesine tıklandı');
                 setSelectedTaskCategory('audio');
               }}
             >
@@ -1557,7 +1548,6 @@ export default function AdminPanelScreen() {
             <TouchableOpacity
               style={[styles.categoryTab, selectedTaskCategory === 'image' && styles.categoryTabActive]}
               onPress={() => {
-                console.log('Image sekmesine tıklandı');
                 setSelectedTaskCategory('image');
               }}
             >
@@ -1566,53 +1556,16 @@ export default function AdminPanelScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Görev Listesi */}
-          <View>
-            {(() => {
-              console.log('=== DEBUG INFO ===');
-              console.log('Toplam Görev Sayısı:', recentTasks.length);
-              console.log('Seçili Kategori:', selectedTaskCategory);
-              console.log('Filtrelenmiş Görev Sayısı:', filteredTasks.length);
-              console.log('Tüm Görevler:', recentTasks.map(t => ({ id: t.id, title: t.title, type: t.type, category: t.category })));
-              console.log('Filtrelenmiş Görevler:', filteredTasks.map(t => ({ id: t.id, title: t.title, type: t.type, category: t.category })));
-              console.log('================');
-              return null;
-            })()}
-            
-            {/* Basit Text Listesi - Debug için */}
-            <View style={{ padding: 16, backgroundColor: '#1e293b', borderRadius: 8, marginBottom: 16 }}>
-              <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 8 }}>
-                DEBUG: Filtrelenmiş Görevler ({filteredTasks.length})
-              </Text>
-              <Text style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>
-                Seçili Kategori: {selectedTaskCategory}
-              </Text>
-              {filteredTasks.map((task, index) => (
-                <Text key={task.id} style={{ color: '#94a3b8', fontSize: 14, marginBottom: 4 }}>
-                  {index + 1}. {task.title} (Type: "{task.type || 'N/A'}", Status: "{task.status || 'N/A'}", Category: "{task.category || 'N/A'}")
-                </Text>
-              ))}
-              {filteredTasks.length === 0 && (
-                <View>
-                  <Text style={{ color: '#ef4444', fontSize: 14, marginBottom: 4 }}>
-                    GÖREV BULUNAMADI!
-                  </Text>
-                  <Text style={{ color: '#f59e0b', fontSize: 12 }}>
-                    Tüm görev sayısı: {recentTasks.length}
-                  </Text>
-                  <Text style={{ color: '#f59e0b', fontSize: 12 }}>
-                    İlk 5 görevin tipleri: {recentTasks.slice(0, 5).map(t => t.type || 'N/A').join(', ')}
-                  </Text>
-                  <Text style={{ color: '#10b981', fontSize: 12 }}>
-                    Seçili kategori: {selectedTaskCategory}
-                  </Text>
-                </View>
-              )}
+          {/* Recent Tasks */}
+          <View style={[styles.sectionCard, CARD_STYLE]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Text style={styles.sectionTitle}>{t('admin.recentTasks')}</Text>
+              <TouchableOpacity onPress={fetchRecentTasks} disabled={refreshing}>
+                <Ionicons name="refresh" size={16} color="#94a3b8" />
+              </TouchableOpacity>
             </View>
-
-            {/* Normal Görev Listesi */}
-            {filteredTasks.length > 0 ? (
-              filteredTasks.map((task) => (
+            {filteredRecentTasks.length > 0 ? (
+              filteredRecentTasks.map((task) => (
                 <View key={task.id} style={styles.taskItem}>
                   <View style={styles.taskItemHeader}>
                     <Text style={styles.taskItemTitle} numberOfLines={2}>{task.title || 'İsimsiz Görev'}</Text>
@@ -1626,264 +1579,18 @@ export default function AdminPanelScreen() {
                   </View>
                   <View style={styles.taskItemDetails}>
                     <Text style={styles.taskItemType}>Tip: {task.type || task.category || 'Bilinmeyen'}</Text>
-                    <Text style={styles.taskItemStatus}>Durum: {task.status || 'Bilinmeyen'}</Text>
-                    {task.image_url && (
-                      <Text style={styles.taskItemImage}>📎 Görsel var</Text>
-                    )}
+                    <Text style={styles.taskItemDate}>
+                      {new Date(task.updated_at).toLocaleDateString('tr-TR')} {new Date(task.updated_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
                   </View>
                 </View>
               ))
             ) : (
-              <View style={styles.emptyCategoryContainer}>
-                <Text style={styles.emptyCategoryText}>Bu kategoride henüz görev yok</Text>
-              </View>
+              <Text style={styles.placeholderText}>{t('admin.noRecentTasks')}</Text>
             )}
           </View>
-        </View>
 
-        {/* Görev Atama Formu (açılır) */}
-        {showTaskForm && (
-          <View style={[styles.sectionCard, CARD_STYLE]}>
-            <Text style={styles.sectionTitle}>{t('admin.taskAssignment')}</Text>
-            <Text style={styles.label}>Task Type (Görev Tipi)</Text>
-            <View style={styles.taskTypeRow}>
-              <TouchableOpacity
-                style={[styles.taskTypeChip, taskType === 'audio' && styles.taskTypeChipActive]}
-                onPress={() => setTaskType('audio')}
-              >
-                <Ionicons name="mic" size={18} color={taskType === 'audio' ? '#fff' : '#94a3b8'} />
-                <Text style={[styles.taskTypeChipText, taskType === 'audio' && styles.taskTypeChipTextActive]}>Ses</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.taskTypeChip, taskType === 'image' && styles.taskTypeChipActive]}
-                onPress={() => setTaskType('image')}
-              >
-                <Ionicons name="image" size={18} color={taskType === 'image' ? '#fff' : '#94a3b8'} />
-                <Text style={[styles.taskTypeChipText, taskType === 'image' && styles.taskTypeChipTextActive]}>Görsel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.taskTypeChip, taskType === 'video' && styles.taskTypeChipActive]}
-                onPress={() => setTaskType('video')}
-              >
-                <Ionicons name="videocam" size={18} color={taskType === 'video' ? '#fff' : '#94a3b8'} />
-                <Text style={[styles.taskTypeChipText, taskType === 'video' && styles.taskTypeChipTextActive]}>Video</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.label}>{t('admin.taskTitle')}</Text>
-            <TextInput style={styles.input} placeholder={t('admin.taskTitlePlaceholder')} placeholderTextColor="#64748b" value={title} onChangeText={setTitle} />
-            <Text style={styles.label}>{t('admin.taskPrice')}</Text>
-            <TextInput style={styles.input} placeholder="10" placeholderTextColor="#64748b" value={taskPrice} onChangeText={setTaskPrice} keyboardType="numeric" />
-            <Text style={styles.label}>{t('admin.clientName')}</Text>
-            <TextInput style={styles.input} placeholder={t('admin.clientNamePlaceholder')} placeholderTextColor="#64748b" value={clientName} onChangeText={setClientName} />
-            {/* Dil seçeneği sadece ses görevleri için gösterilir */}
-            {taskType === 'audio' && (
-              <>
-                <Text style={styles.label}>{t('admin.taskLanguage')}</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.langChips}>
-                  {TASK_LANGUAGES.filter((l) => l.code !== 'unspecified').map((lang) => (
-                    <TouchableOpacity
-                      key={lang.code}
-                      style={[styles.langChip, selectedLanguage === lang.code && styles.langChipActive]}
-                      onPress={() => setSelectedLanguage(lang.code)}
-                    >
-                      <Text style={[styles.langChipText, selectedLanguage === lang.code && styles.langChipTextActive]}>{t(lang.labelKey)}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </>
-            )}
-            <Text style={styles.label}>{t('admin.selectEmployee')}</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.userScroll}>
-              {displayUsers.map((u) => (
-                <TouchableOpacity
-                  key={u.id}
-                  style={[styles.userChip, selectedUser?.id === u.id && styles.userChipActive]}
-                  onPress={() => setSelectedUser(u)}
-                >
-                  <Text style={[styles.userChipText, selectedUser?.id === u.id && styles.userChipTextActive]}>{u.email || u.full_name || u.id}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            {taskType === 'audio' ? (
-              <>
-                <Text style={styles.label}>{t('admin.audioSection')}</Text>
-                <View style={styles.audioControls}>
-                  <TouchableOpacity style={styles.btn} onPress={handleAudioUpload}>
-                    <Ionicons name="folder" size={18} color="#fff" />
-                    <Text style={styles.btnText}>Dosya Seç</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.recordBtn, isRecording && styles.recordBtnRecording]}
-                    onPressIn={isRecording ? stopRecording : startRecording}
-                    onPressOut={isRecording ? stopRecording : undefined}
-                  >
-                    <Animated.View style={[styles.recordDot, { opacity: blinkAnim }]} />
-                    <Text style={styles.btnText}>{isRecording ? t('admin.recording') : 'Kaydet'}</Text>
-                  </TouchableOpacity>
-                  {audioStatus ? <Text style={styles.status}>{audioStatus}</Text> : null}
-                  
-                  {/* Progress Display for Audio Files */}
-                  {audioMultipleFiles && audioMultipleFiles.length > 0 && (
-                    <View style={styles.selectedFilesContainer}>
-                      <Text style={styles.selectedFilesTitle}>Seçilen Ses Dosyaları ({audioMultipleFiles.length}):</Text>
-                      {audioMultipleFiles.slice(0, 5).map((file, index) => (
-                        <Text key={index} style={styles.fileNameText}>• {file.name}</Text>
-                      ))}
-                      {audioMultipleFiles.length > 5 && (
-                        <Text style={styles.fileNameText}>... ve {audioMultipleFiles.length - 5} dosya daha</Text>
-                      )}
-                    </View>
-                  )}
-                  
-                  {/* Upload Progress for Audio */}
-                  {uploading && audioMultipleFiles && audioMultipleFiles.length > 0 && (
-                    <View style={styles.queueProgressContainer}>
-                      <Text style={styles.queueProgressText}>{uploadStatus}</Text>
-                      <View style={styles.queueProgressBar}>
-                        <View style={[styles.queueProgressBarFill, { width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }]} />
-                      </View>
-                      <Text style={styles.queueProgressPercent}>
-                        {uploadProgress.current}/{uploadProgress.total} dosya
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </>
-            ) : taskType === 'video' ? (
-              <>
-                <Text style={styles.label}>Video Yükle veya URL Gir</Text>
-                <View style={styles.imageUploadRow}>
-                  <TouchableOpacity style={styles.uploadImageBtn} onPress={handleVideoUpload} disabled={uploading}>
-                    <>
-                      {uploading ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <Ionicons name="folder-open" size={18} color="#fff" />
-                      )}
-                      <Text style={styles.uploadImageBtnText}>
-                        {uploading ? 'İşleniyor...' : 'Video Dosya Seç'}
-                      </Text>
-                    </>
-                  </TouchableOpacity>
-                  <TextInput
-                    style={styles.imageUrlInput}
-                    placeholder="Veya video URL girin"
-                    placeholderTextColor="#64748b"
-                    value={imageUrlInput}
-                    onChangeText={setImageUrlInput}
-                  />
-                </View>
-                
-                {/* Progress Display for Video Files */}
-                {videoFiles && videoFiles.length > 0 && (
-                  <View style={styles.selectedFilesContainer}>
-                    <Text style={styles.selectedFilesTitle}>Seçilen Video Dosyaları ({videoFiles.length}):</Text>
-                    {videoFiles.slice(0, 5).map((file, index) => (
-                      <Text key={index} style={styles.fileNameText}>• {file.name}</Text>
-                    ))}
-                    {videoFiles.length > 5 && (
-                      <Text style={styles.fileNameText}>... ve {videoFiles.length - 5} dosya daha</Text>
-                    )}
-                  </View>
-                )}
-                
-                {/* Upload Progress for Video */}
-                {uploading && videoFiles && videoFiles.length > 0 && (
-                  <View style={styles.queueProgressContainer}>
-                    <Text style={styles.queueProgressText}>{uploadStatus}</Text>
-                    <View style={styles.queueProgressBar}>
-                      <View style={[styles.queueProgressBarFill, { width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }]} />
-                    </View>
-                    <Text style={styles.queueProgressPercent}>
-                      {uploadProgress.current}/{uploadProgress.total} dosya
-                    </Text>
-                  </View>
-                )}
-              </>
-            ) : (
-              <>
-                <Text style={styles.label}>Görsel Yükle veya URL Gir</Text>
-                <View style={styles.imageUploadRow}>
-                  <TouchableOpacity style={styles.uploadImageBtn} onPress={handleImageUpload} disabled={queueProcessing}>
-                    <>
-                      {queueProcessing ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <Ionicons name="folder-open" size={18} color="#fff" />
-                      )}
-                      <Text style={styles.uploadImageBtnText}>
-                        {queueProcessing ? 'İşleniyor...' : 'Dosya Seç'}
-                      </Text>
-                    </>
-                  </TouchableOpacity>
-                  <TextInput
-                    style={styles.imageUrlInput}
-                    placeholder="Veya görsel URL girin"
-                    placeholderTextColor="#64748b"
-                    value={imageUrlInput}
-                    onChangeText={setImageUrlInput}
-                  />
-                </View>
-                
-                {/* Queue Progress Display */}
-                {queueProcessing && (
-                  <View style={styles.queueProgressContainer}>
-                    <Text style={styles.queueProgressText}>{uploadStatus}</Text>
-                    <View style={styles.queueProgressBar}>
-                      <View style={[styles.queueProgressBarFill, { width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }]} />
-                    </View>
-                    <Text style={styles.queueProgressPercent}>
-                      {uploadProgress.current}/{uploadProgress.total} dosya
-                    </Text>
-                  </View>
-                )}
-                
-                {/* Selected Files Display */}
-                {multipleFiles && multipleFiles.length > 0 && !queueProcessing && (
-                  <View style={styles.selectedFilesContainer}>
-                    <Text style={styles.selectedFilesTitle}>Seçilen Dosyalar ({multipleFiles.length}):</Text>
-                    {multipleFiles.slice(0, 5).map((file, index) => (
-                      <Text key={index} style={styles.fileNameText}>• {file.name}</Text>
-                    ))}
-                    {multipleFiles.length > 5 && (
-                      <Text style={styles.fileNameText}>... ve {multipleFiles.length - 5} dosya daha</Text>
-                    )}
-                  </View>
-                )}
-                
-                {/* Upload Errors */}
-                {uploadErrors.length > 0 && (
-                  <View style={styles.errorContainer}>
-                    <Text style={styles.errorTitle}>Hatalar:</Text>
-                    {uploadErrors.slice(0, 3).map((error, index) => (
-                      <Text key={index} style={styles.errorText}>{error}</Text>
-                    ))}
-                    {uploadErrors.length > 3 && (
-                      <Text style={styles.errorText}>... ve {uploadErrors.length - 3} hata daha</Text>
-                    )}
-                  </View>
-                )}
-              </>
-            )}
-            <TouchableOpacity
-              style={[styles.submitBtn, (submitting || uploading) && styles.submitBtnDisabled]}
-              onPress={handleAssignTask}
-              disabled={submitting || uploading}
-            >
-              <Text style={styles.submitBtnText}>
-                {submitting
-                  ? t('admin.assigning')
-                  : uploading
-                    ? `Yükleniyor: ${uploadProgress.current}/${uploadProgress.total}`
-                    : (selectedUser?.id === '__POOL__' || !selectedUser)
-                      ? t('admin.sendToPool')
-                      : t('admin.assignToPerson')}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          )}
-
-        {/* Veri Dışa Aktar (Export) - Sadece admin */}
+          {/* Veri Dışa Aktar (Export) - Sadece admin */}
           <View style={[styles.sectionCard, CARD_STYLE]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <Text style={styles.sectionTitle}>{t('admin.exportTitle')}</Text>
@@ -1900,53 +1607,6 @@ export default function AdminPanelScreen() {
               <TouchableOpacity style={[styles.exportChip, exportTaskType === 'video' && styles.exportChipActive]} onPress={() => { setExportTaskType('video'); setExportFormat('yolo'); }}>
                 <Text style={[styles.exportChipText, exportTaskType === 'video' && styles.exportChipTextActive]}>Video</Text>
               </TouchableOpacity>
-            </View>
-            {exportTaskType === 'audio' && (
-              <Text style={[styles.exportLabel, { marginBottom: 8 }]}>Export Format: JSON</Text>
-            )}
-            {exportTaskType === 'image' && (
-              <>
-                <Text style={styles.exportLabel}>Export Format:</Text>
-                <View style={styles.exportFormatRow}>
-                  <TouchableOpacity style={[styles.exportChip, exportFormat === 'yolo' && styles.exportChipActive]} onPress={() => setExportFormat('yolo')}>
-                    <Text style={[styles.exportChipText, exportFormat === 'yolo' && styles.exportChipTextActive]}>YOLO (.txt)</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.exportChip, exportFormat === 'coco' && styles.exportChipActive]} onPress={() => setExportFormat('coco')}>
-                    <Text style={[styles.exportChipText, exportFormat === 'coco' && styles.exportChipTextActive]}>COCO (.json)</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.exportChip, exportFormat === 'pascalvoc' && styles.exportChipActive]} onPress={() => setExportFormat('pascalvoc')}>
-                    <Text style={[styles.exportChipText, exportFormat === 'pascalvoc' && styles.exportChipTextActive]}>Pascal VOC (.xml)</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-            {exportTaskType === 'video' && (
-              <Text style={[styles.exportLabel, { marginBottom: 8 }]}>Export Format: YOLO (.txt)</Text>
-            )}
-            <View style={styles.exportField}>
-              {/* Dil seçeneği sadece ses görevleri için gösterilir */}
-              {exportTaskType === 'audio' && (
-                <>
-                  <Text style={styles.exportLabel}>{t('admin.exportLanguage')}</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.exportChips}>
-                    {['all', ...TASK_LANGUAGES.filter((l) => l.code !== 'unspecified').map((l) => l.code)].map((lang) => (
-                      <TouchableOpacity key={lang} style={[styles.exportChip, exportLang === lang && styles.exportChipActive]} onPress={() => setExportLang(lang)}>
-                        <Text style={[styles.exportChipText, exportLang === lang && styles.exportChipTextActive]} numberOfLines={1}>{lang === 'all' ? 'Tümü' : t(`languages.${lang}`)}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </>
-              )}
-            </View>
-            <View style={styles.exportField}>
-              <Text style={styles.exportLabel}>{t('admin.exportClient')}</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.exportChips}>
-                {['all', ...clientNames].map((name) => (
-                  <TouchableOpacity key={name} style={[styles.exportChip, exportClient === name && styles.exportChipActive]} onPress={() => setExportClient(name)}>
-                    <Text style={[styles.exportChipText, exportClient === name && styles.exportChipTextActive]} numberOfLines={1}>{name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
             </View>
             <TouchableOpacity style={[styles.exportBtn, (exporting || !isAdmin) && styles.exportBtnDisabled]} onPress={handleExport} disabled={exporting || !isAdmin}>
               <Ionicons name="download" size={18} color="#fff" />
@@ -2003,10 +1663,10 @@ export default function AdminPanelScreen() {
             );
           })}
           </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
-    {/* Completed Tasks Modal */}
+      {/* MODALLAR - ScrollView ve KeyboardAvoidingView DIŞINDA OLMALI */}
       {showCompletedTasks && (
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -2039,10 +1699,74 @@ export default function AdminPanelScreen() {
           </View>
         </View>
       )}
-    </>
-  );
-}
 
+      {showTaskForm && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Yeni Görev Oluştur</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowTaskForm(false)}
+              >
+                <Ionicons name="close" size={24} color="#f8fafc" />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalList} showsVerticalScrollIndicator={false}>
+              <Text style={styles.label}>{t('admin.taskTitle')}</Text>
+              <TextInput
+                style={styles.input}
+                placeholder={t('admin.taskTitlePlaceholder')}
+                placeholderTextColor="#64748b"
+                value={title}
+                onChangeText={setTitle}
+              />
+              
+              <Text style={styles.label}>{t('admin.taskPrice')}</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="10"
+                placeholderTextColor="#64748b"
+                value={taskPrice}
+                onChangeText={setTaskPrice}
+                keyboardType="numeric"
+              />
+              
+              <Text style={styles.label}>{t('admin.clientName')}</Text>
+              <TextInput
+                style={styles.input}
+                placeholder={t('admin.clientNamePlaceholder')}
+                placeholderTextColor="#64748b"
+                value={clientName}
+                onChangeText={setClientName}
+              />
+            </ScrollView>
+            
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.submitBtn, styles.cancelButton]}
+                onPress={() => setShowTaskForm(false)}
+              >
+                <Text style={styles.submitBtnText}>Kapat</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitBtn]}
+                onPress={handleAssignTask}
+                disabled={submitting}
+              >
+                <Text style={styles.submitBtnText}>
+                  {submitting ? 'Oluşturuluyor...' : 'Oluştur'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+
+}
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
   scroll: { padding: 0, paddingBottom: 40 },
@@ -2431,4 +2155,243 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     textAlign: 'center',
   },
+  
+  // Modal styles
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
+  },
+  modalContent: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 20,
+    width: '90%',
+    maxWidth: 500,
+    maxHeight: '80%',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#f8fafc',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalList: {
+    maxHeight: 300,
+    marginBottom: 16,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'flex-end',
+  },
+  cancelButton: {
+    backgroundColor: '#64748b',
+  },
+  noTasksText: {
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+    paddingVertical: 32,
+  },
+  taskItemDate: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  taskItem: {
+    backgroundColor: 'rgba(30,41,59,0.5)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  taskItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  taskItemTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f8fafc',
+    marginRight: 12,
+  },
+  taskItemStatus: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#10b981',
+    backgroundColor: 'rgba(16,185,129,0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  taskItemDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  taskItemType: {
+    fontSize: 12,
+    color: '#94a3b8',
+  },
+  
+  // Modal styles
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
+  },
+  modalContent: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 20,
+    width: '90%',
+    maxWidth: 500,
+    maxHeight: '80%',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#f8fafc',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalList: {
+    maxHeight: 300,
+    marginBottom: 16,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'flex-end',
+  },
+  cancelButton: {
+    backgroundColor: '#64748b',
+  },
+  noTasksText: {
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+    paddingVertical: 32,
+  },
+  taskItemDate: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  taskItem: {
+    backgroundColor: 'rgba(30,41,59,0.5)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  taskItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  taskItemTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f8fafc',
+    marginRight: 12,
+  },
+  taskItemStatus: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#10b981',
+    backgroundColor: 'rgba(16,185,129,0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  taskItemDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  taskItemType: {
+    fontSize: 12,
+    color: '#94a3b8',
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#ef4444',
+    borderRadius: 6,
+  },
+  deleteButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  categoryTabs: {
+    flexDirection: 'row',
+    gap: 4,
+    marginBottom: 12,
+  },
+  categoryTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(30,41,59,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  categoryTabActive: {
+    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
+  },
+  categoryTabText: {
+    fontSize: 12,
+    color: '#94a3b8',
+    fontWeight: '600',
+  },
+  categoryTabTextActive: {
+    color: '#fff',
+  },
 });
+

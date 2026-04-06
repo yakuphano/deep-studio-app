@@ -1510,7 +1510,7 @@ export default function AdminPanelScreen() {
 
           {/* Hızlı Eylemler (Quick Actions) */}
           <View style={styles.actionsRow}>
-            <ActionCard icon="add-circle" iconColor="#3b82f6" label={t('admin.quickActions.newTask')} onPress={() => setShowTaskForm(true)} />
+            <ActionCard icon="add-circle" iconColor="#3b82f6" label={t('admin.quickActions.newTask')} onPress={() => router.push('/admin/tasks/create')} />
             <ActionCard icon="refresh" iconColor="#10b981" label={t('admin.quickActions.refreshStats')} onPress={fetchDashboardStats} />
             <ActionCard icon="list" iconColor="#8b5cf6" label={t('admin.quickActions.completedTasks')} onPress={() => setShowCompletedTasks(true)} />
             <ActionCard icon="download" iconColor="#f59e0b" label={t('admin.quickActions.export')} onPress={() => {}} />

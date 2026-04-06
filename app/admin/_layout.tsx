@@ -5,13 +5,13 @@ export default function AdminLayout() {
   return (
     <Stack
       screenOptions={{
-        header: () => <TopNavbar />,
-        headerShown: true,
+        headerShown: false,
         contentStyle: { backgroundColor: '#0f172a' },
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="messages" />
+      <Stack.Screen name="tasks/create" />
     </Stack>
   );
 }

@@ -1,12 +1,10 @@
 import { Stack } from 'expo-router';
-import TopNavbar from '../../components/TopNavbar';
 
 export default function MainLayout() {
   return (
     <Stack
       screenOptions={{
-        header: () => <TopNavbar />,
-        headerShown: true,
+        headerShown: false,
         contentStyle: { backgroundColor: '#0f172a', width: '100%' },
       }}
     >

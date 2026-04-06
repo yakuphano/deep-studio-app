@@ -202,7 +202,7 @@ export default function AudioTasksScreen() {
       ) : (
         <View style={styles.gridContainer}>
           {audioTasks.map((item) => (
-            <AudioTaskCard key={item.id} item={item} onPress={(id) => router.push(`/task/${id}`)} t={t} />
+            <AudioTaskCard key={item.id} item={item} onPress={(id) => router.push(`/tasks/audio/${id}`)} t={t} />
           ))}
         </View>
       )}

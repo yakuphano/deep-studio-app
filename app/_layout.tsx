@@ -4,6 +4,7 @@ import { View, ActivityIndicator, Platform } from 'react-native';
 import { Stack, useRouter, usePathname } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import TopNavbar from '../components/TopNavbar';
 
 function RootLayoutNav() {
   const { session, loading, isAdmin } = useAuth();
@@ -37,12 +38,15 @@ function RootLayoutNav() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="login" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="admin" />
-    </Stack>
+    <View style={{ flex: 1 }}>
+      <TopNavbar />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="login" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="admin" />
+      </Stack>
+    </View>
   );
 }
 

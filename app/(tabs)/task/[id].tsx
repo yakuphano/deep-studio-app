@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput, Pressable, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput, Pressable, Platform, Modal } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,11 +21,19 @@ interface TaskData {
   audio_url?: string;
   image_url?: string | null;
   video_url?: string | null;
+  file_url?: string | null;
   transcription?: string;
   annotation_data?: unknown;
   language?: string | null;
   new_field?: string;
-  another_new_field?: string; // Add this line
+  another_new_field?: string;
+}
+
+interface VideoAnnotation {
+  id: string;
+  label: string;
+  timestamp: string; // Format: "01:24"
+  seconds: number; // Format: 84
 }
 
 export default function TaskDetailScreen() {
@@ -44,25 +52,35 @@ export default function TaskDetailScreen() {
   const [selectedLabel, setSelectedLabel] = useState<string>('');
   const [isBrushActive, setIsBrushActive] = useState(false);
   const canvasRef = useRef<any>(null);
+  const videoRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
+
+  // Video specific states
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState<number | null>(null);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [videoAnnotations, setVideoAnnotations] = useState<VideoAnnotation[]>([]);
+  const progressBarWidth = useRef(0);
+  const MIN_SPEED = 0.5;
+  const MAX_SPEED = 3;
+
+  // Modal states
+  const [showLabelModal, setShowLabelModal] = useState(false);
+  const [selectedObjectLabel, setSelectedObjectLabel] = useState('');
 
   // Audio specific states
   const [transcription, setTranscription] = useState('');
   const [transcribing, setTranscribing] = useState(false);
   const [aiFixing, setAiFixing] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [position, setPosition] = useState(0);
-  const [duration, setDuration] = useState<number | null>(null);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const progressBarWidth = useRef(0);
-  const MIN_SPEED = 0.5;
-  const MAX_SPEED = 3;
 
   const audioUrl = task?.audio_url;
   const imageUrl = task?.image_url;
   const videoUrl = task?.video_url;
   const isImageTask = task?.type === 'image' || (task?.category ?? '').toString().toLowerCase().includes('image');
+  const isVideoTask = task?.category === 'video' || task?.type === 'video';
   const isSubmitted = task?.status === 'submitted';
 
   const taskType: 'audio' | 'image' | 'video' = (() => {
@@ -73,7 +91,7 @@ export default function TaskDetailScreen() {
     const categoryIsImage = (task?.category ?? '').toLowerCase() === 'image';
     const categoryIsVideo = (task?.category ?? '').toLowerCase() === 'video';
     
-    // Video priority
+    // Video priority - check video first
     if (hasVideoUrl || typeIsVideo || categoryIsVideo) return 'video';
     // Image fallback
     if (hasImageUrl || typeIsImage || categoryIsImage) return 'image';
@@ -100,15 +118,17 @@ export default function TaskDetailScreen() {
       }
       if (!error && data) {
         const cat = (data.category ?? '').toString().toLowerCase();
+        const isVideo = data.category === 'video';
         const taskData: TaskData = {
           id: String(data.id),
-          title: String(data.title ?? '') || 'İsimsiz Görev', // Title null ise varsayılan değer
+          title: String(data.title ?? '') || 'İsimsiz Görev',
           status: data.status ?? 'pending',
           price: data.price != null ? Number(data.price) : 0,
           type: (data.type ?? (cat === 'video' ? 'video' : 'audio')) as 'audio' | 'image' | 'video',
           category: data.category ?? null,
           audio_url: data.audio_url ?? data.audioUrl,
           image_url: data.image_url ?? data.imageUrl ?? null,
+          video_url: data.video_url ?? data.videoUrl ?? null,
           transcription: data.transcription ?? '',
           annotation_data: data.annotation_data ?? null,
           language: data.language ?? null,
@@ -118,12 +138,23 @@ export default function TaskDetailScreen() {
         if (Array.isArray(taskData.annotation_data)) {
           setAnnotations(taskData.annotation_data as Annotation[]);
         }
+        // Load video annotations if exists
+        if (Array.isArray(data.annotation_data) && isVideo) {
+          const videoAnns = (data.annotation_data as any[]).filter(ann => ann.timestamp).map(ann => ({
+            id: ann.id,
+            label: ann.label,
+            timestamp: formatTime(ann.timestamp || ann.seconds || 0),
+            seconds: ann.timestamp || ann.seconds || 0
+          }));
+          setVideoAnnotations(videoAnns);
+        }
       }
       setLoading(false);
     };
     fetchTask();
   }, [id]);
 
+  // Video controls
   const togglePlayPause = useCallback(() => {
     setIsPlaying(prev => !prev);
   }, []);
@@ -132,13 +163,28 @@ export default function TaskDetailScreen() {
     if (!duration || !progressBarWidth.current) return;
     const { locationX } = e.nativeEvent;
     const percentage = locationX / progressBarWidth.current;
-    setPosition(percentage * duration);
+    const newTime = percentage * duration;
+    setPosition(newTime);
+    setCurrentTime(newTime);
+    if (videoRef.current) {
+      videoRef.current.seek(newTime);
+    }
+  }, [duration]);
+
+  const seekToTime = useCallback((seconds: number) => {
+    if (duration && seconds >= 0 && seconds <= duration) {
+      setPosition(seconds);
+      setCurrentTime(seconds);
+      if (videoRef.current) {
+        videoRef.current.seek(seconds);
+      }
+    }
   }, [duration]);
 
   const formatTime = useCallback((seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }, []);
 
   const speedUp = useCallback(() => {
@@ -153,13 +199,63 @@ export default function TaskDetailScreen() {
     setPlaybackSpeed(1);
   }, []);
 
+  // Add annotation at current time - Saniye Yakalama Mantığı
+  const handleAddObjectLabel = useCallback(() => {
+    if (!currentTime) return;
+    
+    // Videoyu durdur
+    setIsPlaying(false);
+    
+    // Modalı aç
+    setShowLabelModal(true);
+  }, [currentTime]);
+
+  const confirmObjectLabel = useCallback(() => {
+    if (!selectedObjectLabel || !currentTime) return;
+    
+    const newAnnotation: VideoAnnotation = {
+      id: `video-annotation-${Date.now()}`,
+      label: selectedObjectLabel,
+      timestamp: formatTime(currentTime),
+      seconds: Math.floor(currentTime)
+    };
+    
+    setVideoAnnotations(prev => [...prev, newAnnotation]);
+    
+    // Modalı kapat
+    setShowLabelModal(false);
+    setSelectedObjectLabel('');
+    
+    // Videoyu devam ettir
+    setIsPlaying(true);
+  }, [selectedObjectLabel, currentTime, formatTime]);
+
+  // Handle annotation selection in object list
+  const handleAnnotationSelect = useCallback((annotation: VideoAnnotation) => {
+    setSelectedAnnotationId(annotation.id);
+    seekToTime(annotation.seconds);
+  }, [seekToTime]);
+
+  // Handle label change
+  const handleLabelChange = useCallback((annotationId: string, newLabel: string) => {
+    setVideoAnnotations(prev => 
+      prev.map(ann => ann.id === annotationId ? { ...ann, label: newLabel } : ann)
+    );
+  }, []);
+
+  // Handle annotation deletion
+  const handleAnnotationDelete = useCallback((annotationId: string) => {
+    setVideoAnnotations(prev => prev.filter(ann => ann.id !== annotationId));
+    if (selectedAnnotationId === annotationId) setSelectedAnnotationId(null);
+  }, [selectedAnnotationId]);
+
+  // Audio functions
   const handleAITranscription = useCallback(async () => {
     if (!audioUrl) return;
     setTranscribing(true);
     try {
-      // Mock AI transcription
       await new Promise(resolve => setTimeout(resolve, 2000));
-      setTranscription('This is a sample transcription from the AI service.');
+      setTranscription('This is a sample transcription from AI service.');
     } catch (err) {
       console.error('AI Transcription Error:', err);
     } finally {
@@ -171,7 +267,6 @@ export default function TaskDetailScreen() {
     if (!transcription.trim()) return;
     setAiFixing(true);
     try {
-      // Mock AI fix
       await new Promise(resolve => setTimeout(resolve, 1500));
       setTranscription(prev => prev + ' (AI Fixed)');
     } catch (err) {
@@ -185,11 +280,14 @@ export default function TaskDetailScreen() {
     if (!id || !user?.id) return;
     setSaving(true);
     try {
+      // Prepare annotation data with timestamp information
+      const annotationData = isVideoTask ? videoAnnotations : annotations;
+      
       const { error } = await supabase
         .from('tasks')
         .update({
           transcription,
-          annotation_data: annotations,
+          annotation_data: annotationData,
           updated_at: new Date().toISOString(),
         })
         .eq('id', id);
@@ -209,18 +307,21 @@ export default function TaskDetailScreen() {
     } finally {
       setSaving(false);
     }
-  }, [id, user?.id, transcription, annotations, t]);
+  }, [id, user?.id, transcription, annotations, videoAnnotations, isVideoTask, t]);
 
   const handleSubmit = useCallback(async (navigateToNext: boolean = false) => {
     if (!id || !user?.id) return;
     setSaving(true);
     try {
+      // Prepare annotation data with timestamp information
+      const annotationData = isVideoTask ? videoAnnotations : annotations;
+      
       const { error } = await supabase
         .from('tasks')
         .update({
           status: 'submitted',
           transcription,
-          annotation_data: annotations,
+          annotation_data: annotationData,
           updated_at: new Date().toISOString(),
         })
         .eq('id', id);
@@ -270,7 +371,7 @@ export default function TaskDetailScreen() {
     } finally {
       setSaving(false);
     }
-  }, [id, user?.id, transcription, annotations, t, router]);
+  }, [id, user?.id, transcription, annotations, videoAnnotations, isVideoTask, t, router]);
 
   const handleSubmitAndExit = () => handleSubmit(false);
   const handleSubmitNext = () => handleSubmit(true);
@@ -279,15 +380,6 @@ export default function TaskDetailScreen() {
       router.back();
     } catch (_) {}
   };
-
-  const handleDeleteAnnotation = useCallback((id: string) => {
-    setAnnotations(prev => prev.filter(a => a.id !== id));
-    if (selectedAnnotationId === id) setSelectedAnnotationId(null);
-  }, [selectedAnnotationId]);
-
-  const handleUpdateAnnotationLabel = useCallback((id: string, label: string) => {
-    setAnnotations(prev => prev.map(a => a.id === id ? { ...a, label } : a));
-  }, []);
 
   const getObjectDisplayName = (a: Annotation, idx: number) => {
     const labelStr = typeof a.label === 'object' ? (a.label as any).name || (a.label as any).label : a.label;
@@ -311,55 +403,20 @@ export default function TaskDetailScreen() {
   const taskTypeLabel = (() => {
     const cat = (task?.category ?? '').toString().toLowerCase();
     const typ = (task?.type ?? '').toString().toLowerCase();
+    const isVideo = task?.category === 'video';
+    
+    // Video priority
+    if (cat.includes('video') || typ.includes('video')) return 'Video Annotation';
     if (cat.includes('polygon') || typ.includes('polygon')) return t('annotation.polygonAnnotation');
     if (cat.includes('bbox') || cat.includes('box') || typ.includes('bbox') || typ.includes('box')) return t('annotation.boundingBox');
-    return task?.type === 'image' ? t('annotation.imageAnnotation') : t('annotation.annotation');
+    
+    // Default based on task type
+    return isVideo ? 'Video Annotation' : 
+           taskType === 'image' ? 'Image Annotation' : 
+           'Audio Transcription';
   })();
 
-  useEffect(() => {
-    if (!id) return;
-    const fetchTask = async () => {
-      const taskId = String(id);
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('id', taskId)
-        .single();
-      if (error) {
-        console.log('Detay Hatası:', error);
-        if (typeof window !== 'undefined') {
-          window.alert('Supabase Detay Hatası: ' + error.message);
-        } else {
-          Alert.alert('Hata', 'Supabase Detay Hatası: ' + error.message);
-        }
-      }
-      if (!error && data) {
-        const cat = (data.category ?? '').toString().toLowerCase();
-        const taskData: TaskData = {
-          id: String(data.id),
-          title: String(data.title ?? '') || 'İsimsiz Görev', // Title null ise varsayılan değer
-          status: data.status ?? 'pending',
-          price: data.price != null ? Number(data.price) : 0,
-          type: (data.type ?? (cat === 'video' ? 'video' : 'audio')) as 'audio' | 'image' | 'video',
-          category: data.category ?? null,
-          audio_url: data.audio_url ?? data.audioUrl,
-          image_url: data.image_url ?? data.imageUrl ?? null,
-          transcription: data.transcription ?? '',
-          annotation_data: data.annotation_data ?? null,
-          language: data.language ?? null,
-        };
-        setTask(taskData);
-        setTranscription(taskData.transcription ?? '');
-        if (Array.isArray(taskData.annotation_data)) {
-          setAnnotations(taskData.annotation_data as Annotation[]);
-        }
-      }
-      setLoading(false);
-    };
-    fetchTask();
-  }, [id]);
-
-  // Loading guard - TÜM Hook'lardan sonra
+  // Loading guard
   if (loading || !task) {
     return (
       <View style={styles.container}>
@@ -368,11 +425,246 @@ export default function TaskDetailScreen() {
       </View>
     );
   }
+  // Video Task - Simplified 2 Column Layout
+  if (isVideoTask) {
+    return (
+      <View style={[styles.container, isWeb && styles.containerFullWidth]}>
+        {/* Top Bar with Back Button */}
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.backButton} onPress={handleExit}>
+            <Ionicons name="arrow-back" size={20} color="#3b82f6" />
+            <Text style={styles.backButtonText}>Geri Dön</Text>
+          </TouchableOpacity>
+          
+          <Text style={styles.topBarTitle}>Video Player</Text>
+        </View>
+        
+        <View style={styles.videoLayout}>
+          {/* Center Column - Video Player (70%) */}
+          <View style={styles.videoCenterColumn}>
+            <View style={styles.centerColumnHeader}>
+              <Text style={styles.centerColumnTitle}>VIDEO PLAYER</Text>
+            </View>
+            
+            <View style={styles.videoPlayerContainer}>
+              {videoUrl ? (
+                <>
+                  <View style={styles.videoPlaceholder}>
+                    <Ionicons name="videocam" size={48} color="#3b82f6" />
+                    <Text style={styles.videoPlaceholderText}>Video Player</Text>
+                    <Text style={styles.videoUrlText}>{videoUrl}</Text>
+                  </View>
+                  
+                  <View style={styles.videoControls}>
+                    <TouchableOpacity style={styles.playButton} onPress={togglePlayPause}>
+                      <Ionicons name={isPlaying ? "pause" : "play"} size={24} color="#fff" />
+                    </TouchableOpacity>
+                    
+                    <View style={styles.timeDisplay}>
+                      <Text style={styles.timeText}>
+                        {formatTime(position)} / {formatTime(duration || 0)}
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.speedControls}>
+                      <TouchableOpacity style={styles.speedButton} onPress={speedDown}>
+                        <Text style={styles.speedButtonText}>-</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.speedText}>{playbackSpeed}x</Text>
+                      <TouchableOpacity style={styles.speedButton} onPress={speedUp}>
+                        <Text style={styles.speedButtonText}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.seekBar}>
+                    <View 
+                      style={styles.seekBarProgress}
+                      onLayout={(e) => {
+                        progressBarWidth.current = e.nativeEvent.layout.width;
+                      }}
+                    >
+                      <View 
+                        style={[
+                          styles.seekBarFill,
+                          { width: duration ? `${(position / (duration || 1)) * 100}%` : '0%' }
+                        ]}
+                      />
+                    </View>
+                    <TouchableOpacity
+                      style={styles.seekBarThumb}
+                      onPress={handleSeek}
+                    />
+                  </View>
+                </>
+              ) : (
+                <View style={styles.videoPlaceholder}>
+                  <Ionicons name="videocam-off" size={48} color="#64748b" />
+                  <Text style={styles.videoPlaceholderText}>No Video Available</Text>
+                </View>
+              )}
+            </View>
+            
+            {/* Etiketle Button Outside Video Container */}
+            <View style={styles.videoControlBar}>
+              <TouchableOpacity 
+                style={styles.etiketleButton} 
+                onPress={handleAddObjectLabel}
+              >
+                <Ionicons name="add" size={16} color="#ffffff" />
+                <Text style={styles.etiketleButtonText}>Select Object</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
+          {/* Right Column - Object List (30%) */}
+          <View style={styles.videoRightColumn}>
+            <View style={styles.rightColumnHeader}>
+              <Text style={styles.rightColumnTitle}>OBJECT LIST</Text>
+            </View>
+            
+            <View style={styles.objectList}>
+              {videoAnnotations.length === 0 ? (
+                <Text style={styles.objectListEmpty}>No objects marked yet</Text>
+              ) : (
+                videoAnnotations.map((annotation) => (
+                  <View 
+                    key={annotation.id} 
+                    style={[
+                      styles.objectCard,
+                      selectedAnnotationId === annotation.id && styles.objectCardSelected
+                    ]}
+                  >
+                    <View style={styles.objectCardHeader}>
+                      <TouchableOpacity 
+                        style={styles.objectCardTitleContainer}
+                        onPress={() => handleAnnotationSelect(annotation)}
+                      >
+                        <Text style={styles.objectCardTitle}>
+                          {annotation.label}
+                        </Text>
+                        <View style={styles.timestampBadge}>
+                          <Text style={styles.timestampText}>{annotation.timestamp}</Text>
+                        </View>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.deleteToolBtn,
+                          selectedAnnotationId === annotation.id && styles.deleteToolBtnActive
+                        ]}
+                        onPress={() => handleAnnotationDelete(annotation.id)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.labelOptionsGrid}>
+                      {ANNOTATION_LABELS.map((label) => (
+                        <TouchableOpacity
+                          key={label}
+                          style={[
+                            styles.labelOptionChip,
+                            annotation.label === label && {
+                              backgroundColor: LABEL_COLORS[label] || '#3b82f6',
+                              borderColor: LABEL_COLORS[label] || '#3b82f6',
+                            },
+                          ]}
+                          onPress={() => handleLabelChange(annotation.id, label)}
+                        >
+                          <Text
+                            style={[
+                              styles.labelOptionText,
+                              annotation.label === label && { color: '#fff' },
+                            ]}
+                          >
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          </View>
+        </View>
+
+        {/* Label Selection Modal */}
+        <Modal
+          visible={showLabelModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowLabelModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Nesne Türünü Seç</Text>
+              <View style={styles.modalLabelGrid}>
+                {ANNOTATION_LABELS.map((label) => (
+                  <TouchableOpacity
+                    key={label}
+                    style={[
+                      styles.modalLabelOption,
+                      selectedObjectLabel === label && styles.modalLabelOptionSelected
+                    ]}
+                    onPress={() => setSelectedObjectLabel(label)}
+                  >
+                    <Text style={[
+                      styles.modalLabelText,
+                      selectedObjectLabel === label && { color: '#fff' }
+                    ]}>
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.modalCancelButton}
+                  onPress={() => setShowLabelModal(false)}
+                >
+                  <Text style={styles.modalCancelText}>İptal</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.modalConfirmButton,
+                    !selectedObjectLabel && styles.modalConfirmButtonDisabled
+                  ]}
+                  onPress={confirmObjectLabel}
+                  disabled={!selectedObjectLabel}
+                >
+                  <Text style={styles.modalConfirmText}>Ekle</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <View style={styles.footer}>
+          <View style={styles.bottomButtonBar}>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
+                <Text style={styles.exitButtonText}>Exit</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.submitExitButton} onPress={() => handleSubmit(false)}>
+                <Text style={styles.submitExitButtonText}>Submit & Exit</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <TouchableOpacity style={styles.submitButtonGreen} onPress={() => handleSubmit(true)}>
+              <Text style={styles.submitButtonGreenText}>Submit</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // Image Task - Original 2 Column Layout
   if (taskType === 'image') {
     return (
       <View style={[styles.container, isWeb && styles.containerFullWidth]}>
-        {/* Task Info Overlay - right above canvas */}
         <View style={styles.taskInfoBar}>
           <Text style={styles.taskInfoType}>{taskTypeLabel}</Text>
           <View style={styles.taskInfoPriceBadge}>
@@ -380,9 +672,7 @@ export default function TaskDetailScreen() {
           </View>
         </View>
         <View style={styles.annotationLayout}>
-          {/* Left Toolbar - 80px, 60x60 buttons, purple active */}
           <View style={styles.leftToolbarCol}>
-            {/* Pan Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'pan' && !isBrushActive && styles.toolBtnActivePurple]}
               onPress={() => { setActiveTool('pan'); setIsBrushActive(false); }}
@@ -393,20 +683,12 @@ export default function TaskDetailScreen() {
               <Text style={styles.toolBtnLargeText}>Pan</Text>
             </TouchableOpacity>
             
-            {/* Undo Button */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'undo' && !isBrushActive && styles.toolBtnActivePurple]}
               onPress={() => {
-                console.log('[TaskDetail] Undo button clicked');
-                console.log('[TaskDetail] canvasRef.current:', canvasRef.current);
-                console.log('[TaskDetail] canvasRef.current?.handleUndo:', canvasRef.current?.handleUndo);
-                // AnnotationCanvas'ın handleUndo fonksiyonunu çağır
                 if (canvasRef.current?.handleUndo) {
-                  console.log('[TaskDetail] Calling handleUndo');
                   canvasRef.current.handleUndo();
                 } else {
-                  console.log('[TaskDetail] handleUndo not found, using fallback');
-                  // Fallback: son annotation'ı sil
                   if (annotations.length > 0) {
                     setAnnotations(prev => prev.slice(0, -1));
                   }
@@ -416,10 +698,9 @@ export default function TaskDetailScreen() {
               {...(isWeb ? { accessibilityLabel: 'Undo (V)', title: 'Undo (V)' } as any : {})}
             >
               <Ionicons name="arrow-undo-outline" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Undo (V)</Text>
+              <Text style={styles.toolBtnLargeText}>Undo</Text>
             </TouchableOpacity>
             
-            {/* Bounding Box Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'bbox' && !isBrushActive && styles.toolBtnActivePurple]}
               onPress={() => { setActiveTool('bbox'); setIsBrushActive(false); }}
@@ -427,10 +708,9 @@ export default function TaskDetailScreen() {
               {...(isWeb ? { accessibilityLabel: 'Bounding Box (R)', title: 'Bounding Box (R)' } as any : {})}
             >
               <Ionicons name="square-outline" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Bounding Box (R)</Text>
+              <Text style={styles.toolBtnLargeText}>BBox</Text>
             </TouchableOpacity>
             
-            {/* Polygon Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'polygon' && !isBrushActive && styles.toolBtnActivePurple]}
               onPress={() => { setActiveTool('polygon'); setIsBrushActive(false); }}
@@ -438,10 +718,9 @@ export default function TaskDetailScreen() {
               {...(isWeb ? { accessibilityLabel: 'Polygon (P)', title: 'Polygon (P)' } as any : {})}
             >
               <Ionicons name="git-merge-outline" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Polygon (P)</Text>
+              <Text style={styles.toolBtnLargeText}>Polygon</Text>
             </TouchableOpacity>
             
-            {/* Points Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'points' && !isBrushActive && styles.toolBtnActivePurple]}
               onPress={() => { setActiveTool('points'); setIsBrushActive(false); }}
@@ -449,337 +728,156 @@ export default function TaskDetailScreen() {
               {...(isWeb ? { accessibilityLabel: 'Points (N)', title: 'Points (N)' } as any : {})}
             >
               <Ionicons name="radio-button-off-outline" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Points (N)</Text>
+              <Text style={styles.toolBtnLargeText}>Points</Text>
             </TouchableOpacity>
             
-            {/* Ellipse Tool */}
-            <TouchableOpacity
-              style={[styles.toolBtnLarge, activeTool === 'ellipse' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('ellipse'); setIsBrushActive(false); }}
-              activeOpacity={0.8}
-              {...(isWeb ? { accessibilityLabel: 'Ellipse', title: 'Ellipse' } as any : {})}
-            >
-              <Ionicons name="ellipse-outline" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Ellipse</Text>
-            </TouchableOpacity>
-            
-            {/* Cuboid Tool */}
-            <TouchableOpacity
-              style={[styles.toolBtnLarge, activeTool === 'cuboid' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('cuboid'); setIsBrushActive(false); }}
-              activeOpacity={0.8}
-              {...(isWeb ? { accessibilityLabel: 'Cuboid', title: 'Cuboid' } as any : {})}
-            >
-              <Ionicons name="cube-outline" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Cuboid</Text>
-            </TouchableOpacity>
-            
-            {/* Polyline Tool */}
-            <TouchableOpacity
-              style={[styles.toolBtnLarge, activeTool === 'polyline' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('polyline'); setIsBrushActive(false); }}
-              activeOpacity={0.8}
-              {...(isWeb ? { accessibilityLabel: 'Polyline', title: 'Polyline' } as any : {})}
-            >
-              <Ionicons name="create-outline" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Polyline</Text>
-            </TouchableOpacity>
-            
-            {/* Semantic Segmentation Tool */}
-            <TouchableOpacity
-              style={[styles.toolBtnLarge, activeTool === 'semantic' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('semantic'); setIsBrushActive(false); }}
-              activeOpacity={0.8}
-              {...(isWeb ? { accessibilityLabel: 'Semantic Segmentation', title: 'Semantic Segmentation' } as any : {})}
-            >
-              <Ionicons name="color-filter-outline" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Semantic</Text>
-            </TouchableOpacity>
-            
-            {/* Brush Tool */}
-            <TouchableOpacity
-              style={[styles.toolBtnLarge, activeTool === 'brush' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('brush'); setIsBrushActive(false); }}
-              activeOpacity={0.8}
-              {...(isWeb ? { accessibilityLabel: 'Brush', title: 'Brush' } as any : {})}
-            >
-              <Ionicons name="brush-outline" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Brush</Text>
-            </TouchableOpacity>
-            
-            {/* Magic Wand Tool */}
-            <TouchableOpacity
-              style={[styles.toolBtnLarge, activeTool === 'magic_wand' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('magic_wand'); setIsBrushActive(false); }}
-              activeOpacity={0.8}
-              {...(isWeb ? { accessibilityLabel: 'Magic Wand', title: 'Magic Wand' } as any : {})}
-            >
-              <Ionicons name="sparkles" size={20} color="#f1f5f9" />
-              <Text style={styles.toolBtnLargeText}>Magic Wand</Text>
-            </TouchableOpacity>
-            
-            {/* Delete Button - Kırmızı, en alta */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, styles.deleteToolBtn]}
-              onPress={() => selectedAnnotationId && handleDeleteAnnotation(selectedAnnotationId)}
+              onPress={() => selectedAnnotationId && handleAnnotationDelete(selectedAnnotationId)}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Delete Selected', title: 'Delete Selected' } as any : {})}
             >
               <Ionicons name="trash-outline" size={20} color="#ef4444" />
-              <Text style={[styles.toolBtnLargeText, styles.deleteToolBtnText]}>Delete</Text>
+              <Text style={styles.deleteToolBtnText}>Delete</Text>
             </TouchableOpacity>
           </View>
-          {/* Center Canvas */}
+
           <View style={styles.annotationMain}>
-            <View style={[styles.annotationCanvasWrapFullWidth, styles.canvasWorkspace, styles.canvasWorkspaceWithGrid]}>
-              {isWeb && (
-                <View
-                  pointerEvents="none"
-                  style={[StyleSheet.absoluteFillObject, styles.canvasGridOverlay]}
-                />
-              )}
-              <AnnotationCanvas
-                ref={canvasRef}
-                imageUrl={imageUrl ?? undefined}
-                initialAnnotations={task.annotation_data}
-                taskId={task.id}
-                annotations={annotations}
-                onAnnotationsChange={setAnnotations}
-                activeTool={canvasTool}
-                selectedId={selectedAnnotationId}
-                onSelect={setSelectedAnnotationId}
-                selectedLabel={selectedLabel}
-                isBrushActive={isBrushActive}
-                onUndo={() => {
-                  console.log('[TaskDetail] Undo button clicked');
-                  // AnnotationCanvas'ın handleUndo fonksiyonunu çağır
-                  if (canvasRef.current?.handleUndo) {
-                    canvasRef.current.handleUndo();
-                  } else {
-                    // Fallback: son annotation'ı sil
+            <View style={styles.annotationCanvasWrapFullWidth}>
+              <View style={styles.canvasWorkspace}>
+                <AnnotationCanvas
+                  ref={canvasRef}
+                  imageUrl={imageUrl}
+                  initialAnnotations={task?.annotation_data}
+                  taskId={task?.id || ''}
+                  annotations={annotations}
+                  onAnnotationsChange={setAnnotations}
+                  activeTool={canvasTool}
+                  selectedAnnotationId={selectedAnnotationId}
+                  onSelectAnnotation={setSelectedAnnotationId}
+                  onUndo={() => {
                     if (annotations.length > 0) {
                       setAnnotations(prev => prev.slice(0, -1));
                     }
-                  }
-                }}
-              />
+                  }}
+                />
+              </View>
             </View>
           </View>
-          {/* Right Sidebar - 280px fixed */}
+
           <View style={styles.rightSidebar}>
-            <Text style={styles.rightSidebarTitle}>OBJECT LIST</Text>
-            <ScrollView style={styles.objectList} showsVerticalScrollIndicator={false}>
+            <Text style={styles.rightSidebarTitle}>Objects</Text>
+            <View style={styles.objectList}>
               {annotations.length === 0 ? (
                 <Text style={styles.objectListEmpty}>No objects yet</Text>
               ) : (
-                annotations.map((a, idx) => {
-                  const labelStr = typeof a.label === 'object' ? (a.label as any).name || (a.label as any).label : a.label;
-                  const labelColor = labelStr ? LABEL_COLORS[labelStr] || LABEL_COLORS['Other'] : null;
-                  return (
-                    <View key={a.id} style={styles.objectCardWrap}>
-                      <View style={[styles.objectCard, labelColor && { borderLeftColor: labelColor, borderLeftWidth: 4 }]}>
-                        <View style={styles.objectCardHeader}>
-                          <Text style={styles.objectCardTitle}>{getObjectDisplayName(a, idx)}</Text>
+                annotations.map((annotation, idx) => (
+                  <View key={annotation.id} style={styles.objectCardWrap}>
+                    <View style={styles.objectCard}>
+                      <View style={styles.objectCardHeader}>
+                        <Text style={styles.objectCardTitle}>
+                          {getObjectDisplayName(annotation, idx)}
+                        </Text>
+                        <TouchableOpacity
+                          style={[
+                            styles.deleteToolBtn,
+                            selectedAnnotationId === annotation.id && styles.deleteToolBtnActive
+                          ]}
+                          onPress={() => handleAnnotationDelete(annotation.id)}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name="trash-outline" size={14} color="#ef4444" />
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.labelOptionsGrid}>
+                        {ANNOTATION_LABELS.map((label) => (
                           <TouchableOpacity
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            onPress={() => handleDeleteAnnotation(a.id)}
+                            key={label}
+                            style={[
+                              styles.labelOptionChip,
+                              annotation.label === label && {
+                                backgroundColor: LABEL_COLORS[label] || '#3b82f6',
+                                borderColor: LABEL_COLORS[label] || '#3b82f6',
+                              },
+                            ]}
+                            onPress={() => handleLabelChange(annotation.id, label)}
                           >
-                            <Ionicons name="trash-outline" size={16} color="#94a3b8" />
+                            <Text
+                              style={[
+                                styles.labelOptionText,
+                                annotation.label === label && { color: '#fff' },
+                              ]}
+                            >
+                              {label}
+                            </Text>
                           </TouchableOpacity>
-                        </View>
-                       
-                          <View style={styles.labelOptionsGrid}>
-                            {ANNOTATION_LABELS.map((label) => {
-                              const isSelected = a.label === label;
-                              const chipColor = LABEL_COLORS[label] ?? '#94a3b8';
-                              return (
-                                <TouchableOpacity
-                                  key={label}
-                                  style={[
-                                    styles.labelOptionChip,
-                                    {
-                                      borderColor: chipColor,
-                                      backgroundColor: isSelected ? chipColor : 'transparent',
-                                    }
-                                  ]}
-                                  onPress={() => {
-                                    handleUpdateAnnotationLabel(a.id, label);
-                                    setSelectedLabel(label);
-                                  }}
-                                >
-                                  <Text style={[styles.labelOptionText, { color: isSelected ? '#fff' : chipColor }]}>
-                                    {label}
-                                  </Text>
-                                </TouchableOpacity>
-                              );
-                            })}
-                          </View>
+                        ))}
                       </View>
                     </View>
-                  );
-                })
+                  </View>
+                ))
               )}
-            </ScrollView>
-            {isSubmitted && (
-              <View style={styles.submittedBadgeCompact}>
-                <Ionicons name="checkmark-circle" size={14} color="#fff" />
-                <Text style={styles.submittedText}>{t('tasks.submitted')}</Text>
-              </View>
-            )}
+            </View>
           </View>
         </View>
-        {/* Bottom Button Bar */}
-        {!isSubmitted && (
+
+        <View style={styles.footer}>
           <View style={styles.bottomButtonBar}>
-            <View style={styles.bottomLeftActions}>
-              <TouchableOpacity
-                style={styles.exitButton}
-                onPress={handleExit}
-                activeOpacity={0.8}
-              >
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
                 <Text style={styles.exitButtonText}>Exit</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.submitExitButton, saving && styles.submitButtonDisabled]}
-                onPress={handleSubmitAndExit}
-                disabled={saving}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.submitExitButtonText}>
-                  {saving ? t('taskDetail.saving') : 'Submit & Exit'}
-                </Text>
+              
+              <TouchableOpacity style={styles.submitExitButton} onPress={() => handleSubmit(false)}>
+                <Text style={styles.submitExitButtonText}>Submit & Exit</Text>
               </TouchableOpacity>
             </View>
-            <View style={styles.bottomRightActions}>
-              <TouchableOpacity
-                style={[styles.submitButtonGreen, saving && styles.submitButtonDisabled]}
-                onPress={handleSubmitNext}
-                disabled={saving}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.submitButtonGreenText}>
-                  {saving ? t('taskDetail.saving') : 'Submit'}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            
+            <TouchableOpacity style={styles.submitButtonGreen} onPress={() => handleSubmit(true)}>
+              <Text style={styles.submitButtonGreenText}>Submit</Text>
+            </TouchableOpacity>
           </View>
-        )}
-      </View>
-    );
-  }
-
-  if (taskType === 'video') {
-    console.log(' Video görevi tespit edildi, yönlendiriliyor...');
-    console.log(' Video ID:', id);
-    console.log(' Yönlendirme yapılıyor: /video-annotation/' + id);
-    
-    // Yönlendirme yapılıyor
-    router.replace('/video-annotation/' + id);
-    
-    // Yönlendirme öncesi loading göster
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loadingText}>Yönlendiriliyor...</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => {
-            try {
-              router.back();
-            } catch (_) {}
-          }}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="arrow-back" size={20} color="#f1f5f9" />
-          <Text style={styles.backText}>{t('taskDetail.back')}</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('common.taskDetail')}</Text>
-      </View>
-
-      <ScrollView style={styles.content}>
-        {task.title ? (
-          <Text style={styles.taskTitle} numberOfLines={2}>
-            {task.title}
-          </Text>
-        ) : null}
-        <View style={styles.priceBadge}>
-          <Text style={styles.priceBadgeText}>{t('tasks.fee')}: {task.price ?? 0} TL</Text>
         </View>
+      </View>
+    );
+  }
 
+  // Audio task
+  return (
+    <View style={[styles.container, isWeb && styles.containerFullWidth]}>
+      <View style={styles.taskInfoBar}>
+        <Text style={styles.taskInfoType}>{taskTypeLabel}</Text>
+        <View style={styles.taskInfoPriceBadge}>
+          <Text style={styles.taskInfoPriceText}>{task?.price ?? 0} TL</Text>
+        </View>
+      </View>
+      
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <View style={styles.audioSection}>
-          <Text style={styles.sectionLabel}>{t('taskDetail.audioLabel')}</Text>
-          <View style={styles.audioCard}>
-            {audioUrl && !isImageTask ? (
-              <>
-                {isWeb ? (
-                  <AudioPlayer uri={audioUrl} />
-                ) : (
-                  <View style={styles.playerContent}>
-                    <TouchableOpacity
-                      style={styles.playButton}
-                      onPress={togglePlayPause}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.playIcon}>{isPlaying ? '⏸' : '▶'}</Text>
-                    </TouchableOpacity>
-                    <View style={styles.playerInfo}>
-                      <Pressable
-                        style={styles.progressBar}
-                        onLayout={(e) => {
-                          progressBarWidth.current = e.nativeEvent.layout.width;
-                        }}
-                        onPress={handleSeek}
-                      >
-                        <View
-                          style={[
-                            styles.progressFill,
-                            {
-                              width: duration
-                                ? `${Math.min(100, (position / duration) * 100)}%`
-                                : '0%',
-                            },
-                          ]}
-                        />
-                      </Pressable>
-                      <Text style={styles.timeText}>
-                        {formatTime(position)}
-                        {duration !== null ? ` / ${formatTime(duration)}` : ''}
-                      </Text>
-                    </View>
-                  </View>
-                )}
-                <View style={styles.speedRow}>
-                  <Text style={styles.speedLabel}>{t('taskDetail.playbackSpeed')}</Text>
-                  <View style={styles.speedControlRow}>
-                    <TouchableOpacity
-                      style={[styles.speedBtn, playbackSpeed <= MIN_SPEED && styles.speedBtnDisabled]}
-                      onPress={speedDown}
-                      disabled={playbackSpeed <= MIN_SPEED}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.speedBtnText}>−</Text>
-                    </TouchableOpacity>
-                    <Pressable style={styles.speedValue} onPress={resetToNormal}>
-                      <Text style={styles.speedValueText}>{`${playbackSpeed.toFixed(1)}x`}</Text>
-                    </Pressable>
-                    <TouchableOpacity
-                      style={[styles.speedBtn, playbackSpeed >= MAX_SPEED && styles.speedBtnDisabled]}
-                      onPress={speedUp}
-                      disabled={playbackSpeed >= MAX_SPEED}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.speedBtnText}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </>
+          <View style={styles.audioHeader}>
+            <Text style={styles.sectionLabel}>{t('taskDetail.audioLabel')}</Text>
+          </View>
+          <View style={styles.audioPlayerWrapper}>
+            {audioUrl ? (
+              <AudioPlayer
+                audioUrl={audioUrl}
+                isPlaying={isPlaying}
+                setIsPlaying={setIsPlaying}
+                position={position}
+                setPosition={setPosition}
+                duration={duration}
+                setDuration={setDuration}
+                playbackSpeed={playbackSpeed}
+                setPlaybackSpeed={setPlaybackSpeed}
+                progressBarWidth={progressBarWidth}
+                onSeek={handleSeek}
+                formatTime={formatTime}
+                speedUp={speedUp}
+                speedDown={speedDown}
+                resetToNormal={resetToNormal}
+                MIN_SPEED={MIN_SPEED}
+                MAX_SPEED={MAX_SPEED}
+              />
             ) : (
               <Text style={styles.noAudioText}>{t('taskDetail.noAudio')}</Text>
             )}
@@ -860,32 +958,26 @@ export default function TaskDetailScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-        {isSubmitted ? (
-          <View style={styles.submittedBadge}>
-            <Ionicons name="checkmark-circle" size={18} color="#fff" />
-            <Text style={styles.submittedText}>{t('tasks.submitted')}</Text>
-          </View>
-        ) : (
-          <View style={styles.bottomButtonBar}>
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
-                <Text style={styles.exitButtonText}>Exit</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={styles.submitExitButton} onPress={() => handleSubmit(false)}>
-                <Text style={styles.submitExitButtonText}>Submit & Exit</Text>
-              </TouchableOpacity>
-            </View>
+        <View style={styles.bottomButtonBar}>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
+              <Text style={styles.exitButtonText}>Exit</Text>
+            </TouchableOpacity>
             
-            <TouchableOpacity style={styles.submitButtonGreen} onPress={() => handleSubmit(true)}>
-              <Text style={styles.submitButtonGreenText}>Submit</Text>
+            <TouchableOpacity style={styles.submitExitButton} onPress={() => handleSubmit(false)}>
+              <Text style={styles.submitExitButtonText}>Submit & Exit</Text>
             </TouchableOpacity>
           </View>
-        )}
+          
+          <TouchableOpacity style={styles.submitButtonGreen} onPress={() => handleSubmit(true)}>
+            <Text style={styles.submitButtonGreenText}>Submit</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
-};
+}
+
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
@@ -904,25 +996,387 @@ const styles = StyleSheet.create({
     color: '#94a3b8', 
     fontSize: 14, 
     textAlign: 'center', 
-    marginTop: 24 
+    marginTop: 4 
   },
   
-  // Content styles
-  content: {
+  // Top Bar Styles
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    backgroundColor: '#1e293b',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  backButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3b82f6',
+    marginLeft: 8,
+  },
+  addObjectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  addObjectButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  
+  // Video Layout Styles (70/30)
+  videoLayout: {
     flex: 1,
-    padding: 16,
+    flexDirection: 'row',
   },
-  
-  // Footer styles
-  footer: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+  videoCenterColumn: {
+    flex: 0.7,
     backgroundColor: '#0f172a',
-    borderTopWidth: 1,
-    borderTopColor: '#334155',
+  },
+  videoRightColumn: {
+    flex: 0.3,
+    backgroundColor: '#1e293b',
+    borderLeftWidth: 1,
+    borderLeftColor: '#334155',
+  },
+  centerColumnHeader: {
+    padding: 4,
+    backgroundColor: '#1e293b',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  centerColumnTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#f1f5f9',
+    textAlign: 'center',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  rightColumnHeader: {
+    padding: 4,
+    backgroundColor: '#0f172a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  rightColumnTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#f1f5f9',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   
-  // Task info bar
+  // Video Player Styles
+  videoPlayerContainer: {
+    flex: 1,
+    padding: 8,
+  },
+  videoPlaceholder: {
+    flex: 1,
+    minHeight: 500,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+    marginBottom: 0,
+  },
+  videoPlaceholderText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#3b82f6',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  videoUrlText: {
+    fontSize: 12,
+    color: '#64748b',
+    textAlign: 'center',
+  },
+  videoControlBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 12,
+    marginTop: 0,
+    paddingBottom: 4,
+    marginVertical: 4,
+  },
+  etiketleButton: {
+    backgroundColor: '#3b82f6',
+    borderRadius: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 8,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  etiketleButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  videoControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  playButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#3b82f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  timeDisplay: {
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  timeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f1f5f9',
+  },
+  speedControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  speedButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  speedButtonText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#f1f5f9',
+  },
+  speedText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f1f5f9',
+    minWidth: 50,
+    textAlign: 'center',
+  },
+  seekBar: {
+    height: 8,
+    backgroundColor: '#1e293b',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginHorizontal: 16,
+  },
+  seekBarProgress: {
+    height: '100%',
+    backgroundColor: '#3b82f6',
+    borderRadius: 4,
+  },
+  seekBarFill: {
+    height: '100%',
+    backgroundColor: '#3b82f6',
+  },
+  seekBarThumb: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 16,
+    height: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#3b82f6',
+  },
+  
+  // Object List Styles
+  objectList: {
+    flex: 1,
+  },
+  objectListEmpty: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  objectCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  objectCardSelected: {
+    borderColor: '#3b82f6',
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  objectCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  objectCardTitleContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  objectCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f1f5f9',
+  },
+  timestampBadge: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  timestampText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  deleteToolBtn: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: '#ef4444',
+    borderWidth: 1,
+    borderRadius: 4,
+    padding: 4,
+  },
+  deleteToolBtnActive: {
+    backgroundColor: '#ef4444',
+  },
+  labelOptionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  labelOptionChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 16,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  labelOptionText: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#94a3b8',
+  },
+  
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 24,
+    width: '80%',
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#f1f5f9',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  modalLabelGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 20,
+  },
+  modalLabelOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  modalLabelOptionSelected: {
+    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
+  },
+  modalLabelText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#f1f5f9',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalCancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#64748b',
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  modalConfirmButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#3b82f6',
+    alignItems: 'center',
+  },
+  modalConfirmButtonDisabled: {
+    backgroundColor: '#64748b',
+  },
+  modalConfirmText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  
+  // Original Image Layout Styles (preserved)
   taskInfoBar: {
     position: 'absolute',
     top: 16,
@@ -952,54 +1406,48 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#22c55e',
   },
-  
-  // Annotation layout
   annotationLayout: {
     flex: 1,
     flexDirection: 'row',
   },
   leftToolbarCol: {
-    width: 80,
-    minWidth: 80,
-    maxWidth: 80,
-    padding: 8,
+    width: 42,
+    minWidth: 42,
+    maxWidth: 42,
+    padding: 3,
     backgroundColor: '#0f172a',
     borderRightWidth: 1,
     borderRightColor: '#334155',
     flexDirection: 'column',
-    gap: 8,
+    gap: 3,
+    paddingBottom: 120,
   },
   toolBtnLarge: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 4,
     backgroundColor: '#1e293b',
     borderWidth: 1,
     borderColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'column',
-    gap: 2,
+    padding: 6,
+    gap: 1,
   },
   toolBtnActivePurple: {
     backgroundColor: '#7c3aed',
     borderColor: '#7c3aed',
   },
   toolBtnLargeText: { 
-    fontSize: 9, 
+    fontSize: 8, 
     color: '#f1f5f9', 
     marginTop: 1, 
     fontWeight: '500' 
   },
-  deleteToolBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderColor: '#ef4444',
-  },
   deleteToolBtnText: { 
     color: '#ef4444' 
   },
-  
-  // Center area
   annotationMain: { 
     flex: 1, 
     minWidth: 0, 
@@ -1019,21 +1467,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#334155',
   },
-  canvasWorkspaceWithGrid: {
-    position: 'relative',
-  },
-  canvasGridOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px)',
-    backgroundSize: '20px 20px',
-    pointerEvents: 'none',
-  },
-  
-  // Right sidebar
   rightSidebar: {
     width: 280,
     minWidth: 280,
@@ -1052,55 +1485,16 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
-  objectList: { 
-    flex: 1, 
-    minHeight: 60 
-  },
-  objectListEmpty: { 
-    fontSize: 12, 
-    color: '#64748b', 
-    fontStyle: 'italic' 
-  },
   objectCardWrap: { 
     marginBottom: 8 
   },
-  objectCard: {
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 0,
-    borderWidth: 1,
-    borderColor: '#334155',
+  footer: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    backgroundColor: '#0f172a',
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
   },
-  objectCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  objectCardTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#f1f5f9',
-  },
-  labelOptionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  labelOptionChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 16,
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-  },
-  labelOptionText: {
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  
-  // Bottom buttons
   bottomButtonBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1110,16 +1504,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.08)',
-  },
-  bottomLeftActions: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center',
-  },
-  bottomRightActions: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center',
   },
   exitButton: {
     paddingHorizontal: 16,
@@ -1159,29 +1543,21 @@ const styles = StyleSheet.create({
   submitButtonDisabled: { 
     opacity: 0.6 
   },
-  submittedBadgeCompact: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#22c55e',
-  },
-  submittedText: { 
-    fontSize: 14, 
-    color: '#fff', 
-    fontWeight: '600' 
-  },
-  
-  // Audio specific styles
   scroll: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
   },
-  header: {
+  audioSection: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  audioHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
@@ -1190,188 +1566,74 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
   },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  backText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#f1f5f9',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#f1f5f9',
-    marginLeft: 16,
-    flex: 1,
-    textAlign: 'center',
-  },
-  taskTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#f1f5f9',
-    paddingHorizontal: 16,
-    marginBottom: 8,
-    lineHeight: 28,
-  },
-  priceBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    marginLeft: 16,
-    marginBottom: 16,
-  },
-  priceBadgeText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#22c55e',
-  },
-  audioSection: {
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
   sectionLabel: {
     fontSize: 16,
     fontWeight: '600',
     color: '#f1f5f9',
-    marginBottom: 12,
   },
-  audioCard: {
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
+  audioPlayerWrapper: {
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  playerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  playButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#3b82f6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playIcon: {
-    fontSize: 20,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  playerInfo: {
-    flex: 1,
-  },
-  progressBar: {
-    height: 4,
-    backgroundColor: '#334155',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#3b82f6',
-  },
-  timeText: {
-    fontSize: 12,
-    color: '#94a3b8',
-    marginTop: 8,
-  },
-  speedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 16,
-  },
-  speedLabel: {
-    fontSize: 14,
-    color: '#f1f5f9',
-  },
-  speedControlRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  speedBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 6,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  speedBtnDisabled: {
-    opacity: 0.5,
-  },
-  speedBtnText: {
-    fontSize: 16,
-    color: '#f1f5f9',
-    fontWeight: '600',
-  },
-  speedValue: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 6,
-  },
-  speedValueText: {
-    fontSize: 12,
-    color: '#f1f5f9',
-    fontWeight: '600',
   },
   noAudioText: {
     fontSize: 14,
     color: '#64748b',
+    fontStyle: 'italic',
     textAlign: 'center',
-    paddingVertical: 24,
+    padding: 20,
   },
   transcriptionSection: {
-    paddingHorizontal: 16,
-    marginBottom: 24,
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
   },
   transcriptionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    fontWeight: '600',
-    color: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#0f172a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
   },
-  transcriptionCard: {
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
-    marginBottom: 12,
+  aiButtonWrapper: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  transcriptionInput: {
-    fontSize: 14,
-    color: '#f1f5f9',
-    minHeight: 120,
-    textAlignVertical: 'top',
-  },
-  submitContainer: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-  },
-  submittedBadge: {
+  aiTranscribeButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#22c55e',
     borderRadius: 8,
+  },
+  aiTranscribeButtonDisabled: { 
+    opacity: 0.6 
+  },
+  aiTranscribeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  transcriptionCard: {
+    margin: 16,
+    backgroundColor: '#0f172a',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  transcriptionInput: {
+    minHeight: 120,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#f1f5f9',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
 });

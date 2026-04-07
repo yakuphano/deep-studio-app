@@ -138,7 +138,7 @@ export default function AudioTasksScreen() {
       const { data, error } = await supabase
         .from('tasks')
         .select('*')
-        .eq('category', 'transcription')
+        .in('type', ['audio', 'transcription']) // Sadece audio ve transcription olanlar
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
       
@@ -179,13 +179,13 @@ export default function AudioTasksScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header with back button */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+      {/* Header Row */}
+      <View style={styles.headerRow}>
+        <TouchableOpacity style={styles.backToSelection} onPress={handleBack}>
           <Ionicons name="arrow-back" size={20} color="#3b82f6" />
-          <Text style={styles.backButtonText}>Geri Dön</Text>
+          <Text style={styles.backToSelectionText}>Geri Dön</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Ses Görevleri</Text>
+        <Text style={styles.pageTitle}>Ses Görevleri</Text>
       </View>
 
       {/* Content */}
@@ -214,36 +214,35 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
+    paddingTop: 60, // ✅ Butonların ekranın en tepesine yapışmaması için
   },
-  header: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: '#1e293b',
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    marginBottom: 16,
   },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-  },
-  backButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#3b82f6',
-    marginLeft: 8,
-  },
-  headerTitle: {
+  pageTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: '#ffffff',
     flex: 1,
     textAlign: 'center',
+  },
+  backToSelection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#1e293b',
+    marginRight: 16,
+  },
+  backToSelectionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3b82f6', // ✅ Mavi ikon ve yazı
+    marginLeft: 8,
   },
   loadingContainer: {
     flex: 1,

@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import * as DocumentPicker from 'expo-document-picker';
+import { supabase } from '@/lib/supabase';
 
 export default function CreateAudioTaskScreen() {
   const { t } = useTranslation();
@@ -21,6 +22,7 @@ export default function CreateAudioTaskScreen() {
   const { user } = useAuth();
 
   const [taskData, setTaskData] = useState({
+    company_name: '',
     title: '',
     description: '',
     language: 'tr',
@@ -79,32 +81,42 @@ export default function CreateAudioTaskScreen() {
     }, 200);
   };
 
-  const handleSave = () => {
-    if (!taskData.title || !taskData.description) {
-      Alert.alert('Error', 'Please fill in all required fields');
+  const handleCreateTask = async () => {
+    // 1. ADIM: Kontrol
+    if (!taskData.title || !taskData.company_name) {
+      Alert.alert("Eksik Bilgi", "Lütfen Şirket Adı ve Başlığı doldurun!");
       return;
     }
-    
-    if (sourceType === 'local' && !selectedFile) {
-      Alert.alert('Error', 'Please select an audio file');
-      return;
+
+    try {
+      console.log("📡 Supabase'e veri gönderiliyor...");
+
+      // MINIMAL VERİ PAKETİ - Sadece kesin kolonlar
+      const { data, error } = await supabase
+        .from('tasks')
+        .insert([{
+          title: taskData.title,
+          company_name: taskData.company_name, // SQL'de açtığımız kolon
+          type: 'audio',
+          status: 'pending',
+          assigned_to: null // ✅ Atanmamış olarak başla
+        }])
+        .select();
+
+      if (error) {
+        console.log("❌ VERİTABANI HATASI:", error);
+        alert('DB HATASI: ' + error.message); // Hata kodunu ekrana bas
+        return;
+      }
+
+      console.log("✅ BAŞARILI:", data);
+      Alert.alert('Success', 'Task created successfully!'); // Success mesajı
+      router.push('/admin'); // Admin ana sayfasına yönlendir
+
+    } catch (err) {
+      console.log("💥 CRITICAL CRASH:", err);
+      alert('SİSTEM HATASI: ' + (err as Error).message);
     }
-    
-    if (sourceType === 'remote' && !remoteUrl) {
-      Alert.alert('Error', 'Please enter an audio URL');
-      return;
-    }
-    
-    // Save task logic here
-    const taskPayload = { 
-      ...taskData, 
-      sourceType,
-      ...(sourceType === 'local' ? { selectedFile } : { remoteUrl })
-    };
-    
-    console.log('Audio task data:', taskPayload);
-    Alert.alert('Success', 'Audio task created successfully');
-    router.push('/admin');
   };
 
   return (
@@ -112,7 +124,7 @@ export default function CreateAudioTaskScreen() {
       {/* Small Back Button */}
       <View style={styles.backButtonContainer}>
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-          <Ionicons name="arrow-back" size={16} color="#9ca3af" />
+          <Ionicons name="arrow-back" size={16} color="#3b82f6" />
           <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
       </View>
@@ -124,6 +136,22 @@ export default function CreateAudioTaskScreen() {
         <View style={styles.form}>
           {/* Left Column */}
           <View style={styles.leftColumn}>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Company Name *</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  focusedInput === 'company_name' && styles.inputFocused
+                ]}
+                value={taskData.company_name}
+                onChangeText={(text) => setTaskData(prev => ({ ...prev, company_name: text }))}
+                placeholder="Enter company or client name (e.g. TransPerfect, Google)"
+                placeholderTextColor="#9ca3af"
+                onFocus={() => setFocusedInput('company_name')}
+                onBlur={() => setFocusedInput(null)}
+              />
+            </View>
+
             <View style={styles.formGroup}>
               <Text style={styles.label}>Task Title *</Text>
               <TextInput
@@ -292,7 +320,7 @@ export default function CreateAudioTaskScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+        <TouchableOpacity style={styles.saveButton} onPress={handleCreateTask}>
           <Text style={styles.saveButtonText}>Create Task</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -324,7 +352,7 @@ const styles = StyleSheet.create({
   },
   backButtonText: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: '#3b82f6', // ✅ Mavi renge sabitlendi
     fontWeight: '500',
   },
   

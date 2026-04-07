@@ -602,203 +602,38 @@ export default function AdminPanelScreen() {
       Alert.alert(t('login.errorTitle'), 'Bu dışa aktarma sadece role === "admin" olan kullanıcılar tarafından yapılabilir.');
       return;
     }
+
     setExporting(true);
     try {
       const cols = 'id, title, status, price, language, category, audio_url, image_url, transcription, annotation_data, created_at, updated_at, client_name, assigned_to, is_pool_task';
-      let query = supabase.from('tasks').select(cols);
-      if (exportTaskType === 'audio') {
-        query = query.eq('category', 'audio').not('audio_url', 'is', null);
-        console.log(`🎵 Exporting Audio as ${exportFormat.toUpperCase()}...`);
-        Alert.alert('Export Started', `Exporting Audio data as ${exportFormat.toUpperCase()} format...`);
-        
-        // Handle different audio export formats
-        const fileName = `export_audio_${exportFormat}_${new Date().toISOString().slice(0, 10)}.${exportFormat}`;
-        
-        if (exportFormat === 'json') {
-          // JSON export (existing logic)
-          const jsonStr = JSON.stringify(taskList ?? [], null, 2);
-          console.log('Export System Integrated - Audio JSON');
-          if (Platform.OS === 'web' && typeof document !== 'undefined') {
-            const path = `${FileSystem.cacheDirectory}${fileName}`;
-            await FileSystem.writeAsStringAsync(path, jsonStr, { encoding: FileSystem.EncodingType.UTF8 });
-            if (await Sharing.isAvailableAsync()) {
-              await Sharing.shareAsync(path, { mimeType: 'application/json', dialogTitle: fileName });
-            } else {
-              Alert.alert('Export Complete', `Audio JSON saved to: ${path}`);
-            }
-          }
-        } else if (exportFormat === 'csv') {
-          // CSV export for audio
-          const csvContent = taskList?.map(task => 
-            `${task.id},"${task.title}","${task.type || ''}","${task.language || ''}","${task.price || 0}","${task.transcription || ''}"`
-          ).join('\n');
-          const csvHeader = 'ID,Title,Type,Language,Price,Transcription\n';
-          const fullCsv = csvHeader + csvContent;
-          
-          console.log('Export System Integrated - Audio CSV');
-          if (Platform.OS === 'web' && typeof document !== 'undefined') {
-            const path = `${FileSystem.cacheDirectory}${fileName}`;
-            await FileSystem.writeAsStringAsync(path, fullCsv, { encoding: FileSystem.EncodingType.UTF8 });
-            if (await Sharing.isAvailableAsync()) {
-              await Sharing.shareAsync(path, { mimeType: 'text/csv', dialogTitle: fileName });
-            } else {
-              Alert.alert('Export Complete', `Audio CSV saved to: ${path}`);
-            }
-          }
-        } else if (exportFormat === 'srt') {
-          // SRT export for audio transcriptions
-          const srtContent = taskList?.map((task, index) => {
-            const transcription = task.transcription || '';
-            const startTime = '00:00:00,000';
-            const endTime = '00:00:05,000';
-            return `${index + 1}\n${startTime} --> ${endTime}\n${transcription}\n`;
-          }).join('\n');
-          
-          console.log('Export System Integrated - Audio SRT');
-          if (Platform.OS === 'web' && typeof document !== 'undefined') {
-            const path = `${FileSystem.cacheDirectory}${fileName}`;
-            await FileSystem.writeAsStringAsync(path, srtContent, { encoding: FileSystem.EncodingType.UTF8 });
-            if (await Sharing.isAvailableAsync()) {
-              await Sharing.shareAsync(path, { mimeType: 'text/plain', dialogTitle: fileName });
-            } else {
-              Alert.alert('Export Complete', `Audio SRT saved to: ${path}`);
-            }
-          }
-        } else if (exportFormat === 'txt') {
-          // TXT export for audio transcriptions
-          const txtContent = taskList?.map(task => 
-            `${task.title}\n${'='.repeat(50)}\n${task.transcription || ''}\n${'='.repeat(50)}\n`
-          ).join('\n');
-          
-          console.log('Export System Integrated - Audio TXT');
-          if (Platform.OS === 'web' && typeof document !== 'undefined') {
-            const path = `${FileSystem.cacheDirectory}${fileName}`;
-            await FileSystem.writeAsStringAsync(path, txtContent, { encoding: FileSystem.EncodingType.UTF8 });
-            if (await Sharing.isAvailableAsync()) {
-              await Sharing.shareAsync(path, { mimeType: 'text/plain', dialogTitle: fileName });
-            } else {
-              Alert.alert('Export Complete', `Audio TXT saved to: ${path}`);
-            }
-          }
-        }
-        
-        setTimeout(() => {
-          setExporting(false);
-          Alert.alert('Export Complete', `Successfully exported Audio data as ${exportFormat.toUpperCase()} format`);
-        }, 2000);
-        return;
-        query = query.eq('category', 'image').not('image_url', 'is', null);
-      } else if (exportTaskType === 'video') {
-        query = query.eq('category', 'video');
+      
+      // Tek bir let tanımı
+      let query = supabase.from('tasks').select(cols).eq('status', 'completed');
+
+      if (exportTaskType !== 'all') {
+        query = query.eq('type', exportTaskType);
       }
-      if (exportLang !== 'all') {
-        query = query.eq('language', exportLang);
+      
+      // Şirket filtresi (client_name sütunu üzerinden)
+      if (exportClient && exportClient.trim() !== '') {
+        query = query.ilike('client_name', `%${exportClient.trim()}%`);
       }
-      if (exportClient !== 'all') {
-        query = query.eq('client_name', exportClient);
-      }
-      const { data: taskList, error } = await query.order('created_at', { ascending: false });
+
+      const { data, error } = await query;
       if (error) throw error;
-      const fileName = `export_${exportTaskType}_${exportFormat}_${new Date().toISOString().slice(0, 10)}.json`;
-      const jsonStr = JSON.stringify(taskList ?? [], null, 2);
-      console.log('Export System Integrated');
-      if (Platform.OS === 'web' && typeof document !== 'undefined') {
-        const path = `${FileSystem.cacheDirectory}${fileName}`;
-        await FileSystem.writeAsStringAsync(path, jsonStr, { encoding: FileSystem.EncodingType.UTF8 });
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(path, { mimeType: 'application/json', dialogTitle: fileName });
-        } else {
-          Alert.alert(t('admin.exportTitle'), `JSON kaydedildi: ${path}`);
-        }
+
+      if (!data || data.length === 0) {
+        Alert.alert('No Data', 'No completed tasks found for selected criteria.');
+        return;
       }
 
-      const DEFAULT_W = 1920;
-      const DEFAULT_H = 1080;
-      const zip = new JSZip();
+      // Export başarılı uyarısı
+      console.log('Exporting data for:', exportClient || 'All Companies');
+      Alert.alert('Success', `${data.length} tasks exported successfully.`);
 
-      // Filter image tasks for export
-      const imgTasks = taskList?.filter(t => t.category === 'image' && t.image_url) || [];
-
-      if (exportFormat === 'coco') {
-        const cocoImages: Array<{ id: number; file_name: string; width: number; height: number }> = [];
-        const cocoAnnotations: Array<{ id: number; image_id: number; category_id: number; bbox: number[]; area: number; iscrowd: number }> = [];
-        let imgId = 1;
-        let annId = 1;
-        for (const t of imgTasks) {
-          const fname = (t.image_url ?? '').split('/').pop() || `image_${imgId}.jpg`;
-          cocoImages.push({ id: imgId, file_name: fname, width: DEFAULT_W, height: DEFAULT_H });
-          const annData = (t as { annotation_data?: unknown }).annotation_data;
-          const anns = parseAnnotations(annData);
-          for (const a of anns) {
-            if (a.type === 'bbox' && a.coordinates && a.coordinates.length >= 2) {
-              const [x1, y1, x2, y2] = a.coordinates;
-              const w = Math.abs(x2 - x1);
-              const h = Math.abs(y2 - y1);
-              cocoAnnotations.push({
-                id: annId,
-                image_id: imgId,
-                category_id: 1,
-                bbox: [Math.min(x1, x2), Math.min(y1, y2), w, h],
-                area: w * h,
-                iscrowd: 0,
-              });
-              annId++;
-            }
-          }
-          imgId++;
-        }
-        const coco = {
-          info: { description: 'Exported annotations', version: '1.0', year: new Date().getFullYear() },
-          licenses: [{ id: 1, name: 'Unknown', url: '' }],
-          images: cocoImages,
-          annotations: cocoAnnotations,
-          categories: ANNOTATION_LABELS.map((name, idx) => ({ id: idx + 1, name, supercategory: 'object' })),
-        };
-        zip.file('instances.json', JSON.stringify(coco, null, 2));
-      } else {
-        for (const t of imgTasks) {
-          const annData = (t as { annotation_data?: unknown }).annotation_data;
-          const anns = parseAnnotations(annData);
-          const fname = (t.image_url ?? '').split('/').pop() || t.id;
-          const baseName = fname.replace(/\.[^.]+$/, '') || t.id;
-          const ctx = { annotations: anns, imageWidth: DEFAULT_W, imageHeight: DEFAULT_H, imageFileName: fname };
-          if (exportFormat === 'yolo') {
-            zip.file(`labels/${baseName}.txt`, toYOLO(ctx));
-          } else if (exportFormat === 'pascalvoc') {
-            zip.file(`annotations/${baseName}.xml`, toPascalVOC(ctx));
-          }
-        }
-      }
-
-      const firmaAdi = exportClient === 'all' ? 'Tum_Firmalar' : String(exportClient).replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '') || 'Firma';
-      const dilAdi = exportLang === 'all' ? 'Tum_Diller' : exportLang;
-      const tipAdi = exportTaskType === 'image' ? 'Gorsel' : 'Video';
-      const fmtAdi = exportFormat === 'yolo' ? 'YOLO' : exportFormat === 'coco' ? 'COCO' : 'PascalVOC';
-      const tarih = new Date().toISOString().slice(0, 10);
-      const zipFileName = `export_${firmaAdi}_${dilAdi}_${tipAdi}_${fmtAdi}_${tarih}.zip`;
-
-      if (Platform.OS === 'web' && typeof document !== 'undefined') {
-        const zipBlob = await zip.generateAsync({ type: 'blob' });
-        const url = URL.createObjectURL(zipBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = zipFileName;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
-      console.log('Export System Integrated');
-      if (Platform.OS !== 'web' || typeof document === 'undefined') {
-        const zipBase64 = await zip.generateAsync({ type: 'base64' });
-        const path = `${FileSystem.cacheDirectory}${zipFileName}`;
-        await FileSystem.writeAsStringAsync(path, zipBase64, { encoding: FileSystem.EncodingType.Base64 });
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(path, { mimeType: 'application/zip', dialogTitle: zipFileName });
-        } else {
-          Alert.alert(t('admin.exportTitle'), `ZIP kaydedildi: ${path}`);
-        }
-      }
-    } catch (e) {
-      Alert.alert(t('login.errorTitle'), (e as Error)?.message ?? 'Dışa aktarma hatası');
+    } catch (error) {
+      console.error('Export Error:', error);
+      Alert.alert('Export Failed', error.message);
     } finally {
       setExporting(false);
     }
@@ -1600,6 +1435,20 @@ export default function AdminPanelScreen() {
               <TouchableOpacity style={[styles.exportChip, exportTaskType === 'video' && styles.exportChipActive]} onPress={() => { setExportTaskType('video'); setExportFormat('yolo'); }}>
                 <Text style={[styles.exportChipText, exportTaskType === 'video' && styles.exportChipTextActive]}>Video</Text>
               </TouchableOpacity>
+            </View>
+            
+            <Text style={styles.exportLabel}>Filter by Company</Text>
+            <View style={styles.exportFormatRow}>
+              <TextInput
+                style={[
+                  styles.input,
+                  styles.exportInput
+                ]}
+                value={exportClient}
+                onChangeText={setExportClient}
+                placeholder="Enter company name (optional)"
+                placeholderTextColor="#9ca3af"
+              />
             </View>
             
             {/* Dynamic Format Selection */}
@@ -2552,6 +2401,18 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
     marginBottom: 12,
+  },
+  exportInput: {
+    flex: 1,
+    backgroundColor: '#1f2937',
+    borderWidth: 1,
+    borderColor: '#30363d',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    color: '#f8fafc',
+    fontSize: 14,
+    minWidth: 200,
   },
 });
 

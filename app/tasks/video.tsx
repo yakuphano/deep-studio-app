@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
   Image,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -130,6 +131,7 @@ export default function VideoTasksScreen() {
   const { user, session } = useAuth();
   const [videoTasks, setVideoTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const { width } = useWindowDimensions();
   const numColumns = width >= 1200 ? 4 : width >= 900 ? 3 : width >= 600 ? 2 : 1;
 
@@ -147,7 +149,7 @@ export default function VideoTasksScreen() {
       const { data, error } = await supabase
         .from('tasks')
         .select('*')
-        .eq('category', 'video')
+        .eq('type', 'video')
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
       
@@ -186,6 +188,12 @@ export default function VideoTasksScreen() {
     }
   }, []);
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchVideoTasks(false);
+    setRefreshing(false);
+  }, [fetchVideoTasks]);
+
   return (
     <View style={styles.container}>
       {/* Header with back button */}
@@ -198,23 +206,35 @@ export default function VideoTasksScreen() {
       </View>
 
       {/* Content */}
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3b82f6" />
-          <Text style={styles.loadingText}>{t('common.loading')}</Text>
-        </View>
-      ) : videoTasks.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="videocam-outline" size={64} color="#64748b" />
-          <Text style={styles.emptyText}>Henüz bu kategoride görev bulunmamaktadır</Text>
-        </View>
-      ) : (
-        <View style={styles.gridContainer}>
-          {videoTasks.map((item) => (
-            <VideoTaskCard key={item.id} item={item} onPress={(id) => router.push(`/tasks/video/${id}`)} t={t} />
-          ))}
-        </View>
-      )}
+      <ScrollView
+        style={styles.contentContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#3b82f6"
+            colors={["#3b82f6"]}
+          />
+        }
+      >
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#3b82f6" />
+            <Text style={styles.loadingText}>{t('common.loading')}</Text>
+          </View>
+        ) : videoTasks.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="videocam-outline" size={64} color="#64748b" />
+            <Text style={styles.emptyText}>Henüz bu kategoride görev bulunmamaktadır</Text>
+          </View>
+        ) : (
+          <View style={styles.gridContainer}>
+            {videoTasks.map((item) => (
+              <VideoTaskCard key={item.id} item={item} onPress={(id) => router.push(`/tasks/video/${id}`)} t={t} />
+            ))}
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -223,6 +243,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
+  },
+  contentContainer: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
   header: {
     flexDirection: 'row',

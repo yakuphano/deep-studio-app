@@ -48,6 +48,11 @@ export default function VideoTaskDetailScreen() {
   const audioUrl = task?.audio_url;
   const imageUrl = task?.image_url;
   const videoUrl = task?.video_url;
+  
+  // DEBUG LOG - Gelen video verisini kontrol et
+  console.log('Gelen Video Verisi:', task);
+  console.log('Video URL Değeri:', videoUrl);
+  
   const isVideoTask = task?.type === 'video' || (task?.category ?? '').toString().toLowerCase().includes('video');
   const isSubmitted = task?.status === 'submitted';
 
@@ -85,6 +90,11 @@ export default function VideoTaskDetailScreen() {
         }
       }
       if (!error && data) {
+        // DEBUG LOG - Gelen ham veriyi kontrol et
+        console.log('Veritabanından Gelen Ham Veri:', data);
+        console.log('video_url kolonu:', data.video_url);
+        console.log('videoUrl kolonu:', data.videoUrl);
+        
         const cat = (data.category ?? '').toString().toLowerCase();
         const taskData: TaskData = {
           id: String(data.id),
@@ -101,6 +111,11 @@ export default function VideoTaskDetailScreen() {
           annotation_data: data.annotation_data ?? null,
           language: data.language ?? null,
         };
+        
+        // DEBUG LOG - Video URL'yi kontrol et
+        console.log('Oynatılacak Video URL:', taskData?.video_url);
+        console.log('Tüm Task Data:', taskData);
+        
         setTask(taskData);
         if (Array.isArray(taskData.annotation_data)) {
           setAnnotations(taskData.annotation_data as Annotation[]);
@@ -419,7 +434,7 @@ export default function VideoTaskDetailScreen() {
               )}
               <AnnotationCanvas
                 ref={canvasRef}
-                imageUrl={task.video_url ?? task.file_url ?? videoUrl ?? undefined}
+                imageUrl={videoUrl ?? undefined}
                 initialAnnotations={task.annotation_data}
                 taskId={task.id}
                 annotations={annotations}

@@ -136,7 +136,7 @@ export default function ImageTasksScreen() {
       const { data, error } = await supabase
         .from('tasks')
         .select('*')
-        .eq('category', 'image')
+        .eq('type', 'image')
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
       
@@ -177,14 +177,11 @@ export default function ImageTasksScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header with back button */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-          <Ionicons name="arrow-back" size={20} color="#f472b6" />
-          <Text style={styles.backButtonText}>Geri Dön</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Görsel Görevleri</Text>
-      </View>
+      {/* Custom Back Button */}
+      <TouchableOpacity style={styles.backToSelection} onPress={handleBack}>
+        <Ionicons name="arrow-back" size={20} color="#3b82f6" />
+        <Text style={styles.backToSelectionText}>Geri Dön</Text>
+      </TouchableOpacity>
 
       {/* Content */}
       {loading ? (
@@ -212,36 +209,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
+    paddingTop: 60, // ✅ Status bar altında kalmaması için
   },
-  header: {
+  backToSelection: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#1e293b',
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    alignSelf: 'flex-start',
+    padding: 10, // ✅ Tek padding değeri
+    borderRadius: 8, // ✅ Border radius
+    backgroundColor: '#1e293b', // ✅ Koyu lacivert kutu
+    marginHorizontal: 20,
+    marginBottom: 16,
   },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: 'rgba(245, 114, 182, 0.1)',
-  },
-  backButtonText: {
+  backToSelectionText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#f472b6',
+    color: '#3b82f6', // ✅ Mavi yazı
     marginLeft: 8,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#ffffff',
-    flex: 1,
-    textAlign: 'center',
   },
   loadingContainer: {
     flex: 1,
@@ -268,54 +252,44 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#334155',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 8,
     overflow: 'hidden',
   },
   cardHovered: {
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 12,
-    transform: [{ translateY: -2 }],
+    borderColor: '#f472b6',
+    transform: [{ scale: 1.02 }],
   },
   imageContainer: {
-    height: 160,
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginBottom: 16,
+    width: '100%',
+    height: 180,
+    backgroundColor: '#0f172a',
+    position: 'relative',
   },
   taskImage: {
     width: '100%',
     height: '100%',
+    resizeMode: 'cover',
   },
   imageOverlay: {
     position: 'absolute',
-    top: 0,
+    bottom: 0,
     left: 0,
     right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    padding: 12,
+    background: 'linear-gradient(to top, rgba(15, 23, 42, 0.9), transparent)',
   },
   cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    padding: 20,
-    paddingBottom: 12,
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
   },
   cardTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#f1f5f9',
-    lineHeight: 24,
-    flex: 1,
-    marginRight: 12,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 8,
   },
   priceBadge: {
-    backgroundColor: '#f472b6',
+    backgroundColor: '#22c55e',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
@@ -323,16 +297,14 @@ const styles = StyleSheet.create({
   },
   priceText: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#ffffff',
   },
   cardBody: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+    padding: 16,
   },
   metadataRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
   },
@@ -343,55 +315,55 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
+    marginRight: 12,
   },
   statusText: {
     fontSize: 12,
+    fontWeight: '500',
     color: '#fbbf24',
-    fontWeight: '600',
     marginLeft: 4,
   },
   languageContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 114, 182, 0.1)',
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
   },
   languageText: {
     fontSize: 12,
-    color: '#f472b6',
-    fontWeight: '600',
+    fontWeight: '500',
+    color: '#3b82f6',
     marginLeft: 4,
   },
   cardFooter: {
-    padding: 20,
-    paddingTop: 0,
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
   },
   actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: '#f472b6',
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 24,
     borderRadius: 12,
+    alignItems: 'center',
   },
   actionButtonText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
     color: '#ffffff',
-    marginLeft: 8,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 80,
+    paddingVertical: 60,
   },
   emptyText: {
     fontSize: 18,
-    color: '#64748b',
+    color: '#94a3b8',
     textAlign: 'center',
+    marginTop: 16,
   },
 });

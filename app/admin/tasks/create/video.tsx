@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import * as DocumentPicker from 'expo-document-picker';
+import { supabase } from '@/lib/supabase';
 
 export default function CreateVideoTaskScreen() {
   const { t } = useTranslation();
@@ -21,6 +22,7 @@ export default function CreateVideoTaskScreen() {
   const { user } = useAuth();
 
   const [taskData, setTaskData] = useState({
+    company_name: '',
     title: '',
     description: '',
     videoUrl: '',
@@ -80,40 +82,73 @@ export default function CreateVideoTaskScreen() {
     }, 200);
   };
 
-  const handleSave = () => {
-    if (!taskData.title || !taskData.description) {
-      Alert.alert('Error', 'Please fill in all required fields');
+  const handleCreateTask = async () => {
+  // 1. ADIM: Temel kontroller
+  if (!taskData.title || !taskData.company_name) {
+    Alert.alert("Eksik Bilgi", "Lütfen Şirket Adı ve Başlığı doldurun!");
+    return;
+  }
+
+  // 2. ADIM: Video kaynağı kontrolü - Opsiyonel ama en az biri gerekli
+  if (!remoteUrl && !selectedFile) {
+    Alert.alert("Eksik Video Kaynağı", "Lütfen bir video dosyası yükleyin veya bir URL girin!");
+    return;
+  }
+
+  try {
+    console.log("📡 Video görevi oluşturuluyor...");
+    
+    let videoUrl = '';
+    
+    // 3. ADIM: Video kaynağı işleme
+    if (selectedFile) {
+      // Dosya yüklendi - Supabase Storage'a yükle
+      console.log("📁 Dosya yükleniyor...");
+      // TODO: Supabase Storage upload implementasyonu
+      // Şimdilik dosya adını kullanıyoruz
+      videoUrl = `https://storage.supabase.co/videos/${selectedFile.name}`;
+    } else if (remoteUrl) {
+      // Sadece URL girildi
+      console.log("🔗 URL kullanılıyor...");
+      videoUrl = remoteUrl;
+    }
+
+    // 4. ADIM: Veritabanına kayıt
+    const { data, error } = await supabase
+      .from('tasks')
+      .insert([{
+        title: taskData.title,
+        company_name: taskData.company_name, // SQL'de açtığımız kolon
+        type: 'video',
+        annotation_type: taskData.annotationType, // SQL'de TEXT olarak var
+        status: 'pending',
+        assigned_to: null, // ✅ Atanmamış olarak başla
+        video_url: videoUrl // ✅ Video URL'sini kaydet
+      }])
+      .select();
+
+    if (error) {
+      console.log("❌ VERİTABANI HATASI:", error);
+      alert('DB HATASI: ' + error.message); // Hata kodunu ekrana bas
       return;
     }
-    
-    if (sourceType === 'local' && !selectedFile) {
-      Alert.alert('Error', 'Please select a video file');
-      return;
-    }
-    
-    if (sourceType === 'remote' && !remoteUrl) {
-      Alert.alert('Error', 'Please enter a video URL');
-      return;
-    }
-    
-    // Save task logic here
-    const taskPayload = { 
-      ...taskData, 
-      sourceType,
-      ...(sourceType === 'local' ? { selectedFile } : { remoteUrl })
-    };
-    
-    console.log('Video task data:', taskPayload);
-    Alert.alert('Success', 'Video task created successfully');
-    router.push('/admin');
-  };
+
+    console.log("✅ BAŞARILI:", data);
+    Alert.alert('Success', 'Task created successfully!'); // Success mesajı
+    router.push('/admin'); // Admin ana sayfasına yönlendir
+
+  } catch (err) {
+    console.log("💥 CRITICAL CRASH:", err);
+    alert('SİSTEM HATASI: ' + (err as Error).message);
+  }
+};
 
   return (
     <View style={styles.container}>
       {/* Small Back Button */}
       <View style={styles.backButtonContainer}>
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-          <Ionicons name="arrow-back" size={16} color="#9ca3af" />
+          <Ionicons name="arrow-back" size={16} color="#3b82f6" />
           <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
       </View>
@@ -125,6 +160,22 @@ export default function CreateVideoTaskScreen() {
         <View style={styles.form}>
           {/* Left Column */}
           <View style={styles.leftColumn}>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Company Name *</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  focusedInput === 'company_name' && styles.inputFocused
+                ]}
+                value={taskData.company_name}
+                onChangeText={(text) => setTaskData(prev => ({ ...prev, company_name: text }))}
+                placeholder="Enter company or client name (e.g. TransPerfect, Google)"
+                placeholderTextColor="#9ca3af"
+                onFocus={() => setFocusedInput('company_name')}
+                onBlur={() => setFocusedInput(null)}
+              />
+            </View>
+
             <View style={styles.formGroup}>
               <Text style={styles.label}>Task Title *</Text>
               <TextInput
@@ -198,7 +249,7 @@ export default function CreateVideoTaskScreen() {
 
             {/* File Upload Section */}
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Video Source</Text>
+              <Text style={styles.label}>Video Kaynağı (Dosya veya URL)</Text>
               
               {/* Source Type Selector */}
               <View style={styles.sourceSelector}>
@@ -293,7 +344,7 @@ export default function CreateVideoTaskScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+        <TouchableOpacity style={styles.saveButton} onPress={handleCreateTask}>
           <Text style={styles.saveButtonText}>Create Task</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -325,7 +376,7 @@ const styles = StyleSheet.create({
   },
   backButtonText: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: '#3b82f6', // ✅ Mavi renge sabitlendi
     fontWeight: '500',
   },
   

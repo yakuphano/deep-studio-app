@@ -7,16 +7,17 @@ import {
   FlatList,
   ActivityIndicator,
   useWindowDimensions,
-  Image,
   Platform,
   RefreshControl,
 } from 'react-native';
-import { useRouter, useRootNavigationState } from 'expo-router';
+import { useRouter, useRootNavigationState, Stack } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+
+<Text style={{fontSize: 50, color: 'red', backgroundColor: 'yellow', zIndex: 9999}}>BURADAYIM!</Text>
 
 type Task = {
   id: string;
@@ -69,27 +70,13 @@ function VideoTaskCard({
       onPress={() => onPress(item.id)}
       activeOpacity={0.8}
     >
-      {/* Video Preview */}
-      {item.video_url ? (
-        <View style={styles.imageContainer}>
-          <Image 
-            source={{ uri: item.video_url }} 
-            style={styles.taskImage}
-            resizeMode="cover"
-          />
-          <View style={styles.imageOverlay} />
-          <View style={styles.videoIconOverlay}>
-            <Ionicons name="videocam" size={32} color="#ffffff" />
-          </View>
+      {/* Video Preview with Icon */}
+      <View style={styles.imageContainer}>
+        <View style={styles.videoPlaceholder}>
+          <Ionicons name="videocam" size={48} color="#3b82f6" />
         </View>
-      ) : (
-        <View style={styles.imageContainer}>
-          <View style={styles.videoPlaceholder}>
-            <Ionicons name="videocam-outline" size={48} color="#3b82f6" />
-            <Text style={styles.videoPlaceholderText}>Video Önizleme</Text>
-          </View>
-        </View>
-      )}
+        <View style={styles.imageOverlay} />
+      </View>
       
       {/* Header with title and price badge */}
       <View style={styles.cardHeader}>
@@ -107,7 +94,7 @@ function VideoTaskCard({
             <Text style={styles.statusText}>Bekliyor</Text>
           </View>
           <View style={styles.languageContainer}>
-            <Ionicons name="globe" size={14} color="#3b82f6" />
+            <Ionicons name="globe" size={14} color="#f472b6" />
             <Text style={styles.languageText}>{getLanguageLabel(item.language)}</Text>
           </View>
         </View>
@@ -196,45 +183,47 @@ export default function VideoTasksScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen options={{ headerShown: false }} />
+      
       {/* Header with back button */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <Ionicons name="arrow-back" size={20} color="#3b82f6" />
           <Text style={styles.backButtonText}>Geri Dön</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Video Görevleri</Text>
+        <Text style={styles.headerTitle}>Video Annotation Tasks</Text>
       </View>
 
       {/* Content */}
-      <ScrollView
-        style={styles.contentContainer}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#3b82f6"
-            colors={["#3b82f6"]}
-          />
-        }
-      >
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#3b82f6" />
-            <Text style={styles.loadingText}>{t('common.loading')}</Text>
-          </View>
-        ) : videoTasks.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="videocam-outline" size={64} color="#64748b" />
-            <Text style={styles.emptyText}>Henüz bu kategoride görev bulunmamaktadır</Text>
-          </View>
-        ) : (
-          <View style={styles.gridContainer}>
-            {videoTasks.map((item) => (
-              <VideoTaskCard key={item.id} item={item} onPress={(id) => router.push(`/tasks/video/${id}`)} t={t} />
-            ))}
-          </View>
-        )}
-      </ScrollView>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3b82f6" />
+          <Text style={styles.loadingText}>{t('common.loading')}</Text>
+        </View>
+      ) : videoTasks.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="videocam-outline" size={64} color="#64748b" />
+          <Text style={styles.emptyText}>Henüz bu kategoride görev bulunmamaktadır</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={videoTasks}
+          renderItem={({ item }) => (
+            <VideoTaskCard key={item.id} item={item} onPress={(id) => router.push(`/tasks/video/${id}`)} t={t} />
+          )}
+          keyExtractor={(item) => item.id}
+          numColumns={2}
+          contentContainerStyle={styles.gridContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#3b82f6"
+              colors={["#3b82f6"]}
+            />
+          }
+        />
+      )}
     </View>
   );
 }
@@ -243,11 +232,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
-  },
-  contentContainer: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
   },
   header: {
     flexDirection: 'row',
@@ -264,7 +248,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    backgroundColor: '#1e293b',
   },
   backButtonText: {
     fontSize: 16,
@@ -291,15 +275,13 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     padding: 20,
     gap: 20,
   },
   card: {
     flex: 1,
-    minWidth: 280,
-    maxWidth: 380,
+    margin: 4,
+    aspectRatio: 1,
     backgroundColor: '#1e293b',
     borderRadius: 16,
     borderWidth: 1,
@@ -318,15 +300,18 @@ const styles = StyleSheet.create({
     transform: [{ translateY: -2 }],
   },
   imageContainer: {
+    flex: 1,
     height: 160,
     borderRadius: 12,
     overflow: 'hidden',
     marginBottom: 16,
     position: 'relative',
   },
-  taskImage: {
-    width: '100%',
-    height: '100%',
+  videoPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
   },
   imageOverlay: {
     position: 'absolute',
@@ -336,35 +321,12 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.1)',
   },
-  videoIconOverlay: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: [{ translateX: -16 }, { translateY: -16 }],
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    borderRadius: 20,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  videoPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#1e293b',
-  },
-  videoPlaceholderText: {
-    fontSize: 14,
-    color: '#64748b',
-    marginTop: 8,
-  },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    padding: 20,
-    paddingBottom: 12,
+    marginBottom: 12,
+    paddingHorizontal: 20,
   },
   cardTitle: {
     fontSize: 18,
@@ -375,10 +337,10 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   priceBadge: {
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    backgroundColor: '#7c3aed',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
     alignSelf: 'flex-start',
   },
   priceText: {
@@ -425,17 +387,17 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   cardFooter: {
-    padding: 20,
-    paddingTop: 0,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
   },
   actionButton: {
+    backgroundColor: '#7c3aed',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#3b82f6',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
   },
   actionButtonText: {
     fontSize: 14,

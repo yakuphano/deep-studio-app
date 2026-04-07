@@ -44,7 +44,7 @@ function ImageTaskCard({
   const [isHovered, setIsHovered] = useState(false);
   
   const formatPrice = (price: number | null) => {
-    return price ? `₺${price}` : 'Ücretsiz';
+    return price ? `₺${price}` : 'Free';
   };
 
   const getLanguageLabel = (code: string) => {
@@ -67,45 +67,33 @@ function ImageTaskCard({
       onPress={() => onPress(item.id)}
       activeOpacity={0.8}
     >
-      {/* Image Preview */}
-      {item.image_url && (
-        <View style={styles.imageContainer}>
-          <Image 
-            source={{ uri: item.image_url }} 
-            style={styles.taskImage}
-            resizeMode="cover"
-          />
-          <View style={styles.imageOverlay} />
-        </View>
-      )}
-      
-      {/* Header with title and price badge */}
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
-        <View style={styles.priceBadge}>
-          <Text style={styles.priceText}>{formatPrice(item.price)}</Text>
+      {/* Image Header with Icon */}
+      <View style={styles.imageHeader}>
+        <View style={styles.imageIconContainer}>
+          <Ionicons name="image" size={44} color="#ec4899" />
         </View>
       </View>
       
-      {/* Content with metadata */}
-      <View style={styles.cardBody}>
-        <View style={styles.metadataRow}>
-          <View style={styles.statusContainer}>
-            <Ionicons name="time" size={14} color="#fbbf24" />
-            <Text style={styles.statusText}>Bekliyor</Text>
-          </View>
-          <View style={styles.languageContainer}>
-            <Ionicons name="globe" size={14} color="#f472b6" />
-            <Text style={styles.languageText}>{getLanguageLabel(item.language)}</Text>
-          </View>
+      {/* Title */}
+      <View style={styles.titleContainer}>
+        <Text style={styles.titleText}>Image Task - {item.title}</Text>
+      </View>
+      
+      {/* Metadata Row */}
+      <View style={styles.metadataRow}>
+        <View style={styles.statusChip}>
+          <Ionicons name="time" size={14} color="#fbbf24" />
+          <Text style={styles.statusChipText}>Pending</Text>
+        </View>
+        <View style={styles.priceChip}>
+          <Text style={styles.priceChipText}>₺{item.price ?? 10}</Text>
         </View>
       </View>
       
-      {/* Footer with action button */}
-      <View style={styles.cardFooter}>
-        <TouchableOpacity style={styles.actionButton} onPress={() => onPress(item.id)}>
-          <Ionicons name="arrow-forward" size={16} color="#ffffff" />
-          <Text style={styles.actionButtonText}>Görevi Başlat</Text>
+      {/* Full Width Button */}
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity style={styles.fullWidthButton} onPress={() => onPress(item.id)}>
+          <Text style={styles.buttonText}>Start Task</Text>
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
@@ -120,7 +108,7 @@ export default function ImageTasksScreen() {
   const [imageTasks, setImageTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const { width } = useWindowDimensions();
-  const numColumns = width >= 1200 ? 4 : width >= 900 ? 3 : width >= 600 ? 2 : 1;
+  const numColumns = width > 1400 ? 4 : width > 1000 ? 3 : width > 600 ? 2 : 1;
 
   const userId = user?.id ?? session?.user?.id ?? null;
   const navigatorReady = rootNavigationState?.key != null;
@@ -180,7 +168,7 @@ export default function ImageTasksScreen() {
       {/* Custom Back Button */}
       <TouchableOpacity style={styles.backToSelection} onPress={handleBack}>
         <Ionicons name="arrow-back" size={20} color="#3b82f6" />
-        <Text style={styles.backToSelectionText}>Geri Dön</Text>
+        <Text style={styles.backToSelectionText}>Back</Text>
       </TouchableOpacity>
 
       {/* Content */}
@@ -192,13 +180,22 @@ export default function ImageTasksScreen() {
       ) : imageTasks.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="image-outline" size={64} color="#64748b" />
-          <Text style={styles.emptyText}>Henüz bu kategoride görev bulunmamaktadır</Text>
+          <Text style={styles.emptyText}>No tasks available in this category yet</Text>
         </View>
       ) : (
         <View style={styles.gridContainer}>
-          {imageTasks.map((item) => (
-            <ImageTaskCard key={item.id} item={item} onPress={(id) => router.push(`/tasks/image/${id}`)} t={t} />
-          ))}
+          <FlatList
+            data={imageTasks}
+            renderItem={({ item }) => (
+              <ImageTaskCard key={item.id} item={item} onPress={(id) => router.push(`/tasks/image/${id}`)} t={t} />
+            )}
+            keyExtractor={(item) => item.id}
+            numColumns={numColumns}
+            key={numColumns}
+            contentContainerStyle={numColumns > 1 ? { paddingHorizontal: 4 } : {}}
+            columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
+            showsVerticalScrollIndicator={false}
+          />
         </View>
       )}
     </View>
@@ -209,17 +206,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
-    paddingTop: 60, // ✅ Status bar altında kalmaması için
+    paddingTop: 0, // ✅ Sıfırlandı
   },
   backToSelection: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    padding: 10, // ✅ Tek padding değeri
-    borderRadius: 8, // ✅ Border radius
-    backgroundColor: '#1e293b', // ✅ Koyu lacivert kutu
+    padding: 8, // ✅ Azaltıldı: 10 -> 8
+    borderRadius: 8,
+    backgroundColor: '#1e293b',
     marginHorizontal: 20,
-    marginBottom: 16,
+    marginBottom: 4, // ✅ Azaltıldı: 8 -> 4
   },
   backToSelectionText: {
     fontSize: 16,
@@ -239,17 +236,30 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 20,
-    gap: 20,
+    maxWidth: 1200,
+    alignSelf: 'center',
+    width: '100%',
+    paddingLeft: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 5,
+    paddingTop: 0,
+    marginTop: -20, // ✅ Daha fazla yukarı çek
+  },
+  columnWrapper: {
+    justifyContent: 'flex-start', // ✅ Soldan başla
+    gap: 0, // ✅ Margin ile kontrol
   },
   card: {
     flex: 1,
-    minWidth: 280,
-    maxWidth: 380,
+    maxWidth: 250,
+    minHeight: 280, // ✅ Sabit yükseklik
+    margin: 4,
+    marginRight: 16,
+    marginBottom: 16,
     backgroundColor: '#1e293b',
     borderRadius: 16,
+    padding: 10,
+    paddingBottom: 20, // ✅ Artırıldı: 15 -> 20
     borderWidth: 1,
     borderColor: '#334155',
     overflow: 'hidden',
@@ -258,16 +268,81 @@ const styles = StyleSheet.create({
     borderColor: '#f472b6',
     transform: [{ scale: 1.02 }],
   },
-  imageContainer: {
-    width: '100%',
-    height: 180,
-    backgroundColor: '#0f172a',
-    position: 'relative',
+  imageHeader: {
+    backgroundColor: '#1a1d1e', // ✅ Koyu gri arka plan
+    height: 120, // ✅ Header yüksekliği
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#2d3748', // ✅ Daha açık iç arka plan
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  titleContainer: {
+    padding: 12,
+    paddingBottom: 8,
+  },
+  titleText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  metadataRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+  statusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(251, 191, 36, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  statusChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#fbbf24',
+    marginLeft: 4,
+  },
+  priceChip: {
+    backgroundColor: 'rgba(34, 197, 94, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  priceChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#22c55e',
+  },
+  buttonContainer: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+  fullWidthButton: {
+    backgroundColor: '#ec4899', // ✅ Pembe tema
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
   },
   taskImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
+    resizeMode: 'contain', // ✅ Kesilmemesi için
   },
   imageOverlay: {
     position: 'absolute',
@@ -275,38 +350,40 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 12,
-    background: 'linear-gradient(to top, rgba(15, 23, 42, 0.9), transparent)',
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
   },
   cardHeader: {
-    padding: 16,
+    padding: 8, // ✅ Azaltıldı: 10 -> 8
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
     color: '#ffffff',
-    marginBottom: 8,
+    marginBottom: 2, // ✅ Azaltıldı: 4 -> 2
   },
   priceBadge: {
     backgroundColor: '#22c55e',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 10, // ✅ Azaltıldı: 12 -> 10
+    paddingVertical: 4, // ✅ Azaltıldı: 6 -> 4
+    borderRadius: 10, // ✅ Azaltıldı: 12 -> 10
     alignSelf: 'flex-start',
   },
   priceText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 12, // ✅ Küçültüldü: 14 -> 12
+    fontWeight: '700',
     color: '#ffffff',
   },
   cardBody: {
-    padding: 16,
+    padding: 6, // ✅ Azaltıldı: 8 -> 6
   },
   metadataRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'space-between', // ✅ Yan yana diz
+    marginBottom: 8,
+    gap: 8, // ✅ Aralık eklendi
   },
   statusContainer: {
     flexDirection: 'row',
@@ -314,45 +391,35 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(251, 191, 36, 0.1)',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
-    marginRight: 12,
+    borderRadius: 6,
   },
   statusText: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '500',
     color: '#fbbf24',
     marginLeft: 4,
   },
-  languageContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  priceBadgeInline: {
+    backgroundColor: '#ec4899', // ✅ Pembe tema
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 6,
   },
-  languageText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#3b82f6',
-    marginLeft: 4,
-  },
-  cardFooter: {
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#334155',
-  },
-  actionButton: {
-    backgroundColor: '#f472b6',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 12,
+  inlineActionButton: {
+    backgroundColor: '#ec4899', // ✅ Pembe tema
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10, // ✅ Artırıldı: 8 -> 10
+    paddingVertical: 4,
+    borderRadius: 4,
+    height: 28, // ✅ Badge'ler ile aynı
   },
-  actionButtonText: {
-    fontSize: 16,
+  inlineActionText: {
+    fontSize: 11, // ✅ Artırıldı: 10 -> 11
     fontWeight: '600',
     color: '#ffffff',
+    marginRight: 4,
   },
   emptyContainer: {
     flex: 1,

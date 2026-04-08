@@ -8,6 +8,7 @@ type AuthContextType = {
   session: Session | null;
   loading: boolean;
   isAdmin: boolean;
+  languages: string[];
   signOut: () => Promise<void>;
 };
 
@@ -18,6 +19,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [languages, setLanguages] = useState<string[]>(['tr', 'en']); // Test için varsayılan diller
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -58,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, isAdmin, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, isAdmin, languages, signOut }}>
       {children}
     </AuthContext.Provider>
   );

@@ -617,6 +617,9 @@ export default function AdminPanelScreen() {
       // Şirket filtresi (client_name sütunu üzerinden)
       if (exportClient && exportClient.trim() !== '') {
         query = query.ilike('client_name', `%${exportClient.trim()}%`);
+      } else {
+        Alert.alert('Validation Error', 'Lütfen bir şirket ismi giriniz.');
+        return;
       }
 
       const { data, error } = await query;
@@ -1437,7 +1440,7 @@ export default function AdminPanelScreen() {
               </TouchableOpacity>
             </View>
             
-            <Text style={styles.exportLabel}>Filter by Company</Text>
+            <Text style={styles.exportLabel}>Filter by Company *</Text>
             <View style={styles.exportFormatRow}>
               <TextInput
                 style={[
@@ -1446,7 +1449,7 @@ export default function AdminPanelScreen() {
                 ]}
                 value={exportClient}
                 onChangeText={setExportClient}
-                placeholder="Enter company name (optional)"
+                placeholder="Enter company name to export data *"
                 placeholderTextColor="#9ca3af"
               />
             </View>

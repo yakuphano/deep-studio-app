@@ -10,7 +10,7 @@ import {
   useWindowDimensions,
   RefreshControl,
 } from 'react-native';
-import { useRouter, useRootNavigationState, Stack } from 'expo-router';
+import { useRouter, useRootNavigationState } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,14 +25,14 @@ type Task = {
   language: string;
   category?: string | null;
   type?: string | null;
-  video_url?: string | null;
+  audio_url?: string | null;
   image_url?: string | null;
   transcription?: string | null;
   is_pool_task?: boolean;
   assigned_to?: string | null;
 };
 
-function VideoTaskCard({
+function ImageTaskCard({
   item,
   onPress,
   t,
@@ -60,19 +60,19 @@ function VideoTaskCard({
         </Text>
       </View>
       <TouchableOpacity style={styles.detailBtn} onPress={() => onPress(item.id)}>
-        <Ionicons name="arrow-forward" size={14} color="#10b981" />
+        <Ionicons name="arrow-forward" size={14} color="#f472b6" />
         <Text style={styles.detailBtnText}>{t('tasks.viewDetails')}</Text>
       </TouchableOpacity>
     </TouchableOpacity>
   );
 }
 
-export default function VideoTasksScreen() {
+export default function ImageTasksScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
   const { user, session } = useAuth();
-  const [videoTasks, setVideoTasks] = useState<Task[]>([]);
+  const [imageTasks, setImageTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { width } = useWindowDimensions();
@@ -84,43 +84,43 @@ export default function VideoTasksScreen() {
   // Render protection
   if (!user || !session) return <View><Text>Loading...</Text></View>;
 
-  const fetchVideoTasks = useCallback(async (showLoading = true) => {
+  const fetchImageTasks = useCallback(async (showLoading = true) => {
     if (!userId) return;
     if (showLoading) setLoading(true);
     
     try {
-      const cols = 'id, title, status, price, language, category, type, video_url, image_url, transcription, is_pool_task, assigned_to';
+      const cols = 'id, title, status, price, language, category, type, audio_url, image_url, transcription, is_pool_task, assigned_to';
       
-      // My Tasks - assigned to current user (video only)
+      // My Tasks - assigned to current user (image only)
       const { data: assignedData, error: assignedErr } = await supabase
         .from('tasks')
         .select(cols)
         .eq('assigned_to', userId)
         .eq('status', 'pending')
-        .or('category.eq.video,type.eq.video,video_url.not.is.null')
+        .or('category.eq.image,type.eq.image,image_url.not.is.null')
         .order('created_at', { ascending: false });
       
-      if (assignedErr) console.error('[video-tasks] assignedData sorgu hatasi:', assignedErr);
+      if (assignedErr) console.error('[image-tasks] assignedData sorgu hatasi:', assignedErr);
       const assigned = assignedData ?? [];
 
-      // Pool Tasks - available for claiming (video only)
+      // Pool Tasks - available for claiming (image only)
       const { data: poolData, error: poolErr } = await supabase
         .from('tasks')
         .select(cols)
         .is('assigned_to', null)
         .eq('status', 'pending')
-        .or('category.eq.video,type.eq.video,video_url.not.is.null')
+        .or('category.eq.image,type.eq.image,image_url.not.is.null')
         .order('created_at', { ascending: false });
       
-      if (poolErr) console.error('[video-tasks] poolData sorgu hatasi:', poolErr);
+      if (poolErr) console.error('[image-tasks] poolData sorgu hatasi:', poolErr);
       const pool = poolData ?? [];
 
-      const allVideoTasks = [...pool, ...assigned];
+      const allImageTasks = [...pool, ...assigned];
       
       // GEÇICI OLARAK TÜM GÖREVLERI GÖSTER
-      const filteredTasks = allVideoTasks;
+      const filteredTasks = allImageTasks;
       
-      setVideoTasks(filteredTasks);
+      setImageTasks(filteredTasks);
     } finally {
       setLoading(false);
     }
@@ -132,12 +132,14 @@ export default function VideoTasksScreen() {
       router.replace('/');
       return;
     }
-    fetchVideoTasks(true);
+    fetchImageTasks(true);
   }, [navigatorReady, userId, session]);
 
   useFocusEffect(
     useCallback(() => {
-      if (userId && navigatorReady) fetchVideoTasks(false);
+      if (userId && navigatorReady) {
+        fetchImageTasks(false);
+      }
     }, [userId, navigatorReady])
   );
 
@@ -147,30 +149,28 @@ export default function VideoTasksScreen() {
 
   const handleTaskPress = useCallback(async (taskId: string) => {
     if (!userId) return;
-    const claimed = videoTasks.find((t) => t.id === taskId);
+    const claimed = imageTasks.find((t) => t.id === taskId);
     const { error } = await supabase
       .from('tasks')
       .update({ assigned_to: userId })
       .eq('id', taskId)
       .single();
     if (error) {
-      console.error('[video-tasks] Görev alma hatasi:', error);
+      console.error('[image-tasks] Görev alma hatasi:', error);
       return;
     }
-    await fetchVideoTasks(false);
+    await fetchImageTasks(false);
     router.push(`/task/${taskId}`);
-  }, [userId, videoTasks, fetchVideoTasks]);
+  }, [userId, imageTasks, fetchImageTasks]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchVideoTasks(false);
+    await fetchImageTasks(false);
     setRefreshing(false);
-  }, [fetchVideoTasks]);
+  }, [fetchImageTasks]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <Stack.Screen options={{ headerShown: false }} />
-      
       {/* Geri Butonu */}
       <View style={styles.headerContainer}>
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
@@ -178,23 +178,22 @@ export default function VideoTasksScreen() {
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.pageTitle}>{t('tasks.pageTitleVideo')}</Text>
+      <Text style={styles.pageTitle}>{t('tasks.pageTitleImage')}</Text>
 
       {loading ? (
         <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 40 }} />
-      ) : videoTasks.length === 0 ? (
+      ) : imageTasks.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="videocam-outline" size={80} color="#475569" />
-          <Text style={styles.emptyTitle}>No Video Tasks</Text>
-          <Text style={styles.emptyDescription}>Kendi dilinizde video görevi bulunamadý.</Text>
-          <TouchableOpacity style={styles.refreshButton} onPress={() => fetchVideoTasks(true)}>
+          <Ionicons name="image-outline" size={80} color="#475569" />
+          <Text style={styles.emptyTitle}>No Image Tasks Yet</Text>
+          <TouchableOpacity style={styles.refreshButton} onPress={() => fetchImageTasks(true)}>
             <Text style={styles.refreshButtonText}>Refresh</Text>
           </TouchableOpacity>
         </View>
       ) : (
         <FlatList
-          data={videoTasks}
-          renderItem={({ item }) => <VideoTaskCard item={item} onPress={handleTaskPress} t={t} />}
+          data={imageTasks}
+          renderItem={({ item }) => <ImageTaskCard item={item} onPress={handleTaskPress} t={t} />}
           keyExtractor={(item) => item.id}
           numColumns={numColumns}
           contentContainerStyle={styles.listContainer}
@@ -255,7 +254,7 @@ const styles = StyleSheet.create({
   cardHeader: { marginBottom: 12 },
   cardTitle: { fontSize: 16, fontWeight: '600', color: '#f1f5f9', marginBottom: 8 },
   cardMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardPrice: { fontSize: 14, fontWeight: '700', color: '#10b981' },
+  cardPrice: { fontSize: 14, fontWeight: '700', color: '#f472b6' },
   cardLang: { fontSize: 12, color: '#94a3b8', backgroundColor: 'rgba(148, 163, 184, 0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   cardBody: { flex: 1 },
   cardDescription: { fontSize: 14, color: '#cbd5e1', lineHeight: 20 },
@@ -263,14 +262,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    backgroundColor: 'rgba(244, 114, 182, 0.15)',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
   },
   detailBtnText: {
     fontSize: 13,
-    color: '#10b981',
+    color: '#f472b6',
     fontWeight: '600',
   },
   emptyContainer: {
@@ -283,12 +282,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#f8fafc',
     marginTop: 20,
-    textAlign: 'center',
-  },
-  emptyDescription: {
-    fontSize: 16,
-    color: '#94a3b8',
-    marginTop: 8,
     textAlign: 'center',
   },
   refreshButton: {

@@ -431,7 +431,15 @@ export default function TaskDetailScreen() {
       <View style={[styles.container, isWeb && styles.containerFullWidth]}>
         {/* Top Bar with Back Button */}
         <View style={styles.topBar}>
-          <TouchableOpacity style={styles.backButton} onPress={handleExit}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => {
+              console.log("Back button triggered!");
+              setTimeout(() => {
+                router.replace('/(tabs)/tasks/video'); 
+              }, 0);
+            }}
+          >
             <Ionicons name="arrow-back" size={20} color="#3b82f6" />
             <Text style={styles.backButtonText}>Geri Dön</Text>
           </TouchableOpacity>

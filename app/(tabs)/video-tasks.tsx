@@ -6,10 +6,10 @@ import {
   StyleSheet,
   FlatList,
   ActivityIndicator,
+  SafeAreaView,
   useWindowDimensions,
-  Pressable,
 } from 'react-native';
-import { useRouter, useRootNavigationState, useLocalSearchParams } from 'expo-router';
+import { useRouter, useRootNavigationState } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,16 +31,26 @@ type Task = {
   assigned_to?: string | null;
 };
 
-function TaskCard({ item, onPress, t }: { item: Task; onPress: (id: string) => void; t: (k: string) => string }) {
+function VideoTaskCard({
+  item,
+  onPress,
+  t,
+}: {
+  item: Task;
+  onPress: (id: string) => void;
+  t: (k: string) => string;
+}) {
+  const formatPrice = (price: number | null) => {
+    return price ? `$${price}` : 'Free';
+  };
+
   return (
-    <View style={styles.card}>
+    <TouchableOpacity style={styles.card} onPress={() => onPress(item.id)}>
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
         <View style={styles.cardMeta}>
-          <Text style={styles.cardPrice}>
-            {item.price ? `₺${item.price}` : t('tasks.free')}
-          </Text>
-          <Text style={styles.cardLang}>{item.language}</Text>
+          <Text style={styles.cardPrice}>{formatPrice(item.price)}</Text>
+          <Text style={styles.cardLang}>{item.language?.toUpperCase()}</Text>
         </View>
       </View>
       <View style={styles.cardBody}>
@@ -49,25 +59,33 @@ function TaskCard({ item, onPress, t }: { item: Task; onPress: (id: string) => v
         </Text>
       </View>
       <TouchableOpacity style={styles.detailBtn} onPress={() => onPress(item.id)}>
-        <Text style={styles.detailBtnText}>{t('tasks.start')}</Text>
-        <Ionicons name="arrow-forward" size={16} color="#10b981" />
+        <Ionicons name="arrow-forward" size={14} color="#10b981" />
+        <Text style={styles.detailBtnText}>{t('tasks.viewDetails')}</Text>
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 }
 
 export default function VideoTasksScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const params = useLocalSearchParams<{ type?: string }>();
+  const rootNavigationState = useRootNavigationState();
   const { user, session } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const { width } = useWindowDimensions();
+  const numColumns = width >= 900 ? 3 : width >= 600 ? 2 : 1;
 
-  const fetchTasks = useCallback(async () => {
-    if (!user || !session) return;
-    setLoading(true);
+  const userId = user?.id ?? session?.user?.id ?? null;
+  const navigatorReady = rootNavigationState?.key != null;
+
+  // Render protection
+  if (!user || !session) return <View><Text>Loading...</Text></View>;
+
+  const fetchVideoTasks = useCallback(async (showLoading = true) => {
+    if (!userId) return;
+    if (showLoading) setLoading(true);
+    
     try {
       const cols = 'id, title, status, price, language, category, type, video_url, image_url, transcription, is_pool_task, assigned_to';
       
@@ -75,169 +93,199 @@ export default function VideoTasksScreen() {
       const { data: assignedData, error: assignedErr } = await supabase
         .from('tasks')
         .select(cols)
-        .eq('assigned_to', user.id)
-        .eq('type', 'video')
-        .or('status.neq.completed,status.neq.submitted')
+        .eq('assigned_to', userId)
+        .eq('status', 'pending')
+        .or('category.eq.video,type.eq.video,video_url.not.is.null')
         .order('created_at', { ascending: false });
+      
+      if (assignedErr) console.error('[video-tasks] assignedData sorgu hatasi:', assignedErr);
+      const assigned = assignedData ?? [];
 
-      // Pool Tasks - unassigned video tasks
+      // Pool Tasks - available for claiming (video only)
       const { data: poolData, error: poolErr } = await supabase
         .from('tasks')
         .select(cols)
-        .eq('is_pool_task', true)
-        .eq('type', 'video')
         .is('assigned_to', null)
-        .order('created_at', { ascending: false })
-        .limit(10);
+        .eq('status', 'pending')
+        .or('category.eq.video,type.eq.video,video_url.not.is.null')
+        .order('created_at', { ascending: false });
+      
+      if (poolErr) console.error('[video-tasks] poolData sorgu hatasi:', poolErr);
+      const pool = poolData ?? [];
 
-      if (assignedErr || poolErr) {
-        console.error('Video tasks fetch error:', assignedErr || poolErr);
-        setTasks([]);
-      } else {
-        const allTasks = [...(assignedData || []), ...(poolData || [])];
-        setTasks(allTasks as Task[]);
-      }
-    } catch (err) {
-      console.error('Video tasks fetch error:', err);
-      setTasks([]);
+      const allVideoTasks = [...pool, ...assigned];
+      
+      // GEÇICI OLARAK TÜM GÖREVLERI GÖSTER
+      const filteredTasks = allVideoTasks;
+      
+      setTasks(filteredTasks);
     } finally {
       setLoading(false);
     }
-  }, [user, session]);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!navigatorReady) return;
+    if (!user || !session) {
+      try {
+        router.replace('/');
+      } catch (_) {}
+      return;
+    }
+    fetchVideoTasks(true);
+  }, [navigatorReady, userId, session]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchTasks();
-    }, [fetchTasks])
+      if (userId && navigatorReady) fetchVideoTasks(false);
+    }, [userId, navigatorReady])
   );
 
-  const handleTaskPress = (taskId: string) => {
+  const handleTaskPress = useCallback(async (taskId: string) => {
+    if (!userId) return;
+    const claimed = tasks.find((t) => t.id === taskId);
+    const { error } = await supabase
+      .from('tasks')
+      .update({ assigned_to: userId })
+      .eq('id', taskId)
+      .single();
+    if (error) {
+      console.error('[video-tasks] Görev alma hatasi:', error);
+      return;
+    }
+    await fetchVideoTasks(false);
     router.push(`/task/${taskId}`);
-  };
-
-  const numColumns = width > 768 ? 2 : 1;
-
-  const getCardMargin = () => {
-    return numColumns > 1 ? 4 : 0;
-  };
-
-  if (!user || !session) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.loadingText}>Yükleniyor...</Text>
-      </View>
-    );
-  }
+  }, [userId, tasks, fetchVideoTasks]);
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerRow}>
-        <TouchableOpacity style={styles.backToSelection} onPress={() => router.setParams({ type: '' })}>
-          <Ionicons name="arrow-back" size={18} color="#10b981" />
-          <Text style={styles.backToSelectionText}>{t('tasks.pageTitle')}</Text>
+    <SafeAreaView style={styles.container}>
+      {/* Geri Butonu */}
+      <View style={styles.headerContainer}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={20} color="#3b82f6" />
         </TouchableOpacity>
       </View>
+
       <Text style={styles.pageTitle}>{t('tasks.pageTitleVideo')}</Text>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#10b981" style={{ marginTop: 40 }} />
+        <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 40 }} />
       ) : tasks.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="videocam-outline" size={64} color="#64748b" />
-          <Text style={styles.emptyStateText}>Henüz video etiketleme görevi bulunmuyor.</Text>
-          <Text style={styles.emptyStateSubText}>Video görevleri atandığında burada görünecektir.</Text>
+        <View style={styles.emptyContainer}>
+          <Ionicons name="videocam-outline" size={80} color="#475569" />
+          <Text style={styles.emptyTitle}>No Video Tasks</Text>
+          <Text style={styles.emptyDescription}>Kendi dilinizde video görevi bulunamadý.</Text>
+          <TouchableOpacity style={styles.refreshButton} onPress={() => fetchVideoTasks(true)}>
+            <Text style={styles.refreshButtonText}>Refresh</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
           data={tasks}
-          renderItem={({ item }) => <TaskCard item={item} onPress={handleTaskPress} t={t} />}
+          renderItem={({ item }) => <VideoTaskCard item={item} onPress={handleTaskPress} t={t} />}
           keyExtractor={(item) => item.id}
           numColumns={numColumns}
-          contentContainerStyle={[styles.listContainer, numColumns > 1 && { paddingHorizontal: 4 }]}
+          contentContainerStyle={styles.listContainer}
           columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
           showsVerticalScrollIndicator={false}
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  container: { 
+    flex: 1, 
     backgroundColor: '#0f172a',
-    paddingHorizontal: 16,
-    paddingTop: 60,
   },
-  headerRow: {
+  headerContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+  },
+  backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    justifyContent: 'flex-start',
+    padding: 10,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    borderRadius: 10,
+    alignSelf: 'flex-start',
   },
-  backToSelection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 0,
-    paddingVertical: 0,
+  pageTitle: { 
+    fontSize: 22, 
+    fontWeight: '700', 
+    color: '#f8fafc', 
+    marginBottom: 32,
+    paddingHorizontal: 20,
+    marginTop: 20,
   },
-  backToSelectionText: { fontSize: 14, color: '#10b981', fontWeight: '600' },
-  pageTitle: { fontSize: 22, fontWeight: '700', color: '#f8fafc', marginBottom: 32 },
-  loadingText: { 
-    fontSize: 16, 
-    color: '#94a3b8', 
-    textAlign: 'center', 
-    marginTop: 40 
+  listContainer: { 
+    gap: 15, 
+    paddingHorizontal: 20,
   },
-  listContainer: { gap: 16 },
   columnWrapper: { justifyContent: 'space-between' },
   card: {
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 0,
-    borderWidth: 1,
-    borderColor: '#334155',
-    minHeight: 180,
     flex: 1,
+    margin: 4,
+    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    padding: 16,
+    minHeight: 180,
   },
   cardHeader: { marginBottom: 12 },
   cardTitle: { fontSize: 16, fontWeight: '600', color: '#f1f5f9', marginBottom: 8 },
   cardMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardPrice: { fontSize: 14, fontWeight: '700', color: '#10b981' },
   cardLang: { fontSize: 12, color: '#94a3b8', backgroundColor: 'rgba(148, 163, 184, 0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  cardBody: { flex: 1, justifyContent: 'center' },
-  cardDescription: { fontSize: 14, color: '#94a3b8', lineHeight: 20, marginBottom: 16 },
+  cardBody: { flex: 1 },
+  cardDescription: { fontSize: 14, color: '#cbd5e1', lineHeight: 20 },
   detailBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderWidth: 1,
-    borderColor: '#10b981',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    gap: 6,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
-  detailBtnText: { fontSize: 14, fontWeight: '600', color: '#10b981' },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  emptyStateText: {
-    fontSize: 18,
+  detailBtnText: {
+    fontSize: 13,
+    color: '#10b981',
     fontWeight: '600',
-    color: '#94a3b8',
-    textAlign: 'center',
-    marginTop: 16,
   },
-  emptyStateSubText: {
-    fontSize: 14,
-    color: '#64748b',
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#f8fafc',
+    marginTop: 20,
     textAlign: 'center',
+  },
+  emptyDescription: {
+    fontSize: 16,
+    color: '#94a3b8',
     marginTop: 8,
+    textAlign: 'center',
+  },
+  refreshButton: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 24,
+  },
+  refreshButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

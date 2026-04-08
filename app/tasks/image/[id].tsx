@@ -329,6 +329,37 @@ export default function ImageTaskDetailScreen() {
   if (taskType === 'image') {
     return (
       <View style={[styles.container, isWeb && styles.containerFullWidth]}>
+        {/* Header with Back Button */}
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 20,
+          paddingVertical: 8, // İNCELTİLDİ
+          marginBottom: 4,
+          backgroundColor: '#0f172a', // SAYFA RENGİ
+          height: 40, // İNCELTİLDİ
+          zIndex: 1000,
+        }}>
+          <TouchableOpacity 
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingVertical: 6,
+              paddingHorizontal: 12,
+              borderRadius: 8,
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              marginRight: 15,
+            }} 
+            onPress={() => {
+              console.log('Image back button pressed!');
+              router.replace('/tasks/image'); // TEMİZ DÖNÜŞ
+            }}
+          >
+            <Ionicons name="arrow-back" size={20} color="#3b82f6" />
+            <Text style={{ fontSize: 16, fontWeight: '600', color: '#3b82f6', marginLeft: 8 }}>Back</Text>
+          </TouchableOpacity>
+        </View>
+        
         {/* Task Info Overlay */}
         <View style={styles.taskInfoBar}>
           <Text style={styles.taskInfoType}>{taskTypeLabel}</Text>

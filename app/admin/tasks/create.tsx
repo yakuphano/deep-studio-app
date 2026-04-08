@@ -49,7 +49,7 @@ export default function CreateTaskScreen() {
   };
 
   const handleBack = () => {
-    router.back();
+    router.replace('/(tabs)/tasks');
   };
 
   return (

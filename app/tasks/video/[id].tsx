@@ -575,7 +575,7 @@ export default function VideoTaskDetailScreen() {
           activeOpacity={0.8}
         >
           <Ionicons name="arrow-back" size={20} color="#f1f5f9" />
-          <Text style={styles.backText}>{t('taskDetail.back')}</Text>
+          <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('common.taskDetail')}</Text>
       </View>

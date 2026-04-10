@@ -70,8 +70,7 @@ export default function AdminUsersPage() {
       
       // Timeout safeguard
       timeoutId = setTimeout(() => {
-        console.error('FETCH TIMEOUT: fetchUsers took more than 5 seconds');
-        window.alert('Timeout: User fetch took too long');
+        console.warn('FETCH TIMEOUT: fetchUsers took more than 5 seconds');
         setLoading(false);
       }, 5000);
       
@@ -85,7 +84,6 @@ export default function AdminUsersPage() {
 
       if (error) {
         console.error('Database error:', error);
-        window.alert(`Fetch Error: ${error.message}`);
         setUsers([]);
       } else {
         console.log('Users fetched successfully:', data?.length || 0);
@@ -93,7 +91,6 @@ export default function AdminUsersPage() {
       }
     } catch (error: any) {
       console.error('Error fetching users:', error);
-      window.alert(`Fetch Error: ${error.message || error}`);
       setUsers([]);
     } finally {
       // Clear timeout
@@ -174,21 +171,13 @@ export default function AdminUsersPage() {
       });
 
       if (authError) {
-        if (typeof window !== 'undefined') {
-          window.alert(`ERROR: ${authError.message}`);
-        } else {
-          Alert.alert('Error', `Error: ${authError.message}`);
-        }
+        console.error(`ERROR: ${authError.message}`);
         return;
       }
 
       if (authData.user) {
         // GUARANTEED SUCCESS ALERT - Show immediately after auth success
-        if (typeof window !== 'undefined') {
-          window.alert('SUCCESS: User Created!');
-        } else {
-          Alert.alert('Success', 'User Created Successfully!');
-        }
+        console.log('SUCCESS: User Created!');
         
         // CRITICAL: IMMEDIATELY insert into profiles table
         console.log('Inserting into profiles table...');
@@ -230,11 +219,7 @@ export default function AdminUsersPage() {
         fetchUsers();
       }
     } catch (error: any) {
-      if (typeof window !== 'undefined') {
-        window.alert(`ERROR: ${error.message || error}`);
-      } else {
-        Alert.alert('Error', `Error: ${error.message || error}`);
-      }
+      console.error(`ERROR: ${error.message || error}`);
     } finally {
       setLoading(false);
     }

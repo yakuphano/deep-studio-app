@@ -42,7 +42,7 @@ export default function MessagesScreen() {
   const [senderProfiles, setSenderProfiles] = useState<Record<string, { email?: string; full_name?: string }>>({});
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Start with false
   const [adminId, setAdminId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const flatListRef = useRef<FlatList>(null);
@@ -74,38 +74,133 @@ export default function MessagesScreen() {
   }, []);
 
   const fetchMessagesUser = useCallback(async () => {
-    if (!userId) return;
-    const { data } = await supabase
-      .from('messages')
-      .select('id, sender_id, receiver_id, content, is_read, created_at')
-      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
-      .order('created_at', { ascending: true });
-    const list = (data ?? []) as Message[];
-    setMessages(list);
-    setLoading(false);
-    fetchSenderProfiles(list);
+    if (!userId) {
+      console.log('No user ID, showing dummy data');
+      setMessages([]);
+      return;
+    }
+    
+    try {
+      console.log('Safe fetch attempt for messages');
+      
+      // Check if table exists and fetch data
+      const { data, error } = await supabase
+        .from('messages')
+        .select('id, sender_id, receiver_id, content, is_read, created_at')
+        .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+        .order('created_at', { ascending: true })
+        .limit(20); // Limit to prevent long fetches
+
+      if (error) {
+        console.error('Database error or table missing:', error);
+        setMessages([]);
+        return;
+      }
+
+      const list = (data ?? []) as Message[];
+      setMessages(list);
+      fetchSenderProfiles(list);
+    } catch (error: any) {
+      console.error('Critical error in messages fetch:', error);
+      setMessages([]);
+    }
   }, [userId, fetchSenderProfiles]);
 
   const fetchConversationUsers = useCallback(async () => {
-    if (!adminId) return;
-    const { data } = await supabase.from('messages').select('sender_id, receiver_id');
-    const ids = new Set<string>();
-    (data ?? []).forEach((m) => {
-      if (m.sender_id && m.sender_id !== adminId) ids.add(m.sender_id);
-      if (m.receiver_id && m.receiver_id !== adminId) ids.add(m.receiver_id);
-    });
-    if (ids.size === 0) {
+    if (!adminId) {
+      console.log('No admin ID, showing dummy data');
       setUsers([]);
-      setLoading(false);
       return;
     }
-    const { data: profiles } = await supabase.from('profiles').select('id, email, full_name').in('id', Array.from(ids));
-    setUsers((profiles ?? []).map((p) => ({ id: p.id, email: p.email, full_name: p.full_name })));
-    setLoading(false);
+    
+    try {
+      console.log('Safe fetch attempt for conversation users');
+      
+      const { data, error } = await supabase
+        .from('messages')
+        .select('sender_id, receiver_id')
+        .limit(50); // Limit to prevent long fetches
+      
+      if (error) {
+        console.error('Database error or table missing:', error);
+        setUsers([]);
+        return;
+      }
+      
+      const ids = new Set<string>();
+      (data ?? []).forEach((m) => {
+        if (m.sender_id && m.sender_id !== adminId) ids.add(m.sender_id);
+        if (m.receiver_id && m.receiver_id !== adminId) ids.add(m.receiver_id);
+      });
+      
+      if (ids.size === 0) {
+        console.log('No conversation users found');
+        setUsers([]);
+        return;
+      }
+      
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, email, full_name')
+        .in('id', Array.from(ids));
+        
+      if (profilesError) {
+        console.error('Database error fetching profiles:', profilesError);
+        setUsers([]);
+        return;
+      }
+      
+      setUsers((profiles ?? []) as ChatUser[]);
+    } catch (error: any) {
+      console.error('Critical error in conversation users fetch:', error);
+      setUsers([]);
+    }
   }, [adminId]);
 
   const fetchMessagesAdmin = useCallback(async () => {
     if (!selectedUser?.id || !adminId) return;
+    try {
+      console.log('Fetching messages for admin:', adminId);
+      const { data: sent, error: sentError } = await supabase
+        .from('messages')
+        .select('id, sender_id, receiver_id, content, is_read, created_at')
+        .eq('sender_id', adminId)
+        .eq('receiver_id', selectedUser.id)
+        .order('created_at', { ascending: true });
+      
+      if (sentError) {
+        console.error('Database error fetching sent messages:', sentError);
+        setMessages([]);
+        return;
+      }
+      
+      const { data: received, error: receivedError } = await supabase
+        .from('messages')
+        .select('id, sender_id, receiver_id, content, is_read, created_at')
+        .eq('sender_id', selectedUser.id)
+        .eq('receiver_id', adminId)
+        .order('created_at', { ascending: true });
+        
+      if (receivedError) {
+        console.error('Database error fetching received messages:', receivedError);
+        setMessages([]);
+        return;
+      }
+      
+      const merged = [...(sent ?? []), ...(received ?? [])].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      
+      setMessages(merged as Message[]);
+      fetchSenderProfiles(merged as Message[]);
+    } catch (error: any) {
+      console.error('Error fetching messages for admin:', error);
+      setMessages([]);
+    } finally {
+      // CRITICAL: Always set loading to false
+      console.log('FETCH END: messages for admin');
+      setLoading(false);
+    }
     const { data: sent } = await supabase
       .from('messages')
       .select('id, sender_id, receiver_id, content, is_read, created_at')
@@ -137,19 +232,9 @@ export default function MessagesScreen() {
     if (isAdmin && selectedUser?.id && adminId) {
       fetchMessagesAdmin();
     }
-  }, [isAdmin, selectedUser?.id, adminId, fetchMessagesAdmin]);
+  }, [isAdmin, selectedUser?.id, adminId]); // Remove fetchMessagesAdmin to prevent loop
 
-  useEffect(() => {
-    if (!userId) return;
-    const channel = supabase
-      .channel('messages-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
-        if (isAdmin && selectedUser) fetchMessagesAdmin();
-        else fetchMessagesUser();
-      })
-      .subscribe();
-    return () => supabase.removeChannel(channel);
-  }, [userId, isAdmin, selectedUser?.id, fetchMessagesAdmin, fetchMessagesUser]);
+  // Removed realtime subscription to prevent loops
 
   useEffect(() => {
     if (!userId || messages.length === 0 || isAdmin) return;

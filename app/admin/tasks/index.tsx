@@ -46,10 +46,7 @@ export default function AdminTasksPage() {
       
       // Timeout safeguard
       timeoutId = setTimeout(() => {
-        console.error('FETCH TIMEOUT: fetchTasks took more than 5 seconds');
-        if (typeof window !== 'undefined') {
-          window.alert('Timeout: Task fetch took too long');
-        }
+        console.warn('FETCH TIMEOUT: fetchTasks took more than 5 seconds');
         setLoading(false);
         setRefreshing(false);
       }, 5000);
@@ -61,9 +58,6 @@ export default function AdminTasksPage() {
 
       if (error) {
         console.error('Database error:', error);
-        if (typeof window !== 'undefined') {
-          window.alert('Error: Failed to fetch tasks');
-        }
         setTasks([]);
       } else {
         console.log('Tasks fetched successfully:', data?.length || 0);
@@ -71,9 +65,6 @@ export default function AdminTasksPage() {
       }
     } catch (error: any) {
       console.error('Error fetching tasks:', error);
-      if (typeof window !== 'undefined') {
-        window.alert(`Error: Failed to fetch tasks - ${error.message || error}`);
-      }
       setTasks([]);
     } finally {
       // Clear timeout
@@ -88,7 +79,7 @@ export default function AdminTasksPage() {
 
   useEffect(() => {
     fetchTasks();
-  }, []);
+  }, []); // Empty dependency - run once only
 
   const handleDeleteTask = async (taskId: string) => {
     console.log('Attempting to delete task with ID:', taskId);

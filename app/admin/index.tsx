@@ -170,8 +170,7 @@ export default function AdminPanelScreen() {
       
       // Timeout safeguard
       timeoutId = setTimeout(() => {
-        console.error('FETCH TIMEOUT: fetchDashboardStats took more than 5 seconds');
-        window.alert('Timeout: Dashboard stats fetch took too long');
+        console.warn('FETCH TIMEOUT: fetchDashboardStats took more than 5 seconds');
         setStatsLoading(false);
       }, 5000);
       

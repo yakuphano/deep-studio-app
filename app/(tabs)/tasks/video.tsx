@@ -71,7 +71,7 @@ export default function VideoTasksScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
-  const { user, session } = useAuth();
+  const { user, session, languages } = useAuth();
   const [videoTasks, setVideoTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -117,8 +117,10 @@ export default function VideoTasksScreen() {
 
       const allVideoTasks = [...pool, ...assigned];
       
-      // GEÇICI OLARAK TÜM GÖREVLERI GÖSTER
-      const filteredTasks = allVideoTasks;
+      // Dil filtresi - kullanıcının dillerine göre filtrele
+      const filteredTasks = allVideoTasks.filter(task => 
+        languages.includes(task.language)
+      );
       
       setVideoTasks(filteredTasks);
     } finally {
@@ -133,14 +135,14 @@ export default function VideoTasksScreen() {
       return;
     }
     fetchVideoTasks(true);
-  }, [navigatorReady, userId, session]);
+  }, [navigatorReady]); // Remove userId and session to prevent infinite loops
 
   useFocusEffect(
     useCallback(() => {
       if (userId && navigatorReady) {
         fetchVideoTasks(false);
       }
-    }, [userId, navigatorReady])
+    }, [navigatorReady]) // Remove userId to prevent infinite loops
   );
 
   const handleBack = useCallback(() => {
@@ -185,7 +187,7 @@ export default function VideoTasksScreen() {
       ) : videoTasks.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="videocam-outline" size={80} color="#475569" />
-          <Text style={styles.emptyTitle}>No Video Tasks Yet</Text>
+          <Text style={styles.emptySubtitle}>Video annotation tasks will appear here when available</Text>
           <TouchableOpacity style={styles.refreshButton} onPress={() => fetchVideoTasks(true)}>
             <Text style={styles.refreshButtonText}>Refresh</Text>
           </TouchableOpacity>
@@ -278,17 +280,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   emptyTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '700',
     color: '#f8fafc',
-    marginTop: 20,
+    marginTop: 24,
+    marginBottom: 12,
     textAlign: 'center',
   },
-  emptyDescription: {
+  emptySubtitle: {
     fontSize: 16,
     color: '#94a3b8',
-    marginTop: 8,
     textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 24,
   },
   refreshButton: {
     backgroundColor: '#3b82f6',

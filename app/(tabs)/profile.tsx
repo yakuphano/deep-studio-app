@@ -23,14 +23,18 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (!user?.id) return;
+    console.log('Loading user profile for:', user.id);
     supabase
       .from('profiles')
-      .select('languages_expertise')
+      .select('languages_expertise, languages') // Check both columns
       .eq('id', user.id)
       .maybeSingle()
       .then(({ data }) => {
-        if (data?.languages_expertise) {
-          setLanguages(Array.isArray(data.languages_expertise) ? data.languages_expertise : []);
+        console.log('Profile data:', data);
+        // Use languages column first, fallback to languages_expertise
+        const languagesData = data?.languages || data?.languages_expertise;
+        if (languagesData) {
+          setLanguages(Array.isArray(languagesData) ? languagesData : []);
         }
       });
   }, [user?.id]);
@@ -43,17 +47,43 @@ export default function ProfileScreen() {
 
   const save = async () => {
     if (!user?.id) return;
+    console.log('Saving profile for user:', user.id, 'with languages:', languages);
     setSaving(true);
     try {
+      // Update both languages column and languages_expertise for compatibility
       const { error } = await supabase
         .from('profiles')
-        .update({ languages_expertise: languages })
+        .update({ 
+          languages: languages,
+          languages_expertise: languages // Keep both for compatibility
+        })
         .eq('id', user.id);
-      if (error) throw error;
-      Alert.alert(t('taskDetail.successTitle'), t('profile.save') + ' ✓');
+      
+      console.log('Save result:', { error });
+      
+      if (error) {
+        console.error('Save failed:', error);
+        throw error;
+      }
+      
+      console.log('Profile saved successfully!');
+      
+      // CRITICAL: Add success alert
+      if (typeof window !== 'undefined') {
+        window.alert('Profile Updated Successfully!');
+      } else {
+        Alert.alert('Success', 'Profile Updated Successfully!');
+      }
     } catch (err: any) {
-      Alert.alert(t('login.errorTitle'), err?.message);
+      console.error('Save error:', err);
+      if (typeof window !== 'undefined') {
+        window.alert(`Save failed: ${err?.message || err}`);
+      } else {
+        Alert.alert('Error', `Save failed: ${err?.message || err}`);
+      }
     } finally {
+      // CRITICAL: Always clear loading state
+      console.log('Clearing saving state');
       setSaving(false);
     }
   };

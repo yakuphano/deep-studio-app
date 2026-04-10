@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Platform, Animated } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Platform, Animated, Alert } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
@@ -44,29 +44,51 @@ export default function DailyEarningsScreen() {
   }, [navigatorReady, user]);
 
   const fetchData = useCallback(async () => {
-    if (!user?.id) return;
-    const todayStr = new Date().toDateString();
+    if (!user?.id) {
+      console.log('No user ID, returning');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      console.log('Fetching earnings data for user:', user.id);
+      const todayStr = new Date().toDateString();
 
-    const { data } = await supabase
-      .from('tasks')
-      .select('id, title, price, status, updated_at')
-      .eq('assigned_to', user.id)
-      .eq('status', 'submitted')
-      .order('updated_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('id, title, price, status, updated_at')
+        .eq('assigned_to', user.id)
+        .eq('status', 'submitted')
+        .order('updated_at', { ascending: false });
 
-    const submittedTasks = data ?? [];
-    const total = submittedTasks.reduce((acc, task) => acc + (task.price ?? 0), 0);
-    const todayTasks = submittedTasks.filter(
-      (task) =>
-        task.updated_at &&
-        new Date(task.updated_at).toDateString() === todayStr
-    );
-    const daily = todayTasks.reduce((acc, task) => acc + (task.price ?? 0), 0);
+      if (error) {
+        console.error('Database error fetching earnings:', error);
+        Alert.alert('Error', 'Failed to fetch earnings data');
+        setDailyEarned(0);
+        setTotalEarned(0);
+        setLastTasks([]);
+        return;
+      }
 
-    setDailyEarned(daily);
-    setTotalEarned(total);
-    setLastTasks(submittedTasks.slice(0, 5));
-    setLoading(false);
+      const submittedTasks = data ?? [];
+      const total = submittedTasks.reduce((acc, task) => acc + (task.price ?? 0), 0);
+      const todayTasks = submittedTasks.filter(
+        (task) =>
+          task.updated_at &&
+          new Date(task.updated_at).toDateString() === todayStr
+      );
+      const daily = todayTasks.reduce((acc, task) => acc + (task.price ?? 0), 0);
+
+      console.log('Earnings data fetched:', { total, daily, tasksCount: submittedTasks.length });
+      setDailyEarned(daily);
+      setTotalEarned(total);
+      setLastTasks(submittedTasks.slice(0, 5));
+    } catch (error) {
+      console.error('Error in fetchData:', error);
+      Alert.alert('Error', `Failed to fetch earnings: ${error.message || error}`);
+    } finally {
+      setLoading(false);
+    }
   }, [user?.id]);
 
   useEffect(() => {

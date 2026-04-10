@@ -71,7 +71,7 @@ export default function AudioTasksScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
-  const { user, session } = useAuth();
+  const { user, session, languages } = useAuth();
   const [audioTasks, setAudioTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -117,8 +117,10 @@ export default function AudioTasksScreen() {
 
       const allAudioTasks = [...pool, ...assigned];
       
-      // GEÇICI OLARAK TÜM GÖREVLERI GÖSTER
-      const filteredTasks = allAudioTasks;
+      // Dil filtresi - kullanıcının dillerine göre filtrele
+      const filteredTasks = allAudioTasks.filter(task => 
+        languages.includes(task.language)
+      );
       
       setAudioTasks(filteredTasks);
     } finally {
@@ -185,7 +187,7 @@ export default function AudioTasksScreen() {
       ) : audioTasks.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="mic-outline" size={80} color="#475569" />
-          <Text style={styles.emptyTitle}>No Audio Tasks Yet</Text>
+          <Text style={styles.emptySubtitle}>Audio transcription tasks will appear here when available</Text>
           <TouchableOpacity style={styles.refreshButton} onPress={() => fetchAudioTasks(true)}>
             <Text style={styles.refreshButtonText}>Refresh</Text>
           </TouchableOpacity>
@@ -278,11 +280,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   emptyTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '700',
     color: '#f8fafc',
-    marginTop: 20,
+    marginTop: 24,
+    marginBottom: 12,
     textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 16,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 24,
   },
   refreshButton: {
     backgroundColor: '#3b82f6',

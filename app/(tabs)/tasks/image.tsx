@@ -71,7 +71,7 @@ export default function ImageTasksScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
-  const { user, session } = useAuth();
+  const { user, session, languages } = useAuth();
   const [imageTasks, setImageTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -117,8 +117,10 @@ export default function ImageTasksScreen() {
 
       const allImageTasks = [...pool, ...assigned];
       
-      // GEÇICI OLARAK TÜM GÖREVLERI GÖSTER
-      const filteredTasks = allImageTasks;
+      // Dil filtresi - kullanıcının dillerine göre filtrele
+      const filteredTasks = allImageTasks.filter(task => 
+        languages.includes(task.language)
+      );
       
       setImageTasks(filteredTasks);
     } finally {
@@ -185,7 +187,7 @@ export default function ImageTasksScreen() {
       ) : imageTasks.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="image-outline" size={80} color="#475569" />
-          <Text style={styles.emptyTitle}>No Image Tasks Yet</Text>
+          <Text style={styles.emptySubtitle}>Image annotation tasks will appear here when available</Text>
           <TouchableOpacity style={styles.refreshButton} onPress={() => fetchImageTasks(true)}>
             <Text style={styles.refreshButtonText}>Refresh</Text>
           </TouchableOpacity>
@@ -278,11 +280,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   emptyTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '700',
     color: '#f8fafc',
-    marginTop: 20,
+    marginTop: 24,
+    marginBottom: 12,
     textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 16,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 24,
   },
   refreshButton: {
     backgroundColor: '#3b82f6',

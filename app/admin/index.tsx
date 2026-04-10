@@ -53,8 +53,19 @@ export default function AdminPanelScreen() {
   console.log('Admin Page - isAdmin:', isAdmin);
   console.log('Admin Dashboard Loaded');
   
+  // HARD OVERRIDE: Force admin access for specific email
+  const isDevAdmin = user?.email === 'yakup.hano@deepannotation.ai';
+  const hasAdminAccess = isAdmin === true || isDevAdmin;
+  
+  console.log('Admin check:', {
+    email: user?.email,
+    isAdmin,
+    isDevAdmin,
+    hasAdminAccess
+  });
+  
   // STABLE ADMIN CHECK: Use loading spinner instead of hiding UI
-  if (isAdmin === null) {
+  if (isAdmin === null && !isDevAdmin) {
     console.log('Admin status loading, showing spinner');
     return (
       <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}>
@@ -64,7 +75,8 @@ export default function AdminPanelScreen() {
     );
   }
   
-  if (isAdmin === false) {
+  // Only show Access Denied if loading is false AND isAdmin is explicitly false AND not dev admin
+  if (isAdmin === false && !isDevAdmin) {
     console.log('Access denied - user is not admin');
     return (
       <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}>

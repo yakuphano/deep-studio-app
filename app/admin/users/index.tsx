@@ -74,33 +74,47 @@ export default function AdminUsersPage() {
         setLoading(false);
       }, 5000);
       
-      // Fix: Explicitly select languages column and languages_expertise for compatibility
+      // CRITICAL: Check if profiles table exists and fetch all users
+      console.log('Executing Supabase query on profiles table...');
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, username, email, role, languages, languages_expertise, is_blocked');
+        .select('*'); // Select all columns to see what's available
 
-      console.log('Fetched users:', data);
-      console.log('Fetch error:', error);
+      console.log('RAW DATA FROM SUPABASE:', { data, error });
+      console.log('Data type:', typeof data);
+      console.log('Data length:', data?.length || 0);
+      console.log('Data sample:', data?.slice(0, 2));
 
       if (error) {
-        console.error('Database error:', error);
+        console.error('Database error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
         setUsers([]);
       } else {
         console.log('Users fetched successfully:', data?.length || 0);
+        console.log('Sample users:', data?.slice(0, 3));
+        
+        // CRITICAL: Set users data FIRST, then clear loading
         setUsers(data || []);
       }
     } catch (error: any) {
-      console.error('Error fetching users:', error);
+      console.error('Critical error in fetchUsers:', {
+        message: error.message,
+        stack: error.stack
+      });
       setUsers([]);
     } finally {
       // Clear timeout
       if (timeoutId) clearTimeout(timeoutId);
       
-      // CRITICAL: Always set loading to false
+      // CRITICAL: Always set loading to false AFTER data is set
       console.log('FETCH END: fetchUsers');
       setLoading(false);
     }
-  }, []);
+  }, []); // Empty dependency - run once only
 
   useEffect(() => {
     fetchUsers();

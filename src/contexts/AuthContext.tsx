@@ -43,14 +43,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
       
       if (error) {
-        console.error('Profile fetch error:', error);
+        console.error('Profile fetch error:', error.message);
+        // 500 hatas\u0131 veya infinite recursion durumunda null d\u00f6nd\u00fcr
+        if (error.code === 'PGRST116' || error.message?.includes('infinite recursion')) {
+          console.log('Profile fetch failed due to RLS issues, proceeding with limited permissions');
+          return null;
+        }
         return null;
       }
       
       console.log('Profile data received:', data);
       return data as UserProfile;
     } catch (error) {
-      console.error('Profile fetch error:', error);
+      console.error('Profile fetch error:', (error as Error).message);
       return null;
     }
   };
@@ -156,3 +161,4 @@ export function useAuth() {
   if (ctx === undefined) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
 }
+

@@ -88,7 +88,7 @@ export default function TasksScreen() {
     } else if (type === 'image') {
       router.push('/tasks/image');
     } else if (type === 'video') {
-      router.push('/tasks/video');
+      router.push('/(tabs)/video-tasks');
     }
   };
 

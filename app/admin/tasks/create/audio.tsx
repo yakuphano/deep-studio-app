@@ -126,7 +126,7 @@ export default function CreateAudioTaskScreen() {
   };
 
   const handleCreateTask = async () => {
-    console.log("🔥 handleCreateTask ÇAĞRILDI!");
+    console.log("--- TASK OLUSTURMA BASLATILDI ---", taskData);
     
     // Validation
     if (!taskData.title || !taskData.company_name) {
@@ -177,22 +177,22 @@ export default function CreateAudioTaskScreen() {
       }]).select();
 
       if (error) {
-        console.error("🚨 DB HATASI:", error);
+        console.error("--- DB HATASI ---", error);
         alert("Veritabanı Hatası: " + error.message);
         return;
       }
 
-      console.log("✅ Task başarıyla oluşturuldu:", data);
-      alert('Task Created!');
+      console.log("--- TASK BASARIYLA OLUSTURULDU ---", data);
+      Alert.alert('Success', 'Task Created');
       
       // Admin paneline yönlendir
       router.push('/admin');
 
     } catch (err: any) {
-      console.error("🚨 KRİTİK HATA:", err);
+      console.error("--- KRITIK HATA ---", err);
       alert("Sistem Hatası: " + (err.message || 'Bilinmeyen hata'));
     } finally {
-      console.log("🏁 Creating işlemi bitti");
+      console.log("--- CREATING ISLEMI BITTI ---");
       setIsCreating(false);
     }
   };
@@ -428,10 +428,7 @@ export default function CreateAudioTaskScreen() {
         {/* Save Button */}
         <TouchableOpacity 
           style={[styles.saveButton, isCreating && styles.saveButtonDisabled]} 
-          onPress={() => {
-            console.log("🔥 BUTONA BASILDI! handleCreateTask çağrılıyor...");
-            handleCreateTask();
-          }}
+          onPress={handleCreateTask}
           disabled={isCreating}
         >
           {isCreating ? (

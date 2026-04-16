@@ -9,7 +9,6 @@ export default function MainLayout() {
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
-      <Stack.Screen name="tasks" />
       <Stack.Screen name="tasks/audio" />
       <Stack.Screen name="tasks/image" />
       <Stack.Screen name="earnings/daily" />

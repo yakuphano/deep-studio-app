@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,17 +8,16 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Dimensions,
+  Alert,
 } from 'react-native';
-import { useRouter, useRootNavigationState } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
 
 const { width } = Dimensions.get('window');
-// Kartlar enini daraltmak için bosluk payn artrdk (64'ten 100'e çkardk)
-const CARD_WIDTH = (width - 100) / 4; 
+const CARD_WIDTH = (width - 100) / 4;
 
 type Task = {
   id: string;
@@ -29,35 +28,28 @@ type Task = {
   category?: string | null;
   type?: string | null;
   video_url?: string | null;
+  is_pool_task?: boolean;
+  assigned_to?: string | null;
 };
 
-const VideoTaskCard = ({ item, onPress }: { item: Task, onPress: (id: string) => void }) => (
-  <TouchableOpacity 
-    onPress={() => onPress(item.id)}
-    style={styles.card}
-    activeOpacity={0.8}
-  >
+const VideoTaskCard = ({ item, onPress }: { item: Task; onPress: (id: string) => void }) => (
+  <TouchableOpacity onPress={() => onPress(item.id)} style={styles.card} activeOpacity={0.8}>
     <View style={styles.cardTopImage}>
       <View style={styles.iconPill}>
         <Ionicons name="videocam" size={24} color="#8b5cf6" />
       </View>
     </View>
-    
     <View style={styles.cardContent}>
-      <Text style={styles.cardTitle} numberOfLines={2}>
-        {item.title}
-      </Text>
-      
+      <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
       <View style={styles.badgeRow}>
         <View style={styles.pendingBadge}>
           <Ionicons name="time" size={10} color="#fbbf24" />
           <Text style={styles.pendingText}>Pending</Text>
         </View>
         <View style={styles.priceBadge}>
-          <Text style={styles.priceText}>${item.price ?? 0}</Text>
+          <Text style={styles.priceText}>₺{item.price ?? 0}</Text>
         </View>
       </View>
-
       <TouchableOpacity style={styles.startButton} onPress={() => onPress(item.id)}>
         <Text style={styles.startButtonText}>Start Task</Text>
         <Ionicons name="arrow-forward" size={14} color="#fff" />
@@ -69,71 +61,120 @@ const VideoTaskCard = ({ item, onPress }: { item: Task, onPress: (id: string) =>
 export default function VideoTasksScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const rootNavigationState = useRootNavigationState();
-  const { user, session } = useAuth();
-  const [tasks, setTasks] = useState<Task[]>([]);
+
+  const [videoTasks, setVideoTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const userId = user?.id ?? session?.user?.id ?? null;
-  const navigatorReady = rootNavigationState?.key != null;
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
 
-  const fetchVideoTasks = useCallback(async (showLoading = true) => {
-    if (!userId) return;
-    if (showLoading) setLoading(true);
-    
-    try {
-      const cols = 'id, title, status, price, language, category, type, video_url';
-      const { data: poolData } = await supabase.from('tasks').select(cols).is('assigned_to', null).eq('status', 'pending').or('category.eq.video,type.eq.video').order('created_at', { ascending: false });
-      const { data: assignedData } = await supabase.from('tasks').select(cols).eq('assigned_to', userId).eq('status', 'pending').or('category.eq.video,type.eq.video').order('created_at', { ascending: false });
-      setTasks([...(poolData || []), ...(assignedData || [])]);
-    } catch (error) {
-      console.error('Fetch error:', error);
-    } finally {
-      setLoading(false);
+      const loadData = async () => {
+        try {
+          setLoading(true);
+
+          const { data: { session } } = await supabase.auth.getSession();
+          const uid = session?.user?.id;
+
+          if (!uid) {
+            if (isMounted) setLoading(false);
+            return;
+          }
+
+          // TABLO ADI DÜZELTİLDİ: profiles
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('languages')
+            .eq('id', uid)
+            .single();
+
+          const userLangs = profile?.languages || [];
+          const cols = 'id, title, status, price, language, category, type, video_url, is_pool_task, assigned_to';
+
+          const { data: assignedData } = await supabase
+            .from('tasks')
+            .select(cols)
+            .eq('assigned_to', uid)
+            .eq('status', 'pending')
+            .or('category.eq.video,type.eq.video');
+
+          const { data: poolData } = await supabase
+            .from('tasks')
+            .select(cols)
+            .is('assigned_to', null)
+            .eq('status', 'pending')
+            .or('category.eq.video,type.eq.video');
+
+          if (isMounted) {
+            const allTasks = [...(poolData || []), ...(assignedData || [])];
+            // DİLLERE GÖRE FİLTRELEME BURADA
+            const filteredTasks = allTasks.filter(task => userLangs.includes(task.language));
+
+            setVideoTasks(filteredTasks);
+            setLoading(false);
+          }
+        } catch (error) {
+          if (isMounted) setLoading(false);
+        }
+      };
+
+      loadData();
+
+      return () => {
+        isMounted = false;
+      };
+    }, []) // <-- KRİTİK: BURASI KESİNLİKLE BOŞ DİZİ OLACAK. İÇİNE HİÇBİR DEĞİŞKEN YAZMA.
+  );
+
+  const handleClaim = async (taskId: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return;
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ assigned_to: uid })
+      .eq('id', taskId)
+      .is('assigned_to', null)
+      .select();
+
+    if (!error && data && data.length > 0) {
+       router.push(`/task/${taskId}`);
+    } else {
+       Alert.alert('Uyarı', 'Bu görev alınamadı veya başkası tarafından alındı.');
     }
-  }, [userId]);
-
-  useFocusEffect(useCallback(() => { 
-    if (userId && navigatorReady) fetchVideoTasks(false); 
-  }, [userId, navigatorReady]));
-
-  const handleTaskPress = async (taskId: string) => {
-    if (!userId) return;
-    const { error } = await supabase.from('tasks').update({ assigned_to: userId }).eq('id', taskId);
-    if (!error) router.push(`/task/${taskId}`);
   };
-
-  if (!user || !session) return null;
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Çift Navbar (kinci Deep Studio yazs) buradan tamamen kaldrlld */}
-
-      {/* Breadcrumb Alan */}
       <View style={styles.breadcrumbRow}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={16} color="#94a3b8" />
-          <Text style={styles.backText}>Back</Text> {/* Tasks yazs Back olarak deitirildi */}
+            <Ionicons name="arrow-back" size={16} color="#94a3b8" />
+            <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.breadcrumbText}>Tasks {'>'} Video</Text>
       </View>
 
-      {/* Sayfa Basl - Ekran Ortalama */}
       <View style={styles.pageHeader}>
-        <Text style={styles.pageTitle}>Video Annotation Tasks</Text>
+        <Text style={styles.pageTitle}>{t('tasks.pageTitleVideo') || 'Video Annotation Tasks'}</Text>
       </View>
 
       {loading ? (
         <ActivityIndicator size="large" color="#8b5cf6" style={{ flex: 1 }} />
+      ) : videoTasks.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="videocam-outline" size={80} color="#475569" style={styles.emptyIcon} />
+          <Text style={styles.emptyTitle}>No Video Tasks</Text>
+          <Text style={styles.emptyDescription}>Kendi dilinizde video görevi bulunamadı.</Text>
+        </View>
       ) : (
         <FlatList
-          data={tasks}
+          data={videoTasks}
           keyExtractor={(item) => item.id}
           numColumns={4}
           columnWrapperStyle={styles.columnWrapper}
           contentContainerStyle={styles.listContainer}
-          renderItem={({ item }) => <VideoTaskCard item={item} onPress={handleTaskPress} />}
-          ListEmptyComponent={<Text style={styles.emptyText}>No video tasks found.</Text>}
+          renderItem={({ item }) => <VideoTaskCard item={item} onPress={handleClaim} />}
         />
       )}
     </SafeAreaView>
@@ -141,22 +182,13 @@ export default function VideoTasksScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' }, 
+  container: { flex: 1, backgroundColor: '#0f172a' },
   breadcrumbRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12, alignItems: 'center' },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   backText: { color: '#94a3b8', fontSize: 14, fontWeight: '600' },
   breadcrumbText: { color: '#4b5563', fontSize: 12 },
-  pageHeader: {
-    alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 5,
-  },
-  pageTitle: {
-    color: '#ffffff',
-    fontSize: 24,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
+  pageHeader: { alignItems: 'center', marginTop: 10, marginBottom: 15 },
+  pageTitle: { color: '#ffffff', fontSize: 24, fontWeight: 'bold', letterSpacing: 0.5 },
   listContainer: { paddingHorizontal: 20, paddingBottom: 20 },
   columnWrapper: { justifyContent: 'flex-start', gap: 15, marginBottom: 15 },
   card: { width: CARD_WIDTH, backgroundColor: '#161b22', borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#30363d' },
@@ -171,5 +203,8 @@ const styles = StyleSheet.create({
   priceText: { color: '#10b981', fontSize: 10, fontWeight: 'bold' },
   startButton: { backgroundColor: '#8b5cf6', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 8, borderRadius: 8, gap: 6 },
   startButtonText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-  emptyText: { color: '#94a3b8', textAlign: 'center', marginTop: 50 }
+  emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  emptyIcon: { marginBottom: 20 },
+  emptyTitle: { fontSize: 22, fontWeight: 'bold', color: '#f8fafc', marginTop: 20, textAlign: 'center' },
+  emptyDescription: { fontSize: 16, color: '#94a3b8', marginTop: 8, textAlign: 'center' }
 });

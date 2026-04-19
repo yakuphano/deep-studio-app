@@ -61,54 +61,84 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    // 1. İlk yüklemede session'ı al
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      console.log('AuthContext - Auth state changed:', _event, session?.user?.email);
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false); // Ensure loading is set to false
-      
-      if (session?.user) {
-        console.log('AuthContext - Fetching profile for user:', session.user.id);
-        const userProfile = await fetchUserProfile(session.user.id);
-        console.log('AuthContext - Fetched profile:', userProfile);
+    // 2. Auth state değişikliklerini dinle (SORUN BURADA)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, newSession) => {
+        console.log(`AuthContext - Auth state changed: ${event}`);
         
-        if (userProfile) {
-          console.log('Setting profile data:', userProfile);
-          setProfile(userProfile);
-          setIsBlocked(userProfile.is_blocked);
-          
-          // Bypass for dev - always set admin for specific email
-          const isDevAdmin = session.user.email === 'yakup.hano@deepannotation.ai';
-          const shouldBeAdmin = userProfile.role === 'admin' || isDevAdmin;
-          
-          console.log('Admin check:', {
-            email: session.user.email,
-            profileRole: userProfile.role,
-            isDevAdmin,
-            shouldBeAdmin
-          });
-          
-          setIsAdmin(shouldBeAdmin);
-          setLanguages(userProfile.languages || []);
-        } else {
-          console.log('No profile data found, setting isAdmin to false');
-          setIsAdmin(false);
-        }
-      } else {
-        console.log('AuthContext - No session, clearing profile');
-        setProfile(null);
-        setIsBlocked(false);
-        setLanguages(['tr', 'en']);
-      }
-    });
+        // KRITIK SUSTURUCU: Ayni ID ise HICBIR SEY yapma - saniyede 50 kere render'i durdur
+        const newUserId = newSession?.user?.id;
+        
+        setSession((prevSession) => {
+          const prevUserId = prevSession?.user?.id;
+          // AYNI ID ISE HIC GUNCELLEME YAPMA - RE-LOOP'U ENGELLE
+          if (prevUserId === newUserId) {
+            console.log('AuthContext - Same user ID, skipping session update');
+            return prevSession;
+          }
+          console.log('AuthContext - Different user ID, updating session');
+          return newSession;
+        });
 
-    return () => subscription.unsubscribe();
+        setUser((prevUser) => {
+          const prevUserId = prevUser?.id;
+          // AYNI ID ISE HIC GUNCELLEME YAPMA - RE-LOOP'U ENGELLE
+          if (prevUserId === newUserId) {
+            console.log('AuthContext - Same user ID, skipping user update');
+            return prevUser;
+          }
+          console.log('AuthContext - Different user ID, updating user');
+          return newSession?.user ?? null;
+        });
+        
+        setLoading(false); // Ensure loading is set to false
+        
+        if (newSession?.user) {
+          console.log('AuthContext - Fetching profile for user:', newSession.user.id);
+          const userProfile = await fetchUserProfile(newSession.user.id);
+          console.log('AuthContext - Fetched profile:', userProfile);
+          
+          if (userProfile) {
+            console.log('Setting profile data:', userProfile);
+            setProfile(userProfile);
+            setIsBlocked(userProfile.is_blocked);
+            
+            // Bypass for dev - always set admin for specific email
+            const isDevAdmin = newSession.user.email === 'yakup.hano@deepannotation.ai';
+            const shouldBeAdmin = userProfile.role === 'admin' || isDevAdmin;
+            
+            console.log('Admin check:', {
+              email: newSession.user.email,
+              profileRole: userProfile.role,
+              isDevAdmin,
+              shouldBeAdmin
+            });
+            
+            setIsAdmin(shouldBeAdmin);
+            setLanguages(userProfile.languages || []);
+          } else {
+            console.log('No profile data found, setting isAdmin to false');
+            setIsAdmin(false);
+          }
+        } else {
+          console.log('AuthContext - No session, clearing profile');
+          setProfile(null);
+          setIsBlocked(false);
+          setLanguages(['tr', 'en']);
+        }
+      }
+    );
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const ADMIN_EMAIL = 'yakup.hano@deepannotation.ai';

@@ -205,19 +205,19 @@ export default function AdminPanelScreen() {
         pendingPayments = 0;
       }
       
-      // 4. Monthly Revenue
+      // 4. Monthly Revenue - FIXED: Remove problematic .in() query
       const currentMonth = new Date().toISOString().slice(0, 7);
       const { data: completedTasks } = await supabase
         .from('tasks')
         .select('price')
-        .in('status', '["completed","submitted"]')
+        .eq('status', 'completed') // Simple .eq() instead of .in()
         .eq('is_pool_task', true)
         .gte('updated_at', `${currentMonth}-01`)
         .lt('updated_at', `${currentMonth}-31`);
       
       const monthlyRevenue = completedTasks?.reduce((sum, task) => sum + (task.price || 0), 0) || 0;
       
-      // 5. Completion Rate
+      // 5. Completion Rate - FIXED: Remove problematic .in() query
       const { count: totalTasks } = await supabase
         .from('tasks')
         .select('*', { count: 'exact', head: true })
@@ -226,18 +226,18 @@ export default function AdminPanelScreen() {
       const { count: completedTasksCount } = await supabase
         .from('tasks')
         .select('*', { count: 'exact', head: true })
-        .in('status', '["completed","submitted"]')
+        .eq('status', 'completed') // Simple .eq() instead of .in()
         .eq('is_pool_task', true);
       
       const completionRate = totalTasks && totalTasks > 0 
         ? Math.round((completedTasksCount / totalTasks) * 100)
         : 0;
       
-      // 6. Completed Tasks
+      // 6. Completed Tasks - FIXED: Remove problematic .in() query
       const { count: completedTasksForModal } = await supabase
         .from('tasks')
         .select('id, title, type, category, status, updated_at', { count: 'exact' })
-        .in('status', '["completed","submitted"]')
+        .eq('status', 'completed') // Simple .eq() instead of .in()
         .eq('is_pool_task', true)
         .order('updated_at', { ascending: false });
       

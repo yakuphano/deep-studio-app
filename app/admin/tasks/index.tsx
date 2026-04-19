@@ -82,49 +82,31 @@ export default function AdminTasksPage() {
   }, []); // Empty dependency - run once only
 
   const handleDeleteTask = async (taskId: string) => {
-    console.log('Attempting to delete task with ID:', taskId);
-    
     Alert.alert(
-      'Delete Task',
-      'Are you sure you want to delete this task?',
+      "Görevi Sil",
+      "Bu görevi silmek istediðinize emin misiniz?",
       [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
+        { text: "Ýptal", style: "cancel" },
+        { 
+          text: "Sil", 
+          style: "destructive",
           onPress: async () => {
-            try {
-              console.log('Calling supabase.from(tasks).delete().eq(id, taskId)...');
-              
-              const { error } = await supabase
-                .from('tasks')
-                .delete()
-                .eq('id', taskId);
+            // Supabase'den silme isteði
+            const { error } = await supabase
+              .from('tasks')
+              .delete()
+              .eq('id', taskId);
 
-              console.log('Delete operation completed. Error:', error);
-
-              if (error) {
-                console.error('Delete failed:', error);
-                window.alert(`Delete failed: ${error.message}`);
-              } else {
-                console.log('Delete successful, updating UI state...');
-                
-                // Instant UI update - remove task from local state
-                setTasks(prev => {
-                  console.log('Filtering tasks, current count:', prev.length);
-                  const filtered = prev.filter(t => t.id !== taskId);
-                  console.log('After filter, count:', filtered.length);
-                  return filtered;
-                });
-                
-                window.alert('Task deleted successfully');
-              }
-            } catch (error: any) {
-              console.error('Delete error:', error);
-              window.alert(`Delete failed: ${error.message || error}`);
+            if (error) {
+              console.error("Silme Hatasý:", error);
+              Alert.alert("Hata", `Görev silinemedi (RLS veya Sunucu Hatasý): ${error.message}`);
+            } else {
+              // Baþarýlýysa listeyi yeniden çek
+              Alert.alert("Baþarýlý", "Görev silindi.");
+              fetchTasks(); // Kendi fonksiyon adýnýzla deðiþtirin
             }
-          },
-        },
+          }
+        }
       ]
     );
   };

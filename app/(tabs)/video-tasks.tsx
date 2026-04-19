@@ -65,66 +65,72 @@ export default function VideoTasksScreen() {
   const [videoTasks, setVideoTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
-    useCallback(() => {
-      let isMounted = true;
+  // KRITIK: VERI CEKME TAMAMEN DONDURULDU - BROWSER CRASH'INI ENGELLE
+// useFocusEffect(
+//   useCallback(() => {
+//     let isMounted = true;
 
-      const loadData = async () => {
-        try {
-          setLoading(true);
+//     const loadData = async () => {
+//       try {
+//         setLoading(true);
 
-          const { data: { session } } = await supabase.auth.getSession();
-          const uid = session?.user?.id;
+//         const { data: { session } } = await supabase.auth.getSession();
+//         const uid = session?.user?.id;
 
-          if (!uid) {
-            if (isMounted) setLoading(false);
-            return;
-          }
+//         if (!uid) {
+//           if (isMounted) setLoading(false);
+//           return;
+//         }
 
-          // TABLO ADI DÜZELTİLDİ: profiles
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('languages')
-            .eq('id', uid)
-            .single();
+//         // TABLO ADI DÜZELTÝLDÝ: profiles
+//         const { data: profile } = await supabase
+//           .from('profiles')
+//           .select('languages')
+//           .eq('id', uid)
+//           .single();
 
-          const userLangs = profile?.languages || [];
-          const cols = 'id, title, status, price, language, category, type, video_url, is_pool_task, assigned_to';
+//         const userLangs = profile?.languages || [];
+//         const cols = 'id, title, status, price, language, category, type, video_url, is_pool_task, assigned_to';
 
-          const { data: assignedData } = await supabase
-            .from('tasks')
-            .select(cols)
-            .eq('assigned_to', uid)
-            .eq('status', 'pending')
-            .or('category.eq.video,type.eq.video');
+//         const { data: assignedData } = await supabase
+//           .from('tasks')
+//           .select(cols)
+//           .eq('assigned_to', uid)
+//           .eq('status', 'pending')
+//           .or('category.eq.video,type.eq.video');
 
-          const { data: poolData } = await supabase
-            .from('tasks')
-            .select(cols)
-            .is('assigned_to', null)
-            .eq('status', 'pending')
-            .or('category.eq.video,type.eq.video');
+//         const { data: poolData } = await supabase
+//           .from('tasks')
+//           .select(cols)
+//           .is('assigned_to', null)
+//           .eq('status', 'pending')
+//           .or('category.eq.video,type.eq.video');
 
-          if (isMounted) {
-            const allTasks = [...(poolData || []), ...(assignedData || [])];
-            // DİLLERE GÖRE FİLTRELEME BURADA
-            const filteredTasks = allTasks.filter(task => userLangs.includes(task.language));
+//         if (isMounted) {
+//           const allTasks = [...(poolData || []), ...(assignedData || [])];
+//           // DÌLLERE GÖRE FÌLTRELEME BURADA
+//           const filteredTasks = allTasks.filter(task => userLangs.includes(task.language));
 
-            setVideoTasks(filteredTasks);
-            setLoading(false);
-          }
-        } catch (error) {
-          if (isMounted) setLoading(false);
-        }
-      };
+//           setVideoTasks(filteredTasks);
+//           setLoading(false);
+//         }
+//       } catch (error) {
+//         if (isMounted) setLoading(false);
+//       }
+//     };
 
-      loadData();
+//     loadData();
 
-      return () => {
-        isMounted = false;
-      };
-    }, []) // <-- KRİTİK: BURASI KESİNLİKLE BOŞ DİZİ OLACAK. İÇİNE HİÇBİR DEĞİŞKEN YAZMA.
-  );
+//     return () => {
+//       isMounted = false;
+//     };
+//   }, []) // <--- EN KRÝTÝK NOKTA: BURASI KESÝNLÝKLE BOÞ DÝZÝ OLACAK. ÝÇÝNE HÝÇBÝR DEÐÝÞKEN YAZMA.
+// );
+
+// GEÇICI: Loading'i false yap ki statik tasarim görünsün
+useEffect(() => {
+  setLoading(false);
+}, []);
 
   const handleClaim = async (taskId: string) => {
     const { data: { session } } = await supabase.auth.getSession();

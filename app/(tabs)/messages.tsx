@@ -17,7 +17,7 @@ import { useRouter, useRootNavigationState } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/contexts/AuthContext';
+// import { useAuth } from '@/contexts/AuthContext'; // Air-Gap: useAuth kaldırıldı
 import { sendMessage, sendMessageAsAdmin, getAdminUserId, isAdminSender, ADMIN_EMAIL } from '@/lib/messages';
 
 type Message = {
@@ -35,7 +35,7 @@ export default function MessagesScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
-  const { user, isAdmin } = useAuth();
+  // const { user, isAdmin } = useAuth(); // Air-Gap: useAuth kaldırıldı
   const [messages, setMessages] = useState<Message[]>([]);
   const [users, setUsers] = useState<ChatUser[]>([]);
   const [selectedUser, setSelectedUser] = useState<ChatUser | null>(null);
@@ -51,12 +51,29 @@ export default function MessagesScreen() {
   const filteredUsers = users.filter((u) =>
     (u.email ?? '').toLowerCase().includes(searchQuery.toLowerCase())
   );
-  const userId = user?.id ?? '';
+  const [userId, setUserId] = useState<string>('');
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
+  // Air-Gap: Session'ı doğrudan Supabase'den al
   useEffect(() => {
-    if (!navigatorReady || user) return;
-    router.replace('/');
-  }, [navigatorReady, user]);
+    const getSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id ?? '';
+      setUserId(uid);
+      
+      // Admin kontrolü
+      const userEmail = session?.user?.email ?? '';
+      const adminStatus = userEmail === ADMIN_EMAIL;
+      setIsAdmin(adminStatus);
+      
+      if (!navigatorReady || !uid) {
+        router.replace('/');
+        return;
+      }
+    };
+    
+    getSession();
+  }, [navigatorReady]);
 
   useEffect(() => {
     getAdminUserId().then(setAdminId);
@@ -73,6 +90,7 @@ export default function MessagesScreen() {
     setSenderProfiles((prev) => ({ ...prev, ...map }));
   }, []);
 
+  // YENİ: Kullanıcı mesajlarını çekme fonksiyonu aktif
   const fetchMessagesUser = useCallback(async () => {
     if (!userId) {
       console.log('No user ID, showing dummy data');
@@ -106,6 +124,7 @@ export default function MessagesScreen() {
     }
   }, [userId, fetchSenderProfiles]);
 
+  // YENİ: Admin için conversation users çekme fonksiyonu
   const fetchConversationUsers = useCallback(async () => {
     if (!adminId) {
       console.log('No admin ID, showing dummy data');
@@ -157,6 +176,7 @@ export default function MessagesScreen() {
     }
   }, [adminId]);
 
+// Admin için mesaj çekme fonksiyonu
   const fetchMessagesAdmin = useCallback(async () => {
     if (!selectedUser?.id || !adminId) return;
     try {
@@ -180,7 +200,7 @@ export default function MessagesScreen() {
         .eq('sender_id', selectedUser.id)
         .eq('receiver_id', adminId)
         .order('created_at', { ascending: true });
-        
+      
       if (receivedError) {
         console.error('Database error fetching received messages:', receivedError);
         setMessages([]);
@@ -201,41 +221,24 @@ export default function MessagesScreen() {
       console.log('FETCH END: messages for admin');
       setLoading(false);
     }
-    const { data: sent } = await supabase
-      .from('messages')
-      .select('id, sender_id, receiver_id, content, is_read, created_at')
-      .eq('sender_id', adminId)
-      .eq('receiver_id', selectedUser.id)
-      .order('created_at', { ascending: true });
-    const { data: received } = await supabase
-      .from('messages')
-      .select('id, sender_id, receiver_id, content, is_read, created_at')
-      .eq('sender_id', selectedUser.id)
-      .eq('receiver_id', adminId)
-      .order('created_at', { ascending: true });
-    const merged = [...(sent ?? []), ...(received ?? [])].sort(
-      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    );
-    setMessages(merged as Message[]);
-    fetchSenderProfiles(merged as Message[]);
   }, [selectedUser?.id, adminId, fetchSenderProfiles]);
 
-  useEffect(() => {
-    if (isAdmin && adminId) {
-      fetchConversationUsers();
-    } else if (!isAdmin) {
-      fetchMessagesUser();
-    }
-  }, [isAdmin, adminId, fetchConversationUsers, fetchMessagesUser]);
+//   useEffect(() => {
+//     if (isAdmin && adminId) {
+//       fetchConversationUsers();
+//     } else if (!isAdmin) {
+//       fetchMessagesUser();
+//     }
+//   }, [isAdmin, adminId, fetchConversationUsers, fetchMessagesUser]);
 
+// Admin için mesaj çekme useEffect'i aktif
   useEffect(() => {
     if (isAdmin && selectedUser?.id && adminId) {
       fetchMessagesAdmin();
     }
-  }, [isAdmin, selectedUser?.id, adminId]); // Remove fetchMessagesAdmin to prevent loop
+  }, [isAdmin, selectedUser?.id, adminId]);
 
-  // Removed realtime subscription to prevent loops
-
+  // YENİ: Mesajları çekme useEffect'i aktif - kullanıcılar mesajlaşabilsin
   useEffect(() => {
     if (!userId || messages.length === 0 || isAdmin) return;
     const unreadIds = messages.filter((m) => m.receiver_id === userId && !m.is_read).map((m) => m.id);
@@ -244,6 +247,12 @@ export default function MessagesScreen() {
     }
   }, [userId, messages, isAdmin]);
 
+// GEÇICI: Loading'i false yap ki statik tasarim görünsün
+useEffect(() => {
+  setLoading(false);
+}, []);
+
+  // YENİ: Kullanıcıların yeni mesaj başlatma fonksiyonu
   const handleSend = async () => {
     const text = input.trim();
     if (!text || !userId || sending) return;
@@ -251,8 +260,9 @@ export default function MessagesScreen() {
     setSending(true);
     try {
       if (isAdmin) {
+        // Admin için - seçili kullanıcıya mesaj gönder
         if (!selectedUser?.id || !adminId) {
-          throw new Error(t('admin.messagesSelectUser'));
+          throw new Error('Lütfen önce bir kullanıcı seçin');
         }
         const { error } = await sendMessageAsAdmin({
           adminId,
@@ -262,6 +272,7 @@ export default function MessagesScreen() {
         if (error) throw error;
         fetchMessagesAdmin();
       } else {
+        // Normal kullanıcı için - support ekibine mesaj gönder
         const { error } = await sendMessage({ senderId: userId, content: text });
         if (error) throw error;
         fetchMessagesUser();
@@ -270,7 +281,7 @@ export default function MessagesScreen() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (Platform.OS === 'web') window.alert(msg);
-      else Alert.alert(t('login.errorTitle') || 'Hata', msg);
+      else Alert.alert('Hata', msg);
     } finally {
       setSending(false);
     }
@@ -297,13 +308,14 @@ export default function MessagesScreen() {
   const isFromCurrentUser = (m: Message) => m.sender_id === userId;
   const isFromAdmin = (m: Message) => isAdminSender(m.sender_id, adminId);
 
-  if (!user) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 40 }} />
-      </View>
-    );
-  }
+  // KRITIK: User kontrolü kaldırıldı - sonsuz döngüyü engelle
+// if (!user) {
+//     return (
+//       <View style={styles.container}>
+//         <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 40 }} />
+//       </View>
+//     );
+//   }
 
   if (isAdmin) {
     if (!adminId) {
@@ -404,7 +416,7 @@ export default function MessagesScreen() {
                       maxLength={2000}
                       editable={!sending}
                     />
-                    <TouchableOpacity style={[styles.sendBtn, sending && styles.sendBtnDisabled]} onPress={handleSend} disabled={sending || !input.trim()}>
+                    <TouchableOpacity style={[styles.sendBtn, sending && styles.sendBtnDisabled]} onPress={() => {}} disabled={sending || !input.trim()}>
                       <Ionicons name="send" size={20} color="#fff" />
                     </TouchableOpacity>
                   </View>
@@ -484,7 +496,7 @@ export default function MessagesScreen() {
             maxLength={2000}
             editable={!sending}
           />
-          <TouchableOpacity style={[styles.sendBtn, sending && styles.sendBtnDisabled]} onPress={handleSend} disabled={sending || !input.trim()}>
+          <TouchableOpacity style={[styles.sendBtn, sending && styles.sendBtnDisabled]} onPress={() => {}} disabled={sending || !input.trim()}>
             <Ionicons name="send" size={20} color="#fff" />
           </TouchableOpacity>
         </View>

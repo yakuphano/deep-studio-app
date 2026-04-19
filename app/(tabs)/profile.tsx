@@ -46,29 +46,55 @@ export default function ProfileScreen() {
   };
 
   const save = async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      console.log('No user ID found, cannot save');
+      return;
+    }
     console.log('Saving profile for user:', user.id, 'with languages:', languages);
+    console.log('Languages array length:', languages.length);
+    console.log('Languages content:', JSON.stringify(languages));
+    
     setSaving(true);
+    
     try {
+      // First check if profile exists
+      console.log('Checking if profile exists...');
+      const { data: existingProfile, error: checkError } = await supabase
+        .from('profiles')
+        .select('id, languages, languages_expertise')
+        .eq('id', user.id)
+        .single();
+      
+      console.log('Existing profile check:', { existingProfile, checkError });
+      
+      if (checkError && checkError.code !== 'PGRST116') {
+        console.error('Error checking profile:', checkError);
+        throw checkError;
+      }
+      
       // Update both languages column and languages_expertise for compatibility
-      const { error } = await supabase
+      console.log('Updating profile...');
+      const { data, error } = await supabase
         .from('profiles')
         .update({ 
           languages: languages,
           languages_expertise: languages // Keep both for compatibility
         })
-        .eq('id', user.id);
+        .eq('id', user.id)
+        .select()
+        .single();
       
-      console.log('Save result:', { error });
+      console.log('Save result:', { data, error });
       
       if (error) {
         console.error('Save failed:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
         throw error;
       }
       
       console.log('Profile saved successfully!');
+      console.log('Updated profile data:', data);
       
-      // CRITICAL: Add success alert
       if (typeof window !== 'undefined') {
         window.alert('Profile Updated Successfully!');
       } else {
@@ -76,10 +102,11 @@ export default function ProfileScreen() {
       }
     } catch (err: any) {
       console.error('Save error:', err);
+      console.error('Error details:', JSON.stringify(err, null, 2));
       if (typeof window !== 'undefined') {
-        window.alert(`Save failed: ${err?.message || err}`);
+        window.alert(`Save failed: ${err?.message || 'Unknown error'}`);
       } else {
-        Alert.alert('Error', `Save failed: ${err?.message || err}`);
+        Alert.alert('Error', `Save failed: ${err?.message || 'Unknown error'}`);
       }
     } finally {
       // CRITICAL: Always clear loading state

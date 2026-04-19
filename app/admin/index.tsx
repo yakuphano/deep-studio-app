@@ -47,6 +47,38 @@ export default function AdminPanelScreen() {
   const router = useRouter();
   const { user, isAdmin } = useAuth();
 
+  // KRITIK: Tüm useState hook'ları en başta tanımla - hooks order violation'ı engelle
+  const [dashboardStats, setDashboardStats] = useState({
+    totalUsers: 0,
+    activeTasks: 0,
+    activeTasksTypeBreakdown: {} as Record<string, number>,
+    pendingPayments: 0,
+    monthlyRevenue: 0,
+    completionRate: 0,
+    completedTasks: 0,
+  });
+  const [statsLoading, setStatsLoading] = useState(true);
+  
+  // Modal states - removed Add New Annotator modal (moved to users page)
+  // const [showModal, setShowModal] = useState(false);
+  // const [formData, setFormData] = useState({
+  //   username: '',
+  //   email: '',
+  //   password: '',
+  //   languages: [] as string[],
+  // });
+  
+  // Export states
+  const [exportTaskType, setExportTaskType] = useState<'audio' | 'image' | 'video'>('audio');
+  const [exportClient, setExportClient] = useState('');
+  const [exportFormat, setExportFormat] = useState<string>('json');
+  const [exporting, setExporting] = useState(false);
+  const [dateRange, setDateRange] = useState<'all' | 'last7' | 'last30' | 'custom'>('all');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('all');
+  // const [showPassword, setShowPassword] = useState(false);
+
   // Debug logs
   console.log('Mevcut Kullanici:', user);
   console.log('Admin Page - Role:', user?.role);
@@ -85,37 +117,6 @@ export default function AdminPanelScreen() {
       </View>
     );
   }
-
-  const [dashboardStats, setDashboardStats] = useState({
-    totalUsers: 0,
-    activeTasks: 0,
-    activeTasksTypeBreakdown: {} as Record<string, number>,
-    pendingPayments: 0,
-    monthlyRevenue: 0,
-    completionRate: 0,
-    completedTasks: 0,
-  });
-  const [statsLoading, setStatsLoading] = useState(true);
-  
-  // Modal states - removed Add New Annotator modal (moved to users page)
-  // const [showModal, setShowModal] = useState(false);
-  // const [formData, setFormData] = useState({
-  //   username: '',
-  //   email: '',
-  //   password: '',
-  //   languages: [] as string[],
-  // });
-  
-  // Export states
-  const [exportTaskType, setExportTaskType] = useState<'audio' | 'image' | 'video'>('audio');
-  const [exportClient, setExportClient] = useState('');
-  const [exportFormat, setExportFormat] = useState<string>('json');
-  const [exporting, setExporting] = useState(false);
-  const [dateRange, setDateRange] = useState<'all' | 'last7' | 'last30' | 'custom'>('all');
-  const [customStartDate, setCustomStartDate] = useState('');
-  const [customEndDate, setCustomEndDate] = useState('');
-  const [selectedLanguage, setSelectedLanguage] = useState<string>('all');
-  // const [showPassword, setShowPassword] = useState(false);
   
   // Language options for export filter
   const languageOptions = [
@@ -163,7 +164,7 @@ export default function AdminPanelScreen() {
 
   const fetchDashboardStats = useCallback(async () => {
     console.log('FETCH START: fetchDashboardStats');
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: NodeJS.Timeout | null = null;
     
     try {
       setStatsLoading(true);
@@ -229,7 +230,7 @@ export default function AdminPanelScreen() {
         .eq('status', 'completed') // Simple .eq() instead of .in()
         .eq('is_pool_task', true);
       
-      const completionRate = totalTasks && totalTasks > 0 
+      const completionRate = totalTasks && totalTasks > 0 && completedTasksCount
         ? Math.round((completedTasksCount / totalTasks) * 100)
         : 0;
       
@@ -287,7 +288,7 @@ export default function AdminPanelScreen() {
       let query = supabase.from('tasks').select(cols).eq('status', 'completed');
 
       // Filter by task type
-      if (exportTaskType !== 'all') {
+      if (exportTaskType) {
         query = query.eq('type', exportTaskType);
       }
       

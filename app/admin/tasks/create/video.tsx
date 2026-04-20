@@ -8,6 +8,7 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -32,6 +33,7 @@ export default function CreateVideoTaskScreen() {
 
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isCreating, setIsCreating] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [sourceType, setSourceType] = useState<'local' | 'remote'>('local');
@@ -83,63 +85,68 @@ export default function CreateVideoTaskScreen() {
   };
 
   const handleCreateTask = async () => {
-  // 1. ADIM: Temel kontroller
-  if (!taskData.title || !taskData.company_name) {
-    Alert.alert("Eksik Bilgi", "Lütfen Şirket Adı ve Başlığı doldurun!");
-    return;
-  }
-
-  // 2. ADIM: Video kaynağı kontrolü - Opsiyonel ama en az biri gerekli
-  if (!remoteUrl && !selectedFile) {
-    Alert.alert("Eksik Video Kaynağı", "Lütfen bir video dosyası yükleyin veya bir URL girin!");
-    return;
-  }
-
-  try {
-    console.log("📡 Video görevi oluşturuluyor...");
+    setIsCreating(true);
+    try {
+    console.log("Butona tıklandı!");
+    
+    // Validation - sadece title kontrolü
+    if (!taskData.title) {
+      Alert.alert("Eksik Bilgi", "Lütfen Başlığı doldurun!");
+      return;
+    }
     
     let videoUrl = '';
     
-    // 3. ADIM: Video kaynağı işleme
+    // Video kayna\u011f\u0131 i\u015fleme
     if (selectedFile) {
-      // Dosya yüklendi - Supabase Storage'a yükle
-      console.log("📁 Dosya yükleniyor...");
-      // TODO: Supabase Storage upload implementasyonu
-      // Şimdilik dosya adını kullanıyoruz
       videoUrl = `https://storage.supabase.co/videos/${selectedFile.name}`;
     } else if (remoteUrl) {
-      // Sadece URL girildi
-      console.log("🔗 URL kullanılıyor...");
       videoUrl = remoteUrl;
     }
-
-    // 4. ADIM: Veritabanına kayıt
+    
+    // Validation - fiyat kontrolü
+    if (!taskData.price || taskData.price <= 0) {
+      Alert.alert("Eksik Bilgi", "L\u00fctfen ge\u00e7erli bir fiyat girin!");
+      return;
+    }
+    
+    // Supabase kay\u0131t i\u015flemi - en sade hali
     const { data, error } = await supabase
       .from('tasks')
       .insert([{
         title: taskData.title,
-        company_name: taskData.company_name, // SQL'de açtığımız kolon
+        description: taskData.description || '',
         type: 'video',
-        annotation_type: taskData.annotationType, // SQL'de TEXT olarak var
-        status: 'pending',
-        assigned_to: null, // ✅ Atanmamış olarak başla
-        video_url: videoUrl // ✅ Video URL'sini kaydet
+        video_url: videoUrl || null,
+        price: Number(taskData.price)
       }])
       .select();
-
+      
     if (error) {
-      console.log("❌ VERİTABANI HATASI:", error);
-      alert('DB HATASI: ' + error.message); // Hata kodunu ekrana bas
+      console.error("DB Hatası:", error);
+      Alert.alert('Error', error.message || 'Something went wrong while creating the task');
       return;
     }
-
-    console.log("✅ BAŞARILI:", data);
-    Alert.alert('Success', 'Task created successfully!'); // Success mesajı
-    router.push('/admin'); // Admin ana sayfasına yönlendir
-
+    
+    console.log("Başarılı:", data);
+    console.log("Task created successfully!");
+    
+    // Platform'a özel uyarı göster
+    if (Platform.OS === 'web') {
+      window.alert('Success: Task created successfully!');
+    } else {
+      Alert.alert('Success', 'Task created successfully!');
+    }
+    
+    // Direkt yönlendirme
+    router.push('/admin');
+    
   } catch (err) {
-    console.log("💥 CRITICAL CRASH:", err);
-    alert('SİSTEM HATASI: ' + (err as Error).message);
+    console.error("Hata:", err);
+    console.log('CRITICAL ERROR:', err);
+    Alert.alert('Error', (err as Error).message || 'Something went wrong while creating the task');
+  } finally {
+    setIsCreating(false);
   }
 };
 
@@ -344,8 +351,14 @@ export default function CreateVideoTaskScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.saveButton} onPress={handleCreateTask}>
-          <Text style={styles.saveButtonText}>Create Task</Text>
+        <TouchableOpacity 
+          style={styles.saveButton} 
+          onPress={handleCreateTask}
+          disabled={isCreating}
+        >
+          <Text style={styles.saveButtonText}>
+            {isCreating ? 'Creating...' : 'Create Task'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -576,3 +589,13 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 });
+
+
+
+
+
+
+
+
+
+

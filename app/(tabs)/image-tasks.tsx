@@ -134,7 +134,12 @@ export default function ImageTasksScreen() {
       const allImageTasks = [...pool, ...assigned];
       console.log('[image-tasks] DEBUG: final imageTasks count:', allImageTasks.length);
       
-      setImageTasks(allImageTasks);
+      // DİL BAZLI FİLTRELEME
+      const filteredTasks = allImageTasks.filter(task => 
+        (user as any)?.languages?.includes(task.language) || false
+      );
+      
+      setImageTasks(filteredTasks);
     } finally {
       setLoading(false);
     }
@@ -186,20 +191,25 @@ export default function ImageTasksScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Standart Geri Butonu */}
       <View style={styles.headerRow}>
-        <TouchableOpacity style={styles.backToSelection} onPress={() => router.setParams({ type: '' })}>
-          <Ionicons name="arrow-back" size={18} color="#f472b6" />
-          <Text style={styles.backToSelectionText}>{t('tasks.pageTitle')}</Text>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={20} color="#3b82f6" />
         </TouchableOpacity>
       </View>
+
       <Text style={styles.pageTitle}>{t('tasks.pageTitleImage')}</Text>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#f472b6" style={{ marginTop: 40 }} />
+        <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 40 }} />
       ) : imageTasks.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Ionicons name="image-outline" size={48} color="#64748b" style={{ marginBottom: 12 }} />
-          <Text style={styles.emptyText}>{t('tasks.emptyImage')}</Text>
+        <View style={styles.emptyContainer}>
+          <Ionicons name="image-outline" size={80} color="#475569" style={styles.emptyIcon} />
+          <Text style={styles.emptyTitle}>No Image Tasks</Text>
+          <Text style={styles.emptyDescription}>Kendi dilinizde görsel görev bulunamadı.</Text>
+          <TouchableOpacity style={styles.refreshButton} onPress={() => fetchImageTasks(true)}>
+            <Text style={styles.refreshButtonText}>Refresh</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -218,18 +228,22 @@ export default function ImageTasksScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a', padding: 16 },
+  container: { flex: 1, backgroundColor: '#0f172a', padding: 20 },
   headerRow: { marginBottom: 8 },
-  backToSelection: {
+  backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 0,
+    justifyContent: 'flex-start',
+    padding: 10,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+    marginLeft: 20,
   },
-  backToSelectionText: { fontSize: 14, color: '#f472b6', fontWeight: '600' },
   pageTitle: { fontSize: 22, fontWeight: '700', color: '#f8fafc', marginBottom: 32 },
-  listContainer: { gap: 16 },
+  listContainer: { gap: 15 },
   columnWrapper: { justifyContent: 'space-between' },
   card: {
     flex: 1,
@@ -252,7 +266,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(245, 114, 182, 0.15)',
+    backgroundColor: 'rgba(244, 114, 182, 0.15)',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
@@ -262,15 +276,38 @@ const styles = StyleSheet.create({
     color: '#f472b6',
     fontWeight: '600',
   },
-  emptyBox: {
+  emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 60,
   },
-  emptyText: {
-    color: '#94a3b8',
+  emptyIcon: {
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#f8fafc',
+    marginTop: 20,
     textAlign: 'center',
+  },
+  emptyDescription: {
     fontSize: 16,
+    color: '#94a3b8',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  refreshButton: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 24,
+  },
+  refreshButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

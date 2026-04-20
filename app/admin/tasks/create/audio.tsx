@@ -33,8 +33,15 @@ export default function CreateAudioTaskScreen() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
-  const [sourceType, setSourceType] = useState<'local' | 'remote'>('local');
+  const [sourceType, setSourceType] = useState<'local' | 'remote' | 'record'>('local');
   const [remoteUrl, setRemoteUrl] = useState('');
+  
+  // Audio recording states
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioURL, setAudioURL] = useState('');
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
 
   const handleBack = () => {
     router.back();
@@ -44,8 +51,6 @@ export default function CreateAudioTaskScreen() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: [
-          'audio/*',
-          'audio/mpeg',
           'audio/mp3',
           'audio/wav',
           'audio/m4a',
@@ -81,52 +86,125 @@ export default function CreateAudioTaskScreen() {
     }, 200);
   };
 
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      setMediaRecorder(recorder);
+      const audioChunks: Blob[] = [];
+      
+      recorder.ondataavailable = (event) => {
+        audioChunks.push(event.data);
+      };
+      
+      recorder.onstop = () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+        const audioURL = URL.createObjectURL(audioBlob);
+        setAudioURL(audioURL);
+        setRecordedBlob(audioBlob);
+        setIsRecording(false);
+        setMediaRecorder(null);
+        
+        console.log('Audio recorded successfully:', audioURL);
+        Alert.alert('Success', 'Audio recorded successfully!');
+      };
+      
+      recorder.start();
+      setIsRecording(true);
+      
+      console.log('Recording started...');
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      Alert.alert('Error', 'Failed to access microphone');
+    }
+  };
+  
+  const stopRecording = () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+  };
+
   const handleCreateTask = async () => {
-    // 1. ADIM: Kontrol
+    console.log("--- TASK OLUSTURMA BASLATILDI ---", taskData);
+    
+    // Validation
     if (!taskData.title || !taskData.company_name) {
-      Alert.alert("Eksik Bilgi", "Lütfen Şirket Adı ve Başlığı doldurun!");
+      console.log("❌ Validation Hatası:", { title: taskData.title, company_name: taskData.company_name });
+      alert("Lütfen Company Name ve Title doldurun!");
       return;
     }
 
-    try {
-      console.log("📡 Supabase'e veri gönderiliyor...");
+    // Check if audio source is provided
+    const hasAudioSource = selectedFile || remoteUrl || audioURL;
+    if (!hasAudioSource) {
+      console.log("❌ Audio Source Hatası:", { selectedFile, remoteUrl, audioURL });
+      alert("Lütfen bir ses kayna seçin (Dosya, URL veya Kaydet)!");
+      return;
+    }
 
-      // MINIMAL VERİ PAKETİ - Sadece kesin kolonlar
-      const { data, error } = await supabase
-        .from('tasks')
-        .insert([{
-          title: taskData.title,
-          company_name: taskData.company_name, // SQL'de açtığımız kolon
-          type: 'audio',
-          status: 'pending',
-          assigned_to: null // ✅ Atanmamış olarak başla
-        }])
-        .select();
+    console.log("✅ Validation Geçti, Creating başlıyor...");
+    setIsCreating(true);
+
+    try {
+      // Audio URL'i belirle
+      let audioUrlToSave = '';
+      if (selectedFile) {
+        audioUrlToSave = selectedFile.uri || selectedFile.name || 'local_file';
+      } else if (remoteUrl) {
+        audioUrlToSave = remoteUrl;
+      } else if (audioURL) {
+        audioUrlToSave = audioURL;
+      }
+
+      console.log("📊 Gönderilecek Veri:", {
+        title: taskData.title,
+        company_name: taskData.company_name,
+        description: taskData.description,
+        language: taskData.language,
+        price: taskData.price,
+        audio_url: audioUrlToSave
+      });
+
+      const { data, error } = await supabase.from('tasks').insert([{
+        title: taskData.title,
+        company_name: taskData.company_name,
+        description: taskData.description,
+        language: taskData.language,
+        price: taskData.price,
+        audio_url: audioUrlToSave,
+        category: 'audio'
+      }]).select();
 
       if (error) {
-        console.log("❌ VERİTABANI HATASI:", error);
-        alert('DB HATASI: ' + error.message); // Hata kodunu ekrana bas
+        console.error("--- DB HATASI ---", error);
+        alert("Veritabanı Hatası: " + error.message);
         return;
       }
 
-      console.log("✅ BAŞARILI:", data);
-      Alert.alert('Success', 'Task created successfully!'); // Success mesajı
-      router.push('/admin'); // Admin ana sayfasına yönlendir
+      console.log("--- TASK BASARIYLA OLUSTURULDU ---", data);
+      Alert.alert('Success', 'Task Created');
+      
+      // Admin paneline yönlendir
+      router.push('/admin');
 
-    } catch (err) {
-      console.log("💥 CRITICAL CRASH:", err);
-      alert('SİSTEM HATASI: ' + (err as Error).message);
+    } catch (err: any) {
+      console.error("--- KRITIK HATA ---", err);
+      alert("Sistem Hatası: " + (err.message || 'Bilinmeyen hata'));
+    } finally {
+      console.log("--- CREATING ISLEMI BITTI ---");
+      setIsCreating(false);
     }
   };
 
   return (
     <View style={styles.container}>
-      {/* Small Back Button */}
-      <View style={styles.backButtonContainer}>
+      {/* Header */}
+      <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-          <Ionicons name="arrow-back" size={16} color="#3b82f6" />
-          <Text style={styles.backButtonText}>Back</Text>
+          <Ionicons name="arrow-back" size={20} color="#ffffff" />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>Create Audio Task</Text>
       </View>
 
       {/* Main Content */}
@@ -161,11 +239,27 @@ export default function CreateAudioTaskScreen() {
                 ]}
                 value={taskData.title}
                 onChangeText={(text) => setTaskData(prev => ({ ...prev, title: text }))}
-                placeholder="Enter task title"
+                placeholder="Enter task title (e.g. Medical Report Transcription)"
                 placeholderTextColor="#9ca3af"
                 onFocus={() => setFocusedInput('title')}
                 onBlur={() => setFocusedInput(null)}
               />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Language</Text>
+              <TouchableOpacity 
+                style={styles.languageSelector}
+                onPress={() => {
+                  const languages = ['tr', 'en', 'ku', 'az'];
+                  const currentIndex = languages.indexOf(taskData.language);
+                  const nextIndex = (currentIndex + 1) % languages.length;
+                  setTaskData(prev => ({ ...prev, language: languages[nextIndex] }));
+                }}
+              >
+                <Text style={styles.languageText}>{taskData.language.toUpperCase()}</Text>
+                <Ionicons name="chevron-down" size={16} color="#64748b" />
+              </TouchableOpacity>
             </View>
 
             <View style={styles.formGroup}>
@@ -177,26 +271,10 @@ export default function CreateAudioTaskScreen() {
                 ]}
                 value={taskData.price.toString()}
                 onChangeText={(text) => setTaskData(prev => ({ ...prev, price: parseFloat(text) || 0 }))}
-                placeholder="Enter task price"
+                placeholder="0.00"
                 placeholderTextColor="#9ca3af"
                 keyboardType="numeric"
                 onFocus={() => setFocusedInput('price')}
-                onBlur={() => setFocusedInput(null)}
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Language</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  focusedInput === 'language' && styles.inputFocused
-                ]}
-                value={taskData.language}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, language: text }))}
-                placeholder="Enter language code (e.g., tr, en)"
-                placeholderTextColor="#9ca3af"
-                onFocus={() => setFocusedInput('language')}
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
@@ -223,9 +301,9 @@ export default function CreateAudioTaskScreen() {
               />
             </View>
 
-            {/* File Upload Section */}
+            {/* Audio Source Section */}
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Audio Source</Text>
+              <Text style={styles.label}>Audio Source (Dosya veya URL)</Text>
               
               {/* Source Type Selector */}
               <View style={styles.sourceSelector}>
@@ -247,6 +325,15 @@ export default function CreateAudioTaskScreen() {
                     Remote URL
                   </Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.sourceButton, sourceType === 'record' && styles.sourceButtonActive]}
+                  onPress={() => setSourceType('record')}
+                >
+                  <Ionicons name="mic" size={16} color={sourceType === 'record' ? '#fff' : '#9ca3af'} />
+                  <Text style={[styles.sourceButtonText, sourceType === 'record' && styles.sourceButtonTextActive]}>
+                    Record Audio
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               {/* Dynamic Content Based on Source Type */}
@@ -266,7 +353,7 @@ export default function CreateAudioTaskScreen() {
                     {selectedFile ? selectedFile.name : 'Click to Upload Audio File'}
                   </Text>
                 </TouchableOpacity>
-              ) : (
+              ) : sourceType === 'remote' ? (
                 <View style={styles.urlInputContainer}>
                   <Ionicons name="link" size={16} color="#9ca3af" style={styles.urlInputIcon} />
                   <TextInput
@@ -277,23 +364,40 @@ export default function CreateAudioTaskScreen() {
                     ]}
                     value={remoteUrl}
                     onChangeText={setRemoteUrl}
-                    placeholder="Paste Audio URL"
+                    placeholder="Enter audio URL (e.g. https://example.com/audio.mp3)"
                     placeholderTextColor="#9ca3af"
                     onFocus={() => setFocusedInput('url')}
                     onBlur={() => setFocusedInput(null)}
                   />
                 </View>
-              )}
-
-              {selectedFile && sourceType === 'local' && (
-                <View style={styles.fileInfo}>
-                  <Text style={styles.fileName}>{selectedFile.name}</Text>
-                  <Text style={styles.fileSize}>
-                    {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-                  </Text>
+              ) : (
+                <View style={styles.recordContainer}>
+                  {/* Recording Button */}
+                  <TouchableOpacity 
+                    style={[styles.recordButton, isRecording && styles.recordButtonRecording]} 
+                    onPress={isRecording ? stopRecording : startRecording}
+                  >
+                    <Ionicons 
+                      name={isRecording ? 'stop' : 'mic'} 
+                      size={20} 
+                      color={isRecording ? '#ef4444' : '#10b981'} 
+                    />
+                    <Text style={styles.recordButtonText}>
+                      {isRecording ? 'Stop Recording' : 'Record Audio'}
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  {/* Recorded Audio Preview */}
+                  {audioURL && (
+                    <View style={styles.audioPreview}>
+                      <Text style={styles.audioPreviewText}>Recorded Audio</Text>
+                      <Text style={styles.audioURL}>{audioURL}</Text>
+                    </View>
+                  )}
                 </View>
               )}
 
+              {/* Upload Progress */}
               {isUploading && (
                 <View style={styles.progressContainer}>
                   <View style={styles.progressBar}>
@@ -308,6 +412,7 @@ export default function CreateAudioTaskScreen() {
                 </View>
               )}
 
+              {/* Upload Action Button */}
               {selectedFile && !isUploading && (
                 <TouchableOpacity 
                   style={styles.uploadActionButton} 
@@ -320,8 +425,20 @@ export default function CreateAudioTaskScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.saveButton} onPress={handleCreateTask}>
-          <Text style={styles.saveButtonText}>Create Task</Text>
+        {/* Save Button */}
+        <TouchableOpacity 
+          style={[styles.saveButton, isCreating && styles.saveButtonDisabled]} 
+          onPress={handleCreateTask}
+          disabled={isCreating}
+        >
+          {isCreating ? (
+            <View style={styles.creatingContainer}>
+              <ActivityIndicator size="small" color="#ffffff" />
+              <Text style={styles.saveButtonText}>Creating...</Text>
+            </View>
+          ) : (
+            <Text style={styles.saveButtonText}>Create Task</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -333,52 +450,42 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0f172a',
   },
-  
-  // Small Back Button
-  backButtonContainer: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    zIndex: 100,
-  },
-  backButton: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    backgroundColor: 'transparent',
-    gap: 6,
+    paddingTop: 60,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    backgroundColor: '#1e293b',
   },
-  backButtonText: {
-    fontSize: 14,
-    color: '#3b82f6', // ✅ Mavi renge sabitlendi
-    fontWeight: '500',
+  backButton: {
+    marginRight: 16,
   },
-  
-  // Content
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
   content: {
     flex: 1,
-    padding: 20,
-    paddingTop: 60, // Space for the floating back button
+    paddingHorizontal: 20,
+    paddingTop: 20,
   },
   title: {
     fontSize: 24,
     fontWeight: '700',
     color: '#f8fafc',
-    marginBottom: 32,
-    textAlign: 'center',
+    marginBottom: 20,
   },
   form: {
     flexDirection: 'row',
-    gap: 24,
-    marginBottom: 24,
+    gap: 20,
   },
   leftColumn: {
     flex: 1,
   },
   rightColumn: {
-    flex: 1.5,
+    flex: 1,
   },
   formGroup: {
     marginBottom: 20,
@@ -386,169 +493,193 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: '#e2e8f0',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#1f2937',
     borderWidth: 1,
-    borderColor: '#30363d',
-    borderRadius: 12,
-    padding: 14,
+    borderColor: '#334155',
+    borderRadius: 8,
+    padding: 12,
     fontSize: 16,
-    color: '#ffffff',
+    color: '#f1f5f9',
+    backgroundColor: '#1e293b',
   },
   inputFocused: {
-    borderColor: '#10b981',
-    borderWidth: 2,
+    borderColor: '#3b82f6',
   },
   textArea: {
     height: 120,
     textAlignVertical: 'top',
   },
-  
-  // File Upload
-  uploadButton: {
+  languageSelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1f2937',
-    borderWidth: 2,
-    borderColor: '#30363d',
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    padding: 20,
-    gap: 12,
-  },
-  uploadButtonFocused: {
-    borderColor: '#facc15',
-    borderWidth: 2,
-  },
-  uploadButtonText: {
-    fontSize: 16,
-    color: '#ffffff',
-    fontWeight: '500',
-    flex: 1,
-    textAlign: 'center',
-  },
-  fileInfo: {
-    marginTop: 12,
-    padding: 12,
-    backgroundColor: '#1f2937',
-    borderRadius: 8,
+    justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: '#30363d',
-  },
-  fileName: {
-    fontSize: 14,
-    color: '#ffffff',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  fileSize: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  progressContainer: {
-    marginTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  progressBar: {
-    flex: 1,
-    height: 8,
-    backgroundColor: '#30363d',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#10b981',
-    borderRadius: 4,
-  },
-  progressText: {
-    fontSize: 12,
-    color: '#f8fafc',
-    fontWeight: '600',
-    minWidth: 40,
-  },
-  uploadActionButton: {
-    backgroundColor: '#facc15',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    borderColor: '#334155',
     borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#1e293b',
   },
-  uploadActionText: {
+  languageText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#000000',
+    color: '#f1f5f9',
+    fontWeight: '500',
   },
-  
-  // Source Selector Styles
   sourceSelector: {
     flexDirection: 'row',
-    backgroundColor: '#1f2937',
-    borderRadius: 8,
-    padding: 4,
-    marginBottom: 12,
+    marginBottom: 16,
   },
   sourceButton: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    flex: 1,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 6,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
     gap: 6,
   },
   sourceButtonActive: {
     backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
   },
   sourceButtonText: {
     fontSize: 12,
     color: '#9ca3af',
-    fontWeight: '600',
+    fontWeight: '500',
   },
   sourceButtonTextActive: {
-    color: '#fff',
+    color: '#ffffff',
   },
-  
-  // URL Input Styles
+  uploadButton: {
+    borderWidth: 2,
+    borderColor: '#334155',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    padding: 20,
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+  },
+  uploadButtonFocused: {
+    borderColor: '#3b82f6',
+  },
+  uploadButtonText: {
+    color: '#f1f5f9',
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 8,
+  },
   urlInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1f2937',
+    backgroundColor: '#1e293b',
     borderWidth: 1,
-    borderColor: '#30363d',
+    borderColor: '#334155',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 12,
   },
   urlInputIcon: {
     marginRight: 8,
   },
   urlInput: {
     flex: 1,
-    color: '#f8fafc',
-    fontSize: 14,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
   },
-  
-  // Save Button
-  saveButton: {
-    backgroundColor: '#10b981',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
+  recordContainer: {
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    padding: 16,
+  },
+  recordButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 32,
+    justifyContent: 'center',
+    backgroundColor: '#10b981',
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
   },
-  saveButtonText: {
+  recordButtonRecording: {
+    backgroundColor: '#ef4444',
+  },
+  recordButtonText: {
+    color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  audioPreview: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#0f172a',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  audioPreviewText: {
+    fontSize: 14,
+    color: '#e2e8f0',
+    marginBottom: 4,
+  },
+  audioURL: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  progressContainer: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  progressBar: {
+    height: 4,
+    backgroundColor: '#334155',
+    borderRadius: 2,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#3b82f6',
+  },
+  progressText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#64748b',
+  },
+  uploadActionButton: {
+    backgroundColor: '#3b82f6',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  uploadActionText: {
     color: '#ffffff',
+    fontWeight: '600',
+  },
+  saveButton: {
+    backgroundColor: '#10b981',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  saveButtonDisabled: {
+    backgroundColor: '#64748b',
+  },
+  creatingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  saveButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Platform,
   useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, usePathname } from 'expo-router';
@@ -13,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnreadMessagesCount } from '@/hooks/useUnreadMessagesCount';
+import { supabase } from '@/lib/supabase';
 
 const NAV_ITEMS = [
   { href: '/tasks', labelKey: 'nav.tasks' },
@@ -47,20 +49,54 @@ export default function TopNavbar() {
     setLangDropdownOpen(false);
   };
 
+  // Fallback admin check - force show Management button for specific email
+  const isFallbackAdmin = user?.email === 'yakup.hano@deepannotation.ai';
+  
+  // Show loading state while admin status is being determined
+  if (isAdmin === null) {
+    return (
+      <View style={[styles.container, Platform.OS === 'web' && styles.containerWeb, { paddingTop: insets.top + 12 }]}>
+        <View style={styles.inner}>
+          <View style={styles.brand}>
+            <Text style={styles.brandText}>Deep Studio</Text>
+          </View>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color="#3b82f6" />
+            <Text style={styles.loadingText}>Checking access...</Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+  
+  const showAdminLink = isAdmin || isFallbackAdmin;
+  
   const navLinks = [
     ...NAV_ITEMS,
-    ...(isAdmin ? [{ href: '/admin', labelKey: 'nav.management', isAdminLink: true }] : []),
+    ...(showAdminLink ? [{ href: '/admin', labelKey: 'nav.management', isAdminLink: true }] : []),
   ].map((x) => ({ ...x, isAdminLink: (x as any).isAdminLink ?? false }));
 
   const handleLogout = async () => {
+    console.log('Emergency logout initiated');
     try {
-      await signOut();
+      await supabase.auth.signOut();
+      
+      // Clear everything and hard redirect
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        window.location.href = '/';
+        localStorage.clear();
+        window.location.href = '/login';
       } else {
-        router.replace('/');
+        router.replace('/login');
       }
-    } catch (_) {}
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Force redirect anyway
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.location.href = '/login';
+      } else {
+        router.replace('/login');
+      }
+    }
   };
 
   const goHome = () => {
@@ -235,6 +271,15 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.5,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    color: '#94a3b8',
+    fontSize: 14,
   },
   navRow: {
     flex: 1,

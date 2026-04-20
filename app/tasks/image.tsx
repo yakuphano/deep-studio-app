@@ -156,20 +156,21 @@ export default function ImageTasksScreen() {
   );
 
   const handleBack = useCallback(() => {
-    if (Platform.OS === 'web') {
-      router.back();
-    } else {
-      router.replace('/tasks');
-    }
+    router.push('/tasks'); // HER ZAMAN ÇALIŞIR
   }, []);
 
   return (
     <View style={styles.container}>
-      {/* Custom Back Button */}
-      <TouchableOpacity style={styles.backToSelection} onPress={handleBack}>
-        <Ionicons name="arrow-back" size={20} color="#3b82f6" />
-        <Text style={styles.backToSelectionText}>Back</Text>
-      </TouchableOpacity>
+      {/* Header with Back Button Only */}
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={{flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e293b', padding: 8, borderRadius: 8}}
+          onPress={handleBack}
+        >
+          <Ionicons name="arrow-back" size={20} color="#3b82f6" />
+          <Text style={{color: '#3b82f6', marginLeft: 5, fontWeight: 'bold'}}>Back</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Content */}
       {loading ? (
@@ -215,21 +216,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
     paddingTop: 0, // ✅ Sıfırlandı
   },
-  backToSelection: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    padding: 8, // ✅ Azaltıldı: 10 -> 8
-    borderRadius: 8,
-    backgroundColor: '#1e293b',
-    marginHorizontal: 20,
-    marginBottom: 4, // ✅ Azaltıldı: 8 -> 4
+    justifyContent: 'flex-start',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginBottom: 4,
   },
-  backToSelectionText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#3b82f6', // ✅ Mavi yazı
-    marginLeft: 8,
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#1a1d1e', // ✅ Koyu gri arka plan
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ffffff',
   },
   loadingContainer: {
     flex: 1,
@@ -385,6 +392,16 @@ const styles = StyleSheet.create({
   cardBody: {
     padding: 6, // ✅ Azaltıldı: 8 -> 6
   },
+<<<<<<< HEAD
+=======
+  metadataRowOld: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between', // ✅ Yan yana diz
+    marginBottom: 8,
+    gap: 8, // ✅ Aralık eklendi
+  },
+>>>>>>> 5bc395d2fa53874145605cd39c5b8bee64a400be
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -393,7 +410,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 6,
   },
-  statusText: {
+  statusTextOld: {
     fontSize: 10,
     fontWeight: '500',
     color: '#fbbf24',

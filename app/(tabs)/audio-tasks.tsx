@@ -152,8 +152,7 @@ export default function AudioTasksScreen() {
       const { data: poolData, error: poolErr } = await supabase
         .from('tasks')
         .select(cols)
-        .eq('is_pool_task', true)
-        .is('assigned_to', null)
+        .is('assigned_to', null) // Sadece atanmamış görevler
         .eq('status', 'pending')
         .or('category.eq.transcription,category.eq.audio,type.eq.transcription,type.eq.audio,audio_url.not.is.null')
         .order('created_at', { ascending: false });
@@ -164,7 +163,13 @@ export default function AudioTasksScreen() {
       const allAudioTasks = [...pool, ...assigned];
       console.log('[audio-tasks] DEBUG: final audioTasks count:', allAudioTasks.length);
       
-      setAudioTasks(allAudioTasks);
+      // GEÇİCİ OLARAK TÜM GÖREVLERİ GÖSTER - FİLTRELEME DEVRE DIŞI
+      const filteredTasks = allAudioTasks;
+      
+      console.log("🔍 MEVCUT KULLANICI DİLLERİ:", (user as any)?.languages || ['tr', 'en']);
+      console.log("📊 VERİTABANINDAN GELEN HAM GÖREVLER:", allAudioTasks);
+      console.log("✅ FİLTRELENMİŞ GÖREV SAYISI (TÜMÜ):", filteredTasks.length);
+      setAudioTasks(filteredTasks);
     } finally {
       setLoading(false);
     }
@@ -216,20 +221,25 @@ export default function AudioTasksScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Standart Geri Butonu */}
       <View style={styles.headerRow}>
-        <TouchableOpacity style={styles.backToSelection} onPress={() => router.setParams({ type: '' })}>
-          <Ionicons name="arrow-back" size={18} color="#3b82f6" />
-          <Text style={styles.backToSelectionText}>{t('tasks.pageTitle')}</Text>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={20} color="#3b82f6" />
         </TouchableOpacity>
       </View>
+
       <Text style={styles.pageTitle}>{t('tasks.pageTitleTranscription')}</Text>
 
       {loading ? (
         <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 40 }} />
       ) : audioTasks.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Ionicons name="mic-outline" size={48} color="#64748b" style={{ marginBottom: 12 }} />
-          <Text style={styles.emptyText}>{t('tasks.emptyTranscription')}</Text>
+        <View style={styles.emptyContainer}>
+          <Ionicons name="mic-outline" size={80} color="#475569" style={styles.emptyIcon} />
+          <Text style={styles.emptyTitle}>No Audio Tasks</Text>
+          <Text style={styles.emptyDescription}>Kendi dilinizde sesli görev bulunamadı.</Text>
+          <TouchableOpacity style={styles.refreshButton} onPress={() => fetchAudioTasks(true)}>
+            <Text style={styles.refreshButtonText}>Refresh</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -248,18 +258,22 @@ export default function AudioTasksScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a', padding: 16 },
+  container: { flex: 1, backgroundColor: '#0f172a', padding: 20 },
   headerRow: { marginBottom: 8 },
-  backToSelection: {
+  backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 0,
+    justifyContent: 'flex-start',
+    padding: 10,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+    marginLeft: 20,
   },
-  backToSelectionText: { fontSize: 14, color: '#3b82f6', fontWeight: '600' },
   pageTitle: { fontSize: 22, fontWeight: '700', color: '#f8fafc', marginBottom: 32 },
-  listContainer: { gap: 16 },
+  listContainer: { gap: 15 },
   columnWrapper: { justifyContent: 'space-between' },
   card: {
     flex: 1,
@@ -294,15 +308,38 @@ const styles = StyleSheet.create({
     color: '#3b82f6',
     fontWeight: '600',
   },
-  emptyBox: {
+  emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 60,
   },
-  emptyText: {
-    color: '#94a3b8',
+  emptyIcon: {
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#f8fafc',
+    marginTop: 20,
     textAlign: 'center',
+  },
+  emptyDescription: {
     fontSize: 16,
+    color: '#94a3b8',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  refreshButton: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 24,
+  },
+  refreshButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

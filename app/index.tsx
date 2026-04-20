@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,15 +8,23 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
   Modal,
   Pressable,
 } from 'react-native';
+import { useRouter, useRootNavigationState } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function LoginScreen() {
   const { t } = useTranslation();
+  const navigation = useRouter();
+  const { user } = useAuth();
+  const rootNavigationState = useRootNavigationState();
+  const navigatorReady = rootNavigationState?.key != null;
+  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -26,6 +34,17 @@ export default function LoginScreen() {
   const [resetEmail, setResetEmail] = useState('');
   const [resetSending, setResetSending] = useState(false);
   const [resetEmailFocused, setResetEmailFocused] = useState(false);
+
+  // KRITIK: Authentication kontrolü - donma sorununu engelle
+  useEffect(() => {
+    if (!navigatorReady) return;
+    
+    if (user) {
+      // Kullanıcı giriş yapmışsa, ana sayfaya yönlendir
+      navigation.replace('/');
+      return;
+    }
+  }, [navigatorReady, user]);
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
@@ -116,7 +135,7 @@ export default function LoginScreen() {
         onRequestClose={() => setForgotModalVisible(false)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => setForgotModalVisible(false)}>
-          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={styles.modalContent} onPress={(e: any) => e.stopPropagation()}>
             <Text style={styles.modalTitle}>{t('login.forgotPasswordTitle')}</Text>
             <Text style={styles.modalHint}>{t('login.forgotPasswordHint')}</Text>
             <View style={[styles.modalInputWrap, resetEmailFocused && styles.inputWrapFocused]}>

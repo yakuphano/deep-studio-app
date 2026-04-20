@@ -23,14 +23,18 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (!user?.id) return;
+    console.log('Loading user profile for:', user.id);
     supabase
       .from('profiles')
-      .select('languages_expertise')
+      .select('languages_expertise, languages') // Check both columns
       .eq('id', user.id)
       .maybeSingle()
       .then(({ data }) => {
-        if (data?.languages_expertise) {
-          setLanguages(Array.isArray(data.languages_expertise) ? data.languages_expertise : []);
+        console.log('Profile data:', data);
+        // Use languages column first, fallback to languages_expertise
+        const languagesData = data?.languages || data?.languages_expertise;
+        if (languagesData) {
+          setLanguages(Array.isArray(languagesData) ? languagesData : []);
         }
       });
   }, [user?.id]);
@@ -42,18 +46,71 @@ export default function ProfileScreen() {
   };
 
   const save = async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      console.log('No user ID found, cannot save');
+      return;
+    }
+    console.log('Saving profile for user:', user.id, 'with languages:', languages);
+    console.log('Languages array length:', languages.length);
+    console.log('Languages content:', JSON.stringify(languages));
+    
     setSaving(true);
+    
     try {
-      const { error } = await supabase
+      // First check if profile exists
+      console.log('Checking if profile exists...');
+      const { data: existingProfile, error: checkError } = await supabase
         .from('profiles')
-        .update({ languages_expertise: languages })
-        .eq('id', user.id);
-      if (error) throw error;
-      Alert.alert(t('taskDetail.successTitle'), t('profile.save') + ' ✓');
+        .select('id, languages, languages_expertise')
+        .eq('id', user.id)
+        .single();
+      
+      console.log('Existing profile check:', { existingProfile, checkError });
+      
+      if (checkError && checkError.code !== 'PGRST116') {
+        console.error('Error checking profile:', checkError);
+        throw checkError;
+      }
+      
+      // Update both languages column and languages_expertise for compatibility
+      console.log('Updating profile...');
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ 
+          languages: languages,
+          languages_expertise: languages // Keep both for compatibility
+        })
+        .eq('id', user.id)
+        .select()
+        .single();
+      
+      console.log('Save result:', { data, error });
+      
+      if (error) {
+        console.error('Save failed:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        throw error;
+      }
+      
+      console.log('Profile saved successfully!');
+      console.log('Updated profile data:', data);
+      
+      if (typeof window !== 'undefined') {
+        window.alert('Profile Updated Successfully!');
+      } else {
+        Alert.alert('Success', 'Profile Updated Successfully!');
+      }
     } catch (err: any) {
-      Alert.alert(t('login.errorTitle'), err?.message);
+      console.error('Save error:', err);
+      console.error('Error details:', JSON.stringify(err, null, 2));
+      if (typeof window !== 'undefined') {
+        window.alert(`Save failed: ${err?.message || 'Unknown error'}`);
+      } else {
+        Alert.alert('Error', `Save failed: ${err?.message || 'Unknown error'}`);
+      }
     } finally {
+      // CRITICAL: Always clear loading state
+      console.log('Clearing saving state');
       setSaving(false);
     }
   };

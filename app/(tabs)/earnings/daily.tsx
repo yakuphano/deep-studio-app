@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Platform, Animated } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Platform, Animated, Alert } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
@@ -24,7 +24,7 @@ export default function DailyEarningsScreen() {
   const { user } = useAuth();
 
   const navigatorReady = rootNavigationState?.key != null;
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Start with false
   const [dailyEarned, setDailyEarned] = useState(0);
   const [totalEarned, setTotalEarned] = useState(0);
   const [lastTasks, setLastTasks] = useState<TaskItem[]>([]);
@@ -44,49 +44,62 @@ export default function DailyEarningsScreen() {
   }, [navigatorReady, user]);
 
   const fetchData = useCallback(async () => {
-    if (!user?.id) return;
-    const todayStr = new Date().toDateString();
+    if (!user?.id) {
+      console.log('No user ID, showing dummy data');
+      setDailyEarned(0);
+      setTotalEarned(0);
+      setLastTasks([]);
+      return;
+    }
+    
+    try {
+      console.log('Safe fetch attempt for earnings');
+      
+      // Check if table exists and fetch data
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('id, title, price, status, updated_at')
+        .eq('assigned_to', user.id)
+        .eq('status', 'submitted')
+        .order('updated_at', { ascending: false })
+        .limit(10); // Limit to prevent long fetches
 
-    const { data } = await supabase
-      .from('tasks')
-      .select('id, title, price, status, updated_at')
-      .eq('assigned_to', user.id)
-      .eq('status', 'submitted')
-      .order('updated_at', { ascending: false });
+      if (error) {
+        console.error('Database error or table missing:', error);
+        // Table doesn't exist or other error - show dummy data
+        setDailyEarned(0);
+        setTotalEarned(0);
+        setLastTasks([]);
+        return;
+      }
 
-    const submittedTasks = data ?? [];
-    const total = submittedTasks.reduce((acc, task) => acc + (task.price ?? 0), 0);
-    const todayTasks = submittedTasks.filter(
-      (task) =>
-        task.updated_at &&
-        new Date(task.updated_at).toDateString() === todayStr
-    );
-    const daily = todayTasks.reduce((acc, task) => acc + (task.price ?? 0), 0);
+      const submittedTasks = data ?? [];
+      const todayStr = new Date().toDateString();
+      
+      const total = submittedTasks.reduce((acc, task) => acc + (task.price ?? 0), 0);
+      const todayTasks = submittedTasks.filter(
+        (task) => task.updated_at && new Date(task.updated_at).toDateString() === todayStr
+      );
+      const daily = todayTasks.reduce((acc, task) => acc + (task.price ?? 0), 0);
 
-    setDailyEarned(daily);
-    setTotalEarned(total);
-    setLastTasks(submittedTasks.slice(0, 5));
-    setLoading(false);
+      setDailyEarned(daily);
+      setTotalEarned(total);
+      setLastTasks(submittedTasks.slice(0, 5));
+    } catch (error: any) {
+      console.error('Critical error in earnings fetch:', error);
+      // Show dummy data on any error
+      setDailyEarned(0);
+      setTotalEarned(0);
+      setLastTasks([]);
+    }
   }, [user?.id]);
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (user?.id) fetchData();
-    }, [user?.id, fetchData])
-  );
-
-  useEffect(() => {
-    const unsubscribe = addEarningsRefreshListener(fetchData);
-    return unsubscribe;
-  }, [fetchData]);
+  }, []);
 
   const hasInitialized = useRef(false);
   useEffect(() => {
-    if (loading) return;
     if (!hasInitialized.current) {
       prevDaily.current = dailyEarned;
       prevTotal.current = totalEarned;
@@ -116,7 +129,7 @@ export default function DailyEarningsScreen() {
       runFlash(flashTotal);
       prevTotal.current = totalEarned;
     }
-  }, [loading, dailyEarned, totalEarned]);
+  }, [dailyEarned, totalEarned]);
 
   const handleRequestPayment = () => {
     setPaymentRequested(true);
@@ -129,10 +142,12 @@ export default function DailyEarningsScreen() {
       minimumFractionDigits: 2,
     }).format(n);
 
-  if (loading) {
+  if (!user?.id) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color="#8b5cf6" />
+        <View style={styles.empty}>
+          <Text style={styles.empty}>Please log in to view earnings</Text>
+        </View>
       </View>
     );
   }

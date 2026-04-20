@@ -1,42 +1,13 @@
 import '@/i18n';
-import { useEffect } from 'react';
-import { View, ActivityIndicator, Platform } from 'react-native';
-import { Stack, useRouter, usePathname } from 'expo-router';
+import { View } from 'react-native';
+import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { AuthProvider } from '@/contexts/AuthContext';
 import TopNavbar from '../components/TopNavbar';
 
 function RootLayoutNav() {
-  const { session, loading, isAdmin } = useAuth();
-  const pathname = usePathname();
-  const router = useRouter();
-
-  const inAuthGroup = pathname === '/' || pathname === '/login' || pathname?.startsWith('/login');
-
-  useEffect(() => {
-    if (loading) return;
-
-    if (!session) {
-      if (!inAuthGroup) {
-        if (Platform.OS === 'web' && typeof window !== 'undefined') {
-          window.location.href = '/';
-        } else {
-          router.replace('/');
-        }
-      }
-    } else if (inAuthGroup) {
-      router.replace((isAdmin ? '/admin' : '/tasks') as any);
-    }
-  }, [session, loading, isAdmin, inAuthGroup, router]);
-
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
-        <ActivityIndicator size="large" color="#3b82f6" />
-      </View>
-    );
-  }
-
+  // KRITIK: Tüm yönlendirme mantiklari kaldirildi
+  // Sadece statik layout render ediliyor
   return (
     <View style={{ flex: 1 }}>
       <TopNavbar />

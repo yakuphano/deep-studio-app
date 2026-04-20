@@ -6,12 +6,14 @@ export default function MainLayout() {
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: '#0f172a', width: '100%' },
+        // Note: unmountOnBlur is not available in Stack navigation
+        // The infinite loop issue should be resolved by the Air-Gap refactor already applied
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
-      <Stack.Screen name="tasks" />
       <Stack.Screen name="tasks/audio" />
       <Stack.Screen name="tasks/image" />
+      <Stack.Screen name="tasks/video" />
       <Stack.Screen name="earnings/daily" />
       <Stack.Screen name="earnings/total" />
       <Stack.Screen name="messages" />

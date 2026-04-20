@@ -132,8 +132,9 @@ export default function AudioTasksScreen() {
       const { data, error } = await supabase
         .from('tasks')
         .select('*')
-        .in('type', ['audio', 'transcription']) // Sadece audio ve transcription olanlar
+        .eq('category', 'audio') // Category ile filtrele
         .eq('status', 'pending')
+        .or('assigned_to.is.null,assigned_to.eq.' + userId) // Hem atanmış hem atanmamış
         .order('created_at', { ascending: false });
       
       if (error) {

@@ -184,10 +184,13 @@ export default function VideoTasksScreen() {
         <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 40 }} />
       ) : videoTasks.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="videocam-outline" size={80} color="#475569" />
-          <Text style={styles.emptyTitle}>No Video Tasks</Text>
-          <Text style={styles.emptyDescription}>Kendi dilinizde video görevi bulunamadý.</Text>
+          <View style={styles.emptyIconContainer}>
+            <Ionicons name="videocam-outline" size={80} color="#3b82f6" />
+          </View>
+          <Text style={styles.emptyTitle}>No Video Tasks Available</Text>
+          <Text style={styles.emptyDescription}>There are currently no video tasks waiting in the pool.</Text>
           <TouchableOpacity style={styles.refreshButton} onPress={() => fetchVideoTasks(true)}>
+            <Ionicons name="refresh" size={16} color="#ffffff" />
             <Text style={styles.refreshButtonText}>Refresh</Text>
           </TouchableOpacity>
         </View>
@@ -275,28 +278,41 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
   },
   emptyTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#f8fafc',
-    marginTop: 20,
-    textAlign: 'center',
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 8,
   },
   emptyDescription: {
     fontSize: 16,
     color: '#94a3b8',
-    marginTop: 8,
     textAlign: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 40,
   },
   refreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#3b82f6',
-    paddingHorizontal: 30,
+    paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 8,
     marginTop: 24,
+    gap: 8,
   },
   refreshButtonText: {
     color: '#ffffff',

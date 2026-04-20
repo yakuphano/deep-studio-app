@@ -392,16 +392,6 @@ const styles = StyleSheet.create({
   cardBody: {
     padding: 6, // ✅ Azaltıldı: 8 -> 6
   },
-<<<<<<< HEAD
-=======
-  metadataRowOld: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between', // ✅ Yan yana diz
-    marginBottom: 8,
-    gap: 8, // ✅ Aralık eklendi
-  },
->>>>>>> 5bc395d2fa53874145605cd39c5b8bee64a400be
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -409,12 +399,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-  },
-  statusTextOld: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: '#fbbf24',
-    marginLeft: 4,
   },
   priceBadgeInline: {
     backgroundColor: '#ec4899', // ✅ Pembe tema

@@ -187,8 +187,15 @@ export default function AudioTasksScreen() {
         </View>
       ) : audioTasks.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="mic-outline" size={64} color="#64748b" />
-          <Text style={styles.emptyText}>No tasks available in this category yet</Text>
+          <View style={styles.emptyIconContainer}>
+            <Ionicons name="mic-outline" size={80} color="#3b82f6" />
+          </View>
+          <Text style={styles.emptyTitle}>No Audio Tasks Available</Text>
+          <Text style={styles.emptyDescription}>There are currently no audio tasks waiting in the pool.</Text>
+          <TouchableOpacity style={styles.refreshButton} onPress={() => fetchAudioTasks(true)}>
+            <Ionicons name="refresh" size={16} color="#ffffff" />
+            <Text style={styles.refreshButtonText}>Refresh</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <View style={styles.gridContainer}>
@@ -289,13 +296,6 @@ const styles = StyleSheet.create({
   },
   cardBody: {
     padding: 8, // 
-  },
-  metadataRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between', // 
-    marginBottom: 8,
-    gap: 8, // 
   },
   statusContainer: {
     flexDirection: 'row',
@@ -410,5 +410,47 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#ffffff',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 8,
+  },
+  emptyDescription: {
+    fontSize: 16,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 40,
+  },
+  refreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  refreshButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

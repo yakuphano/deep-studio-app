@@ -179,8 +179,15 @@ export default function ImageTasksScreen() {
         </View>
       ) : imageTasks.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="image-outline" size={64} color="#64748b" />
-          <Text style={styles.emptyText}>No tasks available in this category yet</Text>
+          <View style={styles.emptyIconContainer}>
+            <Ionicons name="image-outline" size={80} color="#ec4899" />
+          </View>
+          <Text style={styles.emptyTitle}>No Image Tasks Available</Text>
+          <Text style={styles.emptyDescription}>There are currently no image tasks waiting in the pool.</Text>
+          <TouchableOpacity style={styles.refreshButton} onPress={() => fetchImageTasks(true)}>
+            <Ionicons name="refresh" size={16} color="#ffffff" />
+            <Text style={styles.refreshButtonText}>Refresh</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <View style={styles.gridContainer}>
@@ -378,13 +385,6 @@ const styles = StyleSheet.create({
   cardBody: {
     padding: 6, // ✅ Azaltıldı: 8 -> 6
   },
-  metadataRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between', // ✅ Yan yana diz
-    marginBottom: 8,
-    gap: 8, // ✅ Aralık eklendi
-  },
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -426,6 +426,42 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 60,
+  },
+  emptyIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(236, 72, 153, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 8,
+  },
+  emptyDescription: {
+    fontSize: 16,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 40,
+  },
+  refreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ec4899',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  refreshButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   emptyText: {
     fontSize: 18,

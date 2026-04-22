@@ -59,78 +59,84 @@ const VideoTaskCard = ({ item, onPress }: { item: Task; onPress: (id: string) =>
 );
 
 export default function VideoTasksScreen() {
+  console.log('=== NUCLEAR TEST - VIDEO-TASKS DOSYASI CALISIYOR ===');
+  
   const { t } = useTranslation();
   const router = useRouter();
 
   const [videoTasks, setVideoTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // KRITIK: VERI CEKME TAMAMEN DONDURULDU - BROWSER CRASH'INI ENGELLE
-// useFocusEffect(
-//   useCallback(() => {
-//     let isMounted = true;
+  const loadData = useCallback(async () => {
+    let isMounted = true;
 
-//     const loadData = async () => {
-//       try {
-//         setLoading(true);
+    try {
+      setLoading(true);
 
-//         const { data: { session } } = await supabase.auth.getSession();
-//         const uid = session?.user?.id;
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
 
-//         if (!uid) {
-//           if (isMounted) setLoading(false);
-//           return;
-//         }
+      console.log('=== VIDEO-TASKS SESSION ===', { session: !!session, uid });
 
-//         // TABLO ADI DÜZELTÝLDÝ: profiles
-//         const { data: profile } = await supabase
-//           .from('profiles')
-//           .select('languages')
-//           .eq('id', uid)
-//           .single();
+      if (!uid) {
+        if (isMounted) setLoading(false);
+        return;
+      }
 
-//         const userLangs = profile?.languages || [];
-//         const cols = 'id, title, status, price, language, category, type, video_url, is_pool_task, assigned_to';
+      // TABLO ADI DÜZELTÝLDÝ: profiles
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('languages')
+        .eq('id', uid)
+        .single();
 
-//         const { data: assignedData } = await supabase
-//           .from('tasks')
-//           .select(cols)
-//           .eq('assigned_to', uid)
-//           .eq('status', 'pending')
-//           .or('category.eq.video,type.eq.video');
+      const userLangs = profile?.languages || [];
+      console.log('=== VIDEO-TASKS USER LANGS ===', userLangs);
+      
+      const cols = 'id, title, status, price, language, category, type, video_url, is_pool_task, assigned_to';
 
-//         const { data: poolData } = await supabase
-//           .from('tasks')
-//           .select(cols)
-//           .is('assigned_to', null)
-//           .eq('status', 'pending')
-//           .or('category.eq.video,type.eq.video');
+      const { data: assignedData } = await supabase
+        .from('tasks')
+        .select(cols)
+        .eq('assigned_to', uid)
+        .eq('status', 'pending')
+        .or('category.eq.video,type.eq.video');
 
-//         if (isMounted) {
-//           const allTasks = [...(poolData || []), ...(assignedData || [])];
-//           // DÌLLERE GÖRE FÌLTRELEME BURADA
-//           const filteredTasks = allTasks.filter(task => userLangs.includes(task.language));
+      const { data: poolData } = await supabase
+        .from('tasks')
+        .select(cols)
+        .is('assigned_to', null)
+        .eq('status', 'pending')
+        .or('category.eq.video,type.eq.video');
 
-//           setVideoTasks(filteredTasks);
-//           setLoading(false);
-//         }
-//       } catch (error) {
-//         if (isMounted) setLoading(false);
-//       }
-//     };
+      console.log('=== VIDEO-TASKS ASSIGNED DATA ===', assignedData);
+      console.log('=== VIDEO-TASKS POOL DATA ===', poolData);
 
-//     loadData();
+      if (isMounted) {
+        const allTasks = [...(poolData || []), ...(assignedData || [])];
+        // DEBUG: Dil filtresini geçici olarak kaldýr
+        console.log('=== VIDEO-TASKS ALL TASKS (NO FILTER) ===', allTasks);
+        console.log('=== VIDEO-TASKS TASK LANGUAGES ===', allTasks.map(t => ({ id: t.id, language: t.language })));
+        console.log('=== VIDEO-TASKS USER LANGS ===', userLangs);
+        // Geçici olarak tüm görevleri göster
+        const filteredTasks = allTasks; // Dil filtresi kaldýrýldý
 
-//     return () => {
-//       isMounted = false;
-//     };
-//   }, []) // <--- EN KRÝTÝK NOKTA: BURASI KESÝNLÝKLE BOÞ DÝZÝ OLACAK. ÝÇÝNE HÝÇBÝR DEÐÝÞKEN YAZMA.
-// );
+        console.log('=== VIDEO-TASKS FILTERED TASKS ===', filteredTasks);
 
-// GEÇICI: Loading'i false yap ki statik tasarim görünsün
-useEffect(() => {
-  setLoading(false);
-}, []);
+        setVideoTasks(filteredTasks);
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error('=== VIDEO-TASKS ERROR ===', error);
+      if (isMounted) setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const handleClaim = async (taskId: string) => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -163,6 +169,7 @@ useEffect(() => {
 
       <View style={styles.pageHeader}>
         <Text style={styles.pageTitle}>{t('tasks.pageTitleVideo') || 'Video Annotation Tasks'}</Text>
+        {/* Artık burada buton yok, sadece başlık var */}
       </View>
 
       {loading ? (
@@ -171,7 +178,17 @@ useEffect(() => {
         <View style={styles.emptyContainer}>
           <Ionicons name="videocam-outline" size={80} color="#475569" style={styles.emptyIcon} />
           <Text style={styles.emptyTitle}>No Video Tasks</Text>
-          <Text style={styles.emptyDescription}>Kendi dilinizde video görevi bulunamadı.</Text>
+          <Text style={styles.emptyDescription}>No video tasks found in your language.</Text>
+
+          {/* RENKLİ VE MERKEZLENMİŞ BUTON */}
+          <TouchableOpacity 
+            style={styles.coloredRefreshButton} 
+            onPress={() => loadData()}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.buttonText}>Refresh Tasks</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -209,8 +226,34 @@ const styles = StyleSheet.create({
   priceText: { color: '#10b981', fontSize: 10, fontWeight: 'bold' },
   startButton: { backgroundColor: '#8b5cf6', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 8, borderRadius: 8, gap: 6 },
   startButtonText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-  emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  emptyContainer: {
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    paddingHorizontal: 20,
+    marginTop: -50, 
+  },
   emptyIcon: { marginBottom: 20 },
   emptyTitle: { fontSize: 22, fontWeight: 'bold', color: '#f8fafc', marginTop: 20, textAlign: 'center' },
-  emptyDescription: { fontSize: 16, color: '#94a3b8', marginTop: 8, textAlign: 'center' }
+  emptyDescription: { fontSize: 16, color: '#94a3b8', marginTop: 8, textAlign: 'center' },
+  coloredRefreshButton: {
+    marginTop: 25,
+    backgroundColor: '#8b5cf6', 
+    paddingVertical: 14,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#8b5cf6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5, 
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  }
 });

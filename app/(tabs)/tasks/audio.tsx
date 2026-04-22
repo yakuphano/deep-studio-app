@@ -66,98 +66,83 @@ export default function AudioTasksScreen() {
   const [audioTasks, setAudioTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // KRITIK: VERI CEKME TAMAMEN DONDURULDU - BROWSER CRASH'INI ENGELLE
-// useFocusEffect(
-//   useCallback(() => {
-//     let isMounted = true;
+  const fetchTasks = useCallback(async () => {
+    let isMounted = true;
 
-//     const fetchTasks = async () => {
-//       try {
-//         setLoading(true);
-
-//         // 1. Session'ý AuthContext'ten deðil, DOÐRUDAN Supabase'den al
-//         const { data: { session } } = await supabase.auth.getSession();
-//         const uid = session?.user?.id;
-
-//         if (!uid) {
-//           if (isMounted) setLoading(false);
-//           return;
-//         }
-
-//         // 2. Kullanýcýnýn dillerini doðrudan Supabase'den al (Çünkü useAuth sildik)
-//         const { data: profile } = await supabase
-//           .from('profiles')
-//           .select('languages')
-//           .eq('id', uid)
-//           .single();
-            
-//         const userLangs = profile?.languages || [];
-
-//         // 3. Tabloyu sorgula (audio kategorisine göre)
-//         const cols = 'id, title, status, price, language, category, type, audio_url, is_pool_task, assigned_to';
-          
-//         const { data: assignedData } = await supabase
-//           .from('tasks')
-//           .select(cols)
-//           .eq('assigned_to', uid)
-//           .eq('status', 'pending')
-//           .or('category.eq.audio,type.eq.audio')
-//           .order('created_at', { ascending: false });
-            
-//         const { data: poolData } = await supabase
-//           .from('tasks')
-//           .select(cols)
-//           .is('assigned_to', null)
-//           .eq('status', 'pending')
-//           .or('category.eq.audio,type.eq.audio')
-//           .order('created_at', { ascending: false });
-
-//         if (isMounted) {
-//           const allTasks = [...(poolData || []), ...(assignedData || [])];
-//           const filteredTasks = allTasks.filter(task => userLangs.includes(task.language));
-//           setAudioTasks(filteredTasks);
-//           setLoading(false);
-//         }
-//       } catch (error) {
-//         console.error(error);
-//         if (isMounted) setLoading(false);
-//       }
-//     };
-
-//     fetchTasks();
-
-//     return () => {
-//       isMounted = false;
-//     };
-//   }, []) // <--- EN KRÝTÝK NOKTA: BURASI KESÝNLÝKLE BOÞ DÝZÝ OLACAK. ÝÇÝNE HÝÇBÝR DEÐÝÞKEN YAZMA.
-// );
-
-// GEÇICI: Loading'i false yap ki statik tasarim görünsün
-useEffect(() => {
-  setLoading(false);
-}, []);
-
-  const handleClaim = async (taskId: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.id) return;
-      
-      const { data, error } = await supabase
-        .from('tasks')
-        .update({ assigned_to: session.user.id })
-        .eq('id', taskId)
-        .is('assigned_to', null)
-        .select();
+      setLoading(true);
 
-      if (!error && data && data.length > 0) {
-         router.push(`/task/${taskId}`);
-      } else {
-         Alert.alert('Uyarý', 'Bu görev alýnamadý veya baþkasý tarafýndan alýndý.');
+      // 1. Session'ý DOĞRUDAN Supabase'den al
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+
+      console.log('=== AUDIO-TASKS SESSION ===', { session: !!session, uid });
+
+      if (!uid) {
+        if (isMounted) setLoading(false);
+        return;
+      }
+
+      // 2. Kullanıcının dillerini doğrudan Supabase'den al
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('languages')
+        .eq('id', uid)
+        .single();
+        
+      const userLangs = profile?.languages || [];
+      console.log('=== AUDIO-TASKS USER LANGS ===', userLangs);
+
+      // 3. Tabloyu sorgula (audio kategorisine göre)
+      const cols = 'id, title, status, price, language, category, type, audio_url, is_pool_task, assigned_to';
+      
+      const { data: assignedData } = await supabase
+        .from('tasks')
+        .select(cols)
+        .eq('assigned_to', uid)
+        .eq('status', 'pending')
+        .or('category.eq.audio,type.eq.audio');
+
+      const { data: poolData } = await supabase
+        .from('tasks')
+        .select(cols)
+        .is('assigned_to', null)
+        .eq('status', 'pending')
+        .or('category.eq.audio,type.eq.audio');
+
+      console.log('=== AUDIO-TASKS ASSIGNED DATA ===', assignedData);
+      console.log('=== AUDIO-TASKS POOL DATA ===', poolData);
+
+      if (isMounted) {
+        const allTasks = [...(poolData || []), ...(assignedData || [])];
+        
+        // DEBUG: Dil filtresini geçici olarak kaldır
+        console.log('=== AUDIO-TASKS ALL TASKS (NO FILTER) ===', allTasks);
+        console.log('=== AUDIO-TASKS TASK LANGUAGES ===', allTasks.map(t => ({ id: t.id, language: t.language })));
+        
+        // Geçici olarak tüm görevleri göster
+        const filteredTasks = allTasks; // Dil filtresi kaldırıldı
+
+        console.log('=== AUDIO-TASKS FILTERED TASKS ===', filteredTasks);
+
+        setAudioTasks(filteredTasks);
+        setLoading(false);
       }
     } catch (error) {
-      console.error('Claim error:', error);
-      Alert.alert('Hata', 'Görev alýnýrken bir hata oluþtu.');
+      console.error('=== AUDIO-TASKS ERROR ===', error);
+      if (isMounted) setLoading(false);
     }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchTasks();
+    }, [fetchTasks])
+  );
+
+  const handleClaim = async (taskId: string) => {
+    // Direkt görev detay sayfasina yönlendir
+    router.push(`/tasks/audio/${taskId}`);
   };
 
   
@@ -173,6 +158,7 @@ useEffect(() => {
 
       <View style={styles.pageHeader}>
         <Text style={styles.pageTitle}>{t('tasks.pageTitleTranscription') || 'Audio Annotation Tasks'}</Text>
+        {/* Artık burada buton yok, sadece başlık var */}
       </View>
 
       {loading ? (
@@ -181,7 +167,17 @@ useEffect(() => {
         <View style={styles.emptyContainer}>
           <Ionicons name="mic-outline" size={80} color="#475569" style={styles.emptyIcon} />
           <Text style={styles.emptyTitle}>No Audio Tasks</Text>
-          <Text style={styles.emptyDescription}>Kendi dilinizde ses görevi bulunamadı.</Text>
+          <Text style={styles.emptyDescription}>No audio tasks found in your language.</Text>
+
+          {/* RENKLİ VE MERKEZLENMİŞ BUTON */}
+          <TouchableOpacity 
+            style={styles.coloredRefreshButton} 
+            onPress={() => fetchTasks()}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.buttonText}>Refresh Tasks</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -219,8 +215,34 @@ const styles = StyleSheet.create({
   priceText: { color: '#10b981', fontSize: 10, fontWeight: 'bold' },
   startButton: { backgroundColor: '#22c55e', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 8, borderRadius: 8, gap: 6 },
   startButtonText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-  emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  emptyContainer: {
+    flex: 1, // Ekranın tüm boş alanını kaplar
+    justifyContent: 'center', // Dikeyde tam ortalar
+    alignItems: 'center', // Yatayda tam ortalar
+    paddingHorizontal: 20,
+    marginTop: -50, // Header'ın açığını dengelemek için hafif yukarı kaydırabilirsin
+  },
   emptyIcon: { marginBottom: 20 },
   emptyTitle: { fontSize: 22, fontWeight: 'bold', color: '#f8fafc', marginTop: 20, textAlign: 'center' },
-  emptyDescription: { fontSize: 16, color: '#94a3b8', marginTop: 8, textAlign: 'center' }
+  emptyDescription: { fontSize: 16, color: '#94a3b8', marginTop: 8, textAlign: 'center' },
+  coloredRefreshButton: {
+    marginTop: 25,
+    backgroundColor: '#3b82f6', // Audio için Mavi
+    paddingVertical: 14,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5, // Android için gölge
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  }
 });

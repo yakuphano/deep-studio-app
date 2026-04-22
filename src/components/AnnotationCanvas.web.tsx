@@ -9,6 +9,7 @@ import {
   isPointInBbox,
   isPointNearLine,
   formatTime,
+  screenConstantRadius,
 } from '@/utils/canvasHelpers';
 import {
   type Tool,
@@ -20,10 +21,10 @@ import {
   type BrushAnnotation,
   type EllipseAnnotation,
   type CuboidAnnotation,
+  type CuboidWireAnnotation,
   type SemanticAnnotation,
   type MagicWandAnnotation,
   type Annotation,
-  MIN_BOX_SIZE,
   HANDLE_SIZE,
   DEFAULT_BRUSH_COLOR,
   DEFAULT_BRUSH_WIDTH
@@ -34,6 +35,7 @@ import { PolygonLayer } from '@/components/workbench/layers/PolygonLayer';
 import { PointLayer } from '@/components/workbench/layers/PointLayer';
 import { BrushLayer } from '@/components/workbench/layers/BrushLayer';
 import { CuboidLayer } from '@/components/workbench/layers/CuboidLayer';
+import { CuboidWireLayer } from '@/components/workbench/layers/CuboidWireLayer';
 import { EllipseLayer } from '@/components/workbench/layers/EllipseLayer';
 import { PolylineLayer } from '@/components/workbench/layers/PolylineLayer';
 import { CanvasToolbar } from '@/components/workbench/CanvasToolbar';
@@ -50,13 +52,17 @@ interface AnnotationCanvasProps {
   imageSource?: { uri: string } | null;
   imageUrl?: string | null;
   annotations: Annotation[];
-  onAnnotationsChange: (annotations: Annotation[]) => void;
+  onAnnotationsChange: (
+    annotations: Annotation[] | ((prev: Annotation[]) => Annotation[])
+  ) => void;
   activeTool: Tool;
   selectedId?: string | null;
   onSelect?: (id: string | null) => void;
   selectedLabel?: string | null;
   onToolChange?: (tool: Tool) => void;
   onUndo?: () => void;
+  /** Sol sütunda tam araç çubuğu varsa üstteki mini toolbar (fırça/reset) gizlenir */
+  hideFloatingToolbar?: boolean;
 }
 
 const HANDLE_HIT_AREA = 20;
@@ -81,18 +87,88 @@ export default React.forwardRef(function AnnotationCanvas({
   selectedLabel,
   onToolChange,
   onUndo,
+  hideFloatingToolbar = false,
 }: AnnotationCanvasProps, ref) {
   const { t } = useTranslation();
-  const canvasRef = useRef<{
-    handleUndo: () => void;
-  } | null>(null);
-  
+
+  // Drawing states
+  const [drawStart, setDrawStart] = useState<any>(null);
+  const [drawPreview, setDrawPreview] = useState<any>(null);
+  const [isDrawing, setIsDrawing] = useState<any>(false);
+  const [polygonPoints, setPolygonPoints] = useState<any>([]);
+  const [isDrawingPolygon, setIsDrawingPolygon] = useState<any>(false);
+  const [polylinePoints, setPolylinePoints] = useState<any>([]);
+  const [isDrawingPolyline, setIsDrawingPolyline] = useState<any>(false);
+  const [polylinePreviewPoint, setPolylinePreviewPoint] = useState<any>(null);
+  const [cuboidWireCorners, setCuboidWireCorners] = useState<{ x: number; y: number }[]>([]);
+  const [isDrawingCuboidWire, setIsDrawingCuboidWire] = useState(false);
+  const [brushPoints, setBrushPoints] = useState<any>([]);
+  const [brushColor, setBrushColor] = useState<any>(DEFAULT_BRUSH_COLOR);
+  const [isPaletteOpen, setIsPaletteOpen] = useState<any>(false);
+  const [savedBrushes, setSavedBrushes] = useState<any>([]);
+  const [history, setHistory] = useState<any>([]);
+  const [isResizing, setIsResizing] = useState<any>(false);
+  const [resizeHandle, setResizeHandle] = useState<any>(null);
+  const [resizeStartBox, setResizeStartBox] = useState<any>(null);
+  const [isDragging, setIsDragging] = useState<any>(false);
+  const [dragOffset, setDragOffset] = useState<any>(null);
+  const [activeDrawing, setActiveDrawing] = useState<any>(null);
+
+  // Undo: polyline çizilirken önce son noktayı sil; yoksa geçmişdeki son anotasyonu geri al
+  const handleUndo = useCallback(() => {
+    try {
+      if (activeTool === 'cuboid_wire' && isDrawingCuboidWire && cuboidWireCorners.length > 0) {
+        const next = cuboidWireCorners.slice(0, -1);
+        setCuboidWireCorners(next);
+        if (next.length === 0) setIsDrawingCuboidWire(false);
+        setPolylinePreviewPoint(null);
+        return;
+      }
+      if (activeTool === 'polyline' && isDrawingPolyline && polylinePoints.length > 0) {
+        const next = polylinePoints.slice(0, -1);
+        setPolylinePoints(next);
+        if (next.length === 0) {
+          setIsDrawingPolyline(false);
+          setPolylinePreviewPoint(null);
+        }
+        return;
+      }
+      if (history && history.length > 0) {
+        const lastAction = history[history.length - 1];
+        if (lastAction && lastAction.type === 'annotation') {
+          onAnnotationsChange &&
+            onAnnotationsChange((prev: any) => (prev || []).filter((ann: any) => ann.id !== lastAction.data.id));
+        } else if (lastAction && lastAction.type === 'brush') {
+          setSavedBrushes((prev: any) => (prev || []).filter((brush: any) => brush.id !== lastAction.data.id));
+        }
+        setHistory((prev: any) => (prev || []).slice(0, -1));
+      }
+    } catch (e) {
+      console.error('Undo error:', e);
+    }
+  }, [
+    activeTool,
+    isDrawingCuboidWire,
+    cuboidWireCorners,
+    isDrawingPolyline,
+    polylinePoints,
+    history,
+    onAnnotationsChange,
+    setCuboidWireCorners,
+    setIsDrawingCuboidWire,
+    setPolylinePoints,
+    setIsDrawingPolyline,
+    setPolylinePreviewPoint,
+  ]);
+
   // Use canvas logic hook for scale, offset, and coordinate functions
   const {
     scale,
     offset,
     imageSize,
     isPanning,
+    panStart,
+    panStartOffset,
     containerRef,
     imgRef,
     screenToImage,
@@ -100,10 +176,26 @@ export default React.forwardRef(function AnnotationCanvas({
     getHandleAt,
     handleWheel,
     initializeImage,
+    resetViewToFit,
     setScale,
     setOffset,
     setImageSize,
-  } = useCanvasLogic();
+    setIsPanning,
+    setPanStart,
+    setPanStartOffset,
+  } = useCanvasLogic({ selectedId });
+
+  /** Yeni şekil eklendikten hemen sonra gelen click/pan yeni nesneyi seçmesin */
+  const suppressObjectSelectUntilRef = useRef(0);
+
+  /** SVG yüzey tıklaması: yalnız Pan veya Select iken üst bileşene seçim iletilir */
+  const selectShapeIfPan = useCallback(
+    (annotationId: string) => {
+      if (Date.now() < suppressObjectSelectUntilRef.current) return;
+      if (activeTool === 'pan' || activeTool === 'select') onSelect?.(annotationId);
+    },
+    [activeTool, onSelect]
+  );
   
   // Use annotation actions hook for all pointer event handling
   const {
@@ -112,42 +204,109 @@ export default React.forwardRef(function AnnotationCanvas({
     handlePointerUp,
   } = useAnnotationActions({
     activeTool,
-    selectedId,
+    selectedId: selectedId ?? null,
     annotations,
     onAnnotationsChange,
-    onSelect,
-    selectedLabel,
+    onSelect: onSelect ?? (() => {}),
+    selectedLabel: selectedLabel ?? null,
     screenToImage,
     getHandleAt,
     scale,
     handleUndo,
     imageSize,
-    MIN_BOX_SIZE,
+    activeDrawing,
+    setActiveDrawing,
+    drawStart,
+    setDrawStart,
+    drawPreview,
+    setDrawPreview,
+    isDrawing,
+    setIsDrawing,
+    polygonPoints,
+    setPolygonPoints,
+    isDrawingPolygon,
+    setIsDrawingPolygon,
+    polylinePoints,
+    setPolylinePoints,
+    isDrawingPolyline,
+    setIsDrawingPolyline,
+    polylinePreviewPoint,
+    setPolylinePreviewPoint,
+    cuboidWireCorners,
+    setCuboidWireCorners,
+    isDrawingCuboidWire,
+    setIsDrawingCuboidWire,
+    brushPoints,
+    setBrushPoints,
+    brushColor,
+    setBrushColor,
+    isPaletteOpen,
+    setIsPaletteOpen,
+    savedBrushes,
+    setSavedBrushes,
+    history,
+    setHistory,
+    isResizing,
+    setIsResizing,
+    resizeHandle,
+    setResizeHandle,
+    resizeStartBox,
+    setResizeStartBox,
+    isDragging,
+    setIsDragging,
+    dragOffset,
+    setDragOffset,
+    isPanning,
+    setIsPanning,
+    panStart,
+    panStartOffset,
+    setPanStart,
+    setPanStartOffset,
+    setOffset,
+    viewOffset: offset,
+    suppressObjectSelectUntilRef,
   });
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      resetView: () => resetViewToFit(),
+      undo: () => handleUndo(),
+      handleUndo: () => handleUndo(),
+    }),
+    [resetViewToFit, handleUndo]
+  );
 
-  // Image load with initial fit
+  const vertexR = screenConstantRadius(scale, 3);
+
+  // Görüntü yüklendiğinde boyut + konteynıra sığdır (önceden load dinleyicisi bağlanmıyordu)
   useEffect(() => {
     const img = imgRef.current;
     const container = containerRef.current;
-    if (!img || !container || !imageSource?.uri && !imageUrl) return;
-    
-    const handleLoad = () => {
+    if (!img || !container || !(imageSource?.uri || imageUrl)) return;
+
+    const runFit = () => {
       const naturalWidth = img.naturalWidth;
       const naturalHeight = img.naturalHeight;
-      
+      if (!naturalWidth || !naturalHeight) return;
+
       setImageSize({ w: naturalWidth, h: naturalHeight });
-      
-      // Calculate initial scale to fit image in container using helper
       const containerRect = container.getBoundingClientRect();
-      const { scale: initialScale, offset } = calculateInitialFit(naturalWidth, naturalHeight, containerRect.width, containerRect.height);
-      
+      const { scale: initialScale, offset: nextOffset } = calculateInitialFit(
+        naturalWidth,
+        naturalHeight,
+        containerRect.width,
+        containerRect.height
+      );
       setScale(initialScale);
-      setOffset(offset);
+      setOffset(nextOffset);
     };
-    
-    img.src = imageSource?.uri || imageUrl || '';
-  }, [imageSource?.uri, imageUrl, containerRef, setImageSize, setScale, setOffset]);
+
+    img.addEventListener('load', runFit);
+    if (img.complete && img.naturalWidth) runFit();
+
+    return () => img.removeEventListener('load', runFit);
+  }, [imageSource?.uri, imageUrl, setImageSize, setScale, setOffset]);
 
   // Handle keyboard delete
   useEffect(() => {
@@ -162,6 +321,13 @@ export default React.forwardRef(function AnnotationCanvas({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedId, annotations, onAnnotationsChange, onSelect]);
+
+  useEffect(() => {
+    if (activeTool !== 'cuboid_wire') {
+      setCuboidWireCorners([]);
+      setIsDrawingCuboidWire(false);
+    }
+  }, [activeTool]);
 
   // Canvas Ã¼zerinde wheel event listener - sadece canvas Ã¼zerinde zoom yap
   useEffect(() => {
@@ -223,14 +389,23 @@ export default React.forwardRef(function AnnotationCanvas({
           touchAction: 'auto', // Touch ve wheel action'larÄ±nÄ± serbest bÄ±rak
         }}
       >
-        <CanvasToolbar
-          activeTool={activeTool}
-          brushColor={brushColor}
-          isPaletteOpen={isPaletteOpen}
-          onToolChange={onToolChange}
-          onBrushColorChange={setBrushColor}
-          onPaletteToggle={() => setIsPaletteOpen(!isPaletteOpen)}
-        />
+        {!hideFloatingToolbar ? (
+          <CanvasToolbar
+            activeTool={activeTool}
+            brushColor={brushColor}
+            isPaletteOpen={isPaletteOpen}
+            onToolChange={(tool) => {
+              try {
+                onToolChange?.(tool as Tool);
+              } catch (e) {
+                console.error('Tool change error:', e);
+              }
+            }}
+            onBrushColorChange={setBrushColor}
+            onPaletteToggle={() => setIsPaletteOpen(!isPaletteOpen)}
+            onResetView={() => resetViewToFit()}
+          />
+        ) : null}
         
         {/* Image Layer - Bottom layer */}
         <img
@@ -259,16 +434,26 @@ export default React.forwardRef(function AnnotationCanvas({
             top: 0,
             width: imageSize?.w || '100%',
             height: imageSize?.h || '100%',
-            cursor: (activeTool as any) === 'pan' ? (isPanning ? 'grabbing' : 'grab') : ((activeTool as any) === 'bbox' || (activeTool as any) === 'points' ? 'crosshair' : 'default'),
+            cursor:
+              (activeTool as any) === 'pan'
+                ? isPanning
+                  ? 'grabbing'
+                  : 'grab'
+                : (activeTool as any) === 'bbox' ||
+                    (activeTool as any) === 'points' ||
+                    (activeTool as any) === 'cuboid_wire'
+                  ? 'crosshair'
+                  : 'default',
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
             transformOrigin: '0 0',
-            pointerEvents: 'auto', // Always auto to allow resize handles
+            // Tüm isabet üstteki şeffaf div’de; SVG onClick’leri (nokta vb.) hayalet tıklamayla seçim yapmasın
+            pointerEvents: 'none',
           }}
           viewBox={imageSize ? `0 0 ${imageSize.w} ${imageSize.h}` : '0 0 100 100'}
           preserveAspectRatio="xMidYMid meet"
         >
           {/* Render annotations using layer components */}
-          {annotations.map((annotation) => {
+          {(annotations || []).map((annotation) => {
             const isSelected = annotation.id === selectedId;
             
             switch (annotation.type) {
@@ -280,7 +465,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     isSelected={isSelected}
                     scale={scale}
                     imageToScreen={imageToScreen}
-                    onSelect={() => onSelect?.(annotation.id)}
+                    onSelect={() => selectShapeIfPan(annotation.id)}
                   />
                 );
               
@@ -292,7 +477,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     isSelected={isSelected}
                     scale={scale}
                     imageToScreen={imageToScreen}
-                    onSelect={() => onSelect?.(annotation.id)}
+                    onSelect={() => selectShapeIfPan(annotation.id)}
                   />
                 );
               
@@ -304,7 +489,8 @@ export default React.forwardRef(function AnnotationCanvas({
                     isSelected={isSelected}
                     scale={scale}
                     imageToScreen={imageToScreen}
-                    onSelect={() => onSelect?.(annotation.id)}
+                    onSelect={() => selectShapeIfPan(annotation.id)}
+                    allowPointerHit={activeTool === 'pan' || activeTool === 'select'}
                   />
                 );
               
@@ -316,7 +502,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     isSelected={isSelected}
                     scale={scale}
                     imageToScreen={imageToScreen}
-                    onSelect={() => onSelect?.(annotation.id)}
+                    onSelect={() => selectShapeIfPan(annotation.id)}
                   />
                 );
               
@@ -328,7 +514,20 @@ export default React.forwardRef(function AnnotationCanvas({
                     isSelected={isSelected}
                     scale={scale}
                     imageToScreen={imageToScreen}
-                    onSelect={() => onSelect?.(annotation.id)}
+                    onSelect={() => selectShapeIfPan(annotation.id)}
+                    activeTool={activeTool}
+                  />
+                );
+
+              case 'cuboid_wire':
+                return (
+                  <CuboidWireLayer
+                    key={annotation.id}
+                    annotation={annotation as CuboidWireAnnotation}
+                    isSelected={isSelected}
+                    scale={scale}
+                    imageToScreen={imageToScreen}
+                    onSelect={() => selectShapeIfPan(annotation.id)}
                     activeTool={activeTool}
                   />
                 );
@@ -341,7 +540,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     isSelected={isSelected}
                     scale={scale}
                     imageToScreen={imageToScreen}
-                    onSelect={() => onSelect?.(annotation.id)}
+                    onSelect={() => selectShapeIfPan(annotation.id)}
                     activeTool={activeTool}
                   />
                 );
@@ -354,11 +553,36 @@ export default React.forwardRef(function AnnotationCanvas({
                     isSelected={isSelected}
                     scale={scale}
                     imageToScreen={imageToScreen}
-                    onSelect={() => onSelect?.(annotation.id)}
+                    onSelect={() => selectShapeIfPan(annotation.id)}
                     activeTool={activeTool}
                   />
                 );
-                
+
+              case 'semantic':
+              case 'magic_wand': {
+                const pts = (annotation as any).points as { x: number; y: number }[] | undefined;
+                if (!pts?.length) return null;
+                return (
+                  <PolygonLayer
+                    key={annotation.id}
+                    annotation={{
+                      id: annotation.id,
+                      type: 'polygon',
+                      points: pts,
+                      label: String((annotation as any).label ?? ''),
+                    }}
+                    isSelected={isSelected}
+                    scale={scale}
+                    imageToScreen={imageToScreen}
+                    onSelect={() => selectShapeIfPan(annotation.id)}
+                    bboxStyleResizeHandles={
+                      annotation.type === 'semantic' || annotation.type === 'magic_wand'
+                    }
+                  />
+                );
+              }
+
+              default:
                 return null;
             }
           })}
@@ -374,9 +598,9 @@ export default React.forwardRef(function AnnotationCanvas({
                   rx={drawPreview.width / 2} 
                   ry={drawPreview.height / 2} 
                   stroke="#3b82f6" 
-                  strokeDasharray="5 5" 
+                  strokeDasharray="4 3" 
                   fill="none" 
-                  strokeWidth={2 / scale} 
+                  strokeWidth={1 / Math.max(scale, 0.08)} 
                 />
               ) : (
                 // BBox preview for other tools
@@ -386,11 +610,11 @@ export default React.forwardRef(function AnnotationCanvas({
                   width={drawPreview.width}
                   height={drawPreview.height}
                   stroke="#3b82f6" // Blue for drawing focus
-                  strokeWidth={2}
-                  strokeDasharray="5 5"
+                  strokeWidth={1}
+                  strokeDasharray="4 3"
                   fill="none"
                   style={{
-                    vectorEffect: 'non-scaling-stroke', // Prevent thinning on zoom
+                    vectorEffect: 'non-scaling-stroke',
                   }}
                 />
               )}
@@ -508,8 +732,8 @@ export default React.forwardRef(function AnnotationCanvas({
           {/* Polyline Render */}
           {isDrawingPolyline && polylinePoints.length > 0 && (
             <g>
-              <polyline points={polylinePoints.map(p => `${p.x},${p.y}`).join(' ')} stroke="yellow" strokeWidth={2} fill="none" />
-              {polylinePoints.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={4} fill="yellow" stroke="white" />)}
+              <polyline points={polylinePoints.map((p: any) => `${p.x},${p.y}`).join(' ')} stroke="yellow" strokeWidth={2} fill="none" />
+              {polylinePoints.map((p: any, i: any) => <circle key={i} cx={p.x} cy={p.y} r={4} fill="yellow" stroke="white" />)}
               {polylinePreviewPoint && <line x1={polylinePoints[polylinePoints.length-1].x} y1={polylinePoints[polylinePoints.length-1].y} x2={polylinePreviewPoint.x} y2={polylinePreviewPoint.y} stroke="yellow" strokeDasharray="5,5" />}
             </g>
           )}
@@ -534,7 +758,7 @@ export default React.forwardRef(function AnnotationCanvas({
           {isDrawingPolygon && polygonPoints.length > 0 && (
             <>
               {/* Draw lines between existing points */}
-              {polygonPoints.map((point, index) => {
+              {(polygonPoints || []).map((point: any, index: any) => {
                 if (index === 0) return null;
                 const prevPoint = polygonPoints[index - 1];
                 return (
@@ -545,8 +769,8 @@ export default React.forwardRef(function AnnotationCanvas({
                     x2={point.x}
                     y2={point.y}
                     stroke="#3b82f6"
-                    strokeWidth={2}
-                    strokeDasharray="5 5"
+                    strokeWidth={1}
+                    strokeLinecap="round"
                     style={{
                       vectorEffect: 'non-scaling-stroke',
                     }}
@@ -554,45 +778,155 @@ export default React.forwardRef(function AnnotationCanvas({
                 );
               })}
               
+              {/* Kapanış önizlemesi: son köşeden ilke; 3+ köşede ilk noktaya tıklayınca biter */}
+              {polygonPoints.length >= 2 && (
+                <line
+                  x1={polygonPoints[polygonPoints.length - 1].x}
+                  y1={polygonPoints[polygonPoints.length - 1].y}
+                  x2={polygonPoints[0].x}
+                  y2={polygonPoints[0].y}
+                  stroke={polygonPoints.length >= 3 ? '#22c55e' : '#64748b'}
+                  strokeWidth={1}
+                  strokeLinecap="round"
+                  opacity={polygonPoints.length >= 3 ? 0.95 : 0.7}
+                  style={{ vectorEffect: 'non-scaling-stroke' }}
+                />
+              )}
+
+              {polylinePreviewPoint && polygonPoints.length > 0 && (
+                <line
+                  x1={polygonPoints[polygonPoints.length - 1].x}
+                  y1={polygonPoints[polygonPoints.length - 1].y}
+                  x2={polylinePreviewPoint.x}
+                  y2={polylinePreviewPoint.y}
+                  stroke="#60a5fa"
+                  strokeWidth={1}
+                  strokeOpacity={0.7}
+                  strokeLinecap="round"
+                  strokeDasharray="3 3"
+                  style={{ vectorEffect: 'non-scaling-stroke' }}
+                />
+              )}
+
               {/* Draw points */}
-              {polygonPoints.map((point, index) => (
+              {(polygonPoints || []).map((point: any, index: any) => (
                 <circle
                   key={`point-${index}`}
                   cx={point.x}
                   cy={point.y}
-                  r={11}
-                  fill="#3b82f6"
+                  r={index === 0 && polygonPoints.length >= 3 ? vertexR * 1.2 : vertexR * 0.92}
+                  fill={index === 0 && polygonPoints.length >= 3 ? '#22c55e' : '#3b82f6'}
                   stroke="#FFFFFF"
-                  strokeWidth={2.5}
+                  strokeWidth={0.75}
+                  vectorEffect="non-scaling-stroke"
                 />
               ))}
             </>
           )}
+
+          {isDrawingCuboidWire && cuboidWireCorners.length > 0 && (() => {
+            const c = cuboidWireCorners;
+            const n = c.length;
+            const sw = 1 / Math.max(scale, 0.08);
+            const depthCount = Math.min(Math.max(n - 4, 0), 4);
+            return (
+              <g>
+                {n >= 2 &&
+                  c.slice(1).map((pt, i) => (
+                    <line
+                      key={`cw-seq-${i}`}
+                      x1={c[i].x}
+                      y1={c[i].y}
+                      x2={pt.x}
+                      y2={pt.y}
+                      stroke="#a78bfa"
+                      strokeWidth={sw}
+                      strokeLinecap="round"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ))}
+                {n >= 4 && (
+                  <line
+                    x1={c[3].x}
+                    y1={c[3].y}
+                    x2={c[0].x}
+                    y2={c[0].y}
+                    stroke="#a78bfa"
+                    strokeWidth={sw}
+                    strokeLinecap="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                )}
+                {depthCount > 0 &&
+                  Array.from({ length: depthCount }, (_, i) => (
+                    <line
+                      key={`cw-d-${i}`}
+                      x1={c[i].x}
+                      y1={c[i].y}
+                      x2={c[i + 4].x}
+                      y2={c[i + 4].y}
+                      stroke="#94a3b8"
+                      strokeWidth={sw * 0.85}
+                      strokeDasharray="4 3"
+                      strokeLinecap="round"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ))}
+                {n < 8 && polylinePreviewPoint && n >= 1 && (
+                  <line
+                    x1={c[n - 1].x}
+                    y1={c[n - 1].y}
+                    x2={polylinePreviewPoint.x}
+                    y2={polylinePreviewPoint.y}
+                    stroke="#c4b5fd"
+                    strokeWidth={sw}
+                    strokeDasharray="3 3"
+                    strokeLinecap="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                )}
+                {c.map((pt, i) => (
+                  <circle
+                    key={`cwv-${i}`}
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={vertexR * 0.9}
+                    fill="#a78bfa"
+                    stroke="#fff"
+                    strokeWidth={0.75}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+              </g>
+            );
+          })()}
           
           {/* Brush Ã–nizleme */}
           {activeTool === 'brush' && brushPoints.length > 0 && (
             <polyline
-              points={brushPoints.map(p => `${p.x},${p.y}`).join(' ')}
+              points={brushPoints.map((p: any) => `${p.x},${p.y}`).join(' ')}
               fill="none"
               stroke={brushColor}
-              strokeWidth={10 / scale}
+              strokeWidth={Math.max(1.5, DEFAULT_BRUSH_WIDTH / Math.max(scale, 0.08))}
               strokeLinecap="round"
               strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
             />
           )}
           
           {/* KaydedilmiÅŸ Brush Ã‡izimleri */}
-          {savedBrushes.map((brush) => (
+          {(savedBrushes || []).map((brush: any) => (
             <polyline
               key={brush.id}
               points={brush.points.map((p: any) => `${p.x},${p.y}`).join(' ')}
               fill="none"
               stroke={brush.color}
-              strokeWidth={10 / scale}
+              strokeWidth={Math.max(1.5, (brush.width || DEFAULT_BRUSH_WIDTH) / Math.max(scale, 0.08))}
               strokeLinecap="round"
               strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
               style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-              onClick={() => onSelect?.(brush.id)}
+              onClick={() => selectShapeIfPan(brush.id)}
             />
           ))}
           
@@ -600,7 +934,7 @@ export default React.forwardRef(function AnnotationCanvas({
           {isDrawingPolyline && polylinePoints.length > 0 && (
             <>
               {/* Draw lines between existing points */}
-              {polylinePoints.map((point, index) => {
+              {(polylinePoints || []).map((point: any, index: any) => {
                 if (index === 0) return null;
                 const prevPoint = polylinePoints[index - 1];
                 return (
@@ -611,8 +945,8 @@ export default React.forwardRef(function AnnotationCanvas({
                     x2={point.x}
                     y2={point.y}
                     stroke="#3b82f6"
-                    strokeWidth={2}
-                    strokeDasharray="5 5"
+                    strokeWidth={1}
+                    strokeLinecap="round"
                     style={{
                       vectorEffect: 'non-scaling-stroke',
                     }}
@@ -629,8 +963,10 @@ export default React.forwardRef(function AnnotationCanvas({
                   x2={polylinePreviewPoint.x}
                   y2={polylinePreviewPoint.y}
                   stroke="#3b82f6"
-                  strokeWidth={2}
-                  strokeDasharray="5 5"
+                  strokeWidth={1}
+                  strokeLinecap="round"
+                  strokeDasharray="3 3"
+                  strokeOpacity={0.75}
                   style={{
                     vectorEffect: 'non-scaling-stroke',
                   }}
@@ -638,15 +974,16 @@ export default React.forwardRef(function AnnotationCanvas({
               )}
               
               {/* Draw points */}
-              {polylinePoints.map((point, index) => (
+              {(polylinePoints || []).map((point: any, index: any) => (
                 <circle
                   key={`polyline-point-${index}`}
                   cx={point.x}
                   cy={point.y}
-                  r={11}
+                  r={vertexR}
                   fill="#3b82f6"
                   stroke="#FFFFFF"
-                  strokeWidth={2.5}
+                  strokeWidth={1}
+                  vectorEffect="non-scaling-stroke"
                 />
               ))}
               
@@ -656,11 +993,12 @@ export default React.forwardRef(function AnnotationCanvas({
                   key="polyline-preview-point"
                   cx={polylinePreviewPoint.x}
                   cy={polylinePreviewPoint.y}
-                  r={11}
+                  r={vertexR}
                   fill="#3b82f6"
                   stroke="#FFFFFF"
-                  strokeWidth={2.5}
+                  strokeWidth={1}
                   fillOpacity={0.5}
+                  vectorEffect="non-scaling-stroke"
                 />
               )}
             </>
@@ -673,14 +1011,38 @@ export default React.forwardRef(function AnnotationCanvas({
             position: 'absolute',
             left: 0,
             top: 0,
-            width: '100%', // Full container width
-            height: '100%', // Full container height
-            cursor: (activeTool as any) === 'pan' ? (isPanning ? 'grabbing' : 'grab') : ((activeTool as any) === 'bbox' || (activeTool as any) === 'points' ? 'crosshair' : 'default'),
+            // Görüntü doğal boyutundan küçük kalırsa scroll alanında SVG’ye tıklama kaçmasın
+            width: imageSize ? imageSize.w : '100%',
+            height: imageSize ? imageSize.h : '100%',
+            cursor:
+              (activeTool as any) === 'pan'
+                ? isPanning
+                  ? 'grabbing'
+                  : 'grab'
+                : (activeTool as any) === 'bbox' ||
+                    (activeTool as any) === 'points' ||
+                    (activeTool as any) === 'cuboid_wire'
+                  ? 'crosshair'
+                  : 'default',
             touchAction: 'none',
-            pointerEvents: 'auto', // ALWAYS ACTIVE - manages all events
+            pointerEvents: 'auto',
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
           }}
           onPointerDown={(e) => {
+            if (e.button === 2) {
+              e.preventDefault();
+              handlePointerDown(e);
+              return;
+            }
             e.preventDefault(); // Prevent native drag
+            try {
+              (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+            } catch {
+              /* ignore */
+            }
             handlePointerDown(e);
           }}
           onPointerMove={(e) => {

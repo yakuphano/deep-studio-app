@@ -1,5 +1,11 @@
 import React from 'react';
 import { BboxAnnotation } from '@/types/annotations';
+import { screenConstantRadius } from '@/utils/canvasHelpers';
+import { resolveAnnotationLabelColor, hexToRgba } from '@/constants/annotationLabels';
+import {
+  AnnotationLabelBadge,
+  getAnnotationLabelBadgeLayout,
+} from './AnnotationLabelBadge';
 
 interface BboxLayerProps {
   annotation: BboxAnnotation;
@@ -9,131 +15,60 @@ interface BboxLayerProps {
   onSelect: (id: string) => void;
 }
 
-// Get color for label with fallback - preserve purple styling
-const getLabelColor = (label: string | any): string => {
-  const labelStr = typeof label === 'object'
-    ? (label as any).name || (label as any).label || ''
-    : String(label ?? '');
-  return '#94a3b8';
-};
-
+/**
+ * Koordinatlar görüntü piksel uzayında: üst SVG zaten translate+scale uyguluyor;
+ * imageToScreen kullanmak çift dönüşüm yapıyordu.
+ */
 export const BboxLayer: React.FC<BboxLayerProps> = ({
   annotation,
   isSelected,
   scale,
-  imageToScreen,
-  onSelect
+  onSelect,
 }) => {
-  const screen = imageToScreen(annotation.x, annotation.y);
-  const screenWidth = annotation.width * scale;
-  const screenHeight = annotation.height * scale;
+  const color = resolveAnnotationLabelColor(annotation.label);
+  const { x, y, width, height } = annotation;
+  const labelText = String(annotation.label ?? '').trim();
+  const badgeLayout = labelText ? getAnnotationLabelBadgeLayout(labelText, scale) : null;
+  const hr = screenConstantRadius(scale, 3);
+  const fillColor = hexToRgba(color, isSelected ? 0.14 : 0.08);
 
   return (
     <g>
-      {/* Main bbox rectangle */}
       <rect
-        x={screen.x}
-        y={screen.y}
-        width={screenWidth}
-        height={screenHeight}
-        fill={isSelected ? 'rgba(124, 58, 237, 0.1)' : 'rgba(148, 163, 184, 0.1)'}
-        stroke={isSelected ? '#7c3aed' : '#94a3b8'}
-        strokeWidth={isSelected ? 2 : 1}
-        strokeDasharray={isSelected ? '5,5' : 'none'}
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        fill={fillColor}
+        stroke={color}
+        strokeWidth={isSelected ? 1.25 : 1}
+        strokeDasharray={isSelected ? '4,3' : 'none'}
+        vectorEffect="non-scaling-stroke"
         style={{ cursor: 'pointer' }}
         onClick={() => onSelect(annotation.id)}
       />
-      
-      {/* Label */}
-      <text
-        x={screen.x}
-        y={screen.y - 5}
-        fill={isSelected ? '#7c3aed' : '#94a3b8'}
-        fontSize={12}
-        fontWeight={isSelected ? '600' : '400'}
-        style={{ pointerEvents: 'none' }}
-      >
-        {annotation.label}
-      </text>
-      
-      {/* Resize handles for selected bbox */}
+
+      {badgeLayout && (
+        <AnnotationLabelBadge
+          labelText={labelText}
+          color={color}
+          scale={scale}
+          anchorX={x}
+          topY={y - 5 / badgeLayout.s - badgeLayout.h}
+          fontWeight={isSelected ? '600' : '500'}
+        />
+      )}
+
       {isSelected && (
         <>
-          {/* Corner handles */}
-          <circle
-            cx={screen.x}
-            cy={screen.y}
-            r={4}
-            fill="#7c3aed"
-            stroke="white"
-            strokeWidth={1}
-            style={{ cursor: 'nw-resize' }}
-          />
-          <circle
-            cx={screen.x + screenWidth}
-            cy={screen.y}
-            r={4}
-            fill="#7c3aed"
-            stroke="white"
-            strokeWidth={1}
-            style={{ cursor: 'ne-resize' }}
-          />
-          <circle
-            cx={screen.x + screenWidth}
-            cy={screen.y + screenHeight}
-            r={4}
-            fill="#7c3aed"
-            stroke="white"
-            strokeWidth={1}
-            style={{ cursor: 'se-resize' }}
-          />
-          <circle
-            cx={screen.x}
-            cy={screen.y + screenHeight}
-            r={4}
-            fill="#7c3aed"
-            stroke="white"
-            strokeWidth={1}
-            style={{ cursor: 'sw-resize' }}
-          />
-          
-          {/* Edge handles */}
-          <circle
-            cx={screen.x + screenWidth / 2}
-            cy={screen.y}
-            r={4}
-            fill="#7c3aed"
-            stroke="white"
-            strokeWidth={1}
-            style={{ cursor: 'n-resize' }}
-          />
-          <circle
-            cx={screen.x + screenWidth}
-            cy={screen.y + screenHeight / 2}
-            r={4}
-            fill="#7c3aed"
-            stroke="white"
-            strokeWidth={1}
-            style={{ cursor: 'e-resize' }}
-          />
-          <circle
-            cx={screen.x + screenWidth / 2}
-            cy={screen.y + screenHeight}
-            r={4}
-            fill="#7c3aed"
-            stroke="white"
-            strokeWidth={1}
-            style={{ cursor: 's-resize' }}
-          />
-          <circle
-            cx={screen.x}
-            cy={screen.y + screenHeight / 2}
-            r={4}
-            fill="#7c3aed"
-            stroke="white"
-            strokeWidth={1}
-            style={{ cursor: 'w-resize' }}
-          />
+          <circle cx={x} cy={y} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ cursor: 'nw-resize' }} />
+          <circle cx={x + width} cy={y} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ cursor: 'ne-resize' }} />
+          <circle cx={x + width} cy={y + height} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ cursor: 'se-resize' }} />
+          <circle cx={x} cy={y + height} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ cursor: 'sw-resize' }} />
+          <circle cx={x + width / 2} cy={y} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ cursor: 'n-resize' }} />
+          <circle cx={x + width} cy={y + height / 2} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ cursor: 'e-resize' }} />
+          <circle cx={x + width / 2} cy={y + height} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ cursor: 's-resize' }} />
+          <circle cx={x} cy={y + height / 2} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ cursor: 'w-resize' }} />
         </>
       )}
     </g>

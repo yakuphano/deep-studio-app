@@ -114,7 +114,6 @@ export const AnnotationTools = () => {
         };
         onAnnotationsChange(prev => [...prev, newPoint]);
         setHistory(prev => [...prev, { type: 'annotation', data: newPoint }]);
-        onSelect?.(newPoint.id);
       }
     }
   }, []);

@@ -1,4 +1,10 @@
 import { useState, useCallback, useRef } from 'react';
+import {
+  calculateInitialFit,
+  getResizeHandleAt,
+  pointsQuadToBoxBounds,
+  type ResizeHandleType,
+} from '@/utils/canvasHelpers';
 
 export interface ImageSize {
   w: number;
@@ -19,7 +25,12 @@ export interface BboxHandle {
   type: 'tl' | 'tr' | 'br' | 'bl' | 't' | 'r' | 'b' | 'l';
 }
 
-export const useCanvasLogic = () => {
+export interface UseCanvasLogicProps {
+  selectedId?: string | null;
+}
+
+export const useCanvasLogic = (props?: UseCanvasLogicProps) => {
+  const selectedId = props?.selectedId || null;
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
   const [imageSize, setImageSize] = useState<ImageSize | null>(null);
@@ -29,7 +40,7 @@ export const useCanvasLogic = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState<Point | null>(null);
   const [isResizing, setIsResizing] = useState(false);
-  const [resizeHandle, setResizeHandle] = useState<BboxHandle['type'] | null>(null);
+  const [resizeHandle, setResizeHandle] = useState<ResizeHandleType | null>(null);
   const [resizeStartBox, setResizeStartBox] = useState<any>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -83,25 +94,14 @@ export const useCanvasLogic = () => {
     setOffset({ x: newOffsetX, y: newOffsetY });
   }, [scale, screenToImage]);
 
-  // Get resize handle at position
-  const getHandleAt = useCallback((x: number, y: number, annotation: any): BboxHandle['type'] | null => {
-    const handleSize = 8 / scale; // Scale handle size
-    const handles: { type: BboxHandle['type']; x: number; y: number }[] = [
-      { type: 'tl', x: annotation.x, y: annotation.y },
-      { type: 'tr', x: annotation.x + annotation.width, y: annotation.y },
-      { type: 'br', x: annotation.x + annotation.width, y: annotation.y + annotation.height },
-      { type: 'bl', x: annotation.x, y: annotation.y + annotation.height },
-      { type: 't', x: annotation.x + annotation.width / 2, y: annotation.y },
-      { type: 'r', x: annotation.x + annotation.width, y: annotation.y + annotation.height / 2 },
-      { type: 'b', x: annotation.x + annotation.width / 2, y: annotation.y + annotation.height },
-      { type: 'l', x: annotation.x, y: annotation.y + annotation.height / 2 },
-    ];
-
-    for (const handle of handles) {
-      const distance = Math.sqrt((x - handle.x) ** 2 + (y - handle.y) ** 2);
-      if (distance <= handleSize) {
-        return handle.type;
-      }
+  const getHandleAt = useCallback((x: number, y: number, annotation: any): ResizeHandleType | null => {
+    if (annotation?.type === 'bbox' || annotation?.type === 'cuboid') {
+      return getResizeHandleAt(x, y, annotation, scale);
+    }
+    if (annotation?.type === 'semantic' || annotation?.type === 'magic_wand') {
+      const b = pointsQuadToBoxBounds(annotation?.points);
+      if (!b) return null;
+      return getResizeHandleAt(x, y, { type: 'bbox', ...b, id: '', label: '' } as any, scale);
     }
     return null;
   }, [scale]);
@@ -258,6 +258,21 @@ export const useCanvasLogic = () => {
     setResizeStartBox(null);
   }, []);
 
+  /** Zoom/pan sonrası görüntüyü konteynıra sığdırıp ortala (ilk yükleme ile aynı) */
+  const resetViewToFit = useCallback(() => {
+    const container = containerRef.current;
+    if (!container || !imageSize) return;
+    const rect = container.getBoundingClientRect();
+    const { scale: nextScale, offset: nextOffset } = calculateInitialFit(
+      imageSize.w,
+      imageSize.h,
+      rect.width,
+      rect.height
+    );
+    setScale(nextScale);
+    setOffset(nextOffset);
+  }, [imageSize]);
+
   // Initialize image with fit
   const initializeImage = useCallback((imageSource?: { uri: string } | null, imageUrl?: string | null) => {
     const img = imgRef.current;
@@ -271,15 +286,14 @@ export const useCanvasLogic = () => {
       setImageSize({ w: naturalWidth, h: naturalHeight });
       
       const containerRect = container.getBoundingClientRect();
-      const scaleX = containerRect.width / naturalWidth;
-      const scaleY = containerRect.height / naturalHeight;
-      const initialScale = Math.min(scaleX, scaleY, 1);
-      
-      const offsetX = (containerRect.width - naturalWidth * initialScale) / 2;
-      const offsetY = (containerRect.height - naturalHeight * initialScale) / 2;
-      
+      const { scale: initialScale, offset: nextOffset } = calculateInitialFit(
+        naturalWidth,
+        naturalHeight,
+        containerRect.width,
+        containerRect.height
+      );
       setScale(initialScale);
-      setOffset({ x: offsetX, y: offsetY });
+      setOffset(nextOffset);
     };
     
     img.src = imageSource?.uri || imageUrl || '';
@@ -296,6 +310,8 @@ export const useCanvasLogic = () => {
     isPanning,
     isDragging,
     isResizing,
+    panStart,
+    panStartOffset,
     
     // Refs
     containerRef,
@@ -312,10 +328,14 @@ export const useCanvasLogic = () => {
     handlePointerMove,
     handlePointerUp,
     initializeImage,
+    resetViewToFit,
     
     // Setters
     setScale,
     setOffset,
     setImageSize,
+    setIsPanning,
+    setPanStart,
+    setPanStartOffset,
   };
 };

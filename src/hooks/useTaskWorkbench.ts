@@ -11,6 +11,7 @@ import {
   type TaskType, 
   type TaskStatus 
 } from '@/types/taskDetail';
+import { resolveTaskType } from '@/lib/inferTaskType';
 
 interface UseTaskWorkbenchReturn {
   task: TaskData | null;
@@ -82,7 +83,7 @@ export const useTaskWorkbench = (taskId: string | undefined, userId: string | un
   const [showLabelModal, setShowLabelModal] = useState(false);
 
   // Computed values
-  const taskType = task?.type || 'image';
+  const taskType = task?.type || 'audio';
   const taskTypeLabel = taskType.charAt(0).toUpperCase() + taskType.slice(1);
 
   // Fetch task data
@@ -108,16 +109,17 @@ export const useTaskWorkbench = (taskId: string | undefined, userId: string | un
         }
         
         if (!error && data) {
-          const cat = (data.category ?? '').toString().toLowerCase();
           const isVideo = data.category === 'video';
           const taskData: TaskData = {
             id: String(data.id),
             title: String(data.title ?? '') || 'İsimsiz Görev',
             status: (data.status ?? 'pending') as TaskStatus,
             price: data.price != null ? Number(data.price) : 0,
-            type: (data.type ?? (cat === 'video' ? 'video' : 'audio')) as TaskType,
+            type: resolveTaskType(data as Record<string, unknown>) as TaskType,
             category: data.category ?? null,
-            audio_url: data.audio_url ?? data.audioUrl,
+            audio_url: data.audio_url ?? data.audioUrl ?? null,
+            content_url: data.content_url ?? null,
+            file_url: data.file_url ?? null,
             image_url: data.image_url ?? data.imageUrl ?? null,
             video_url: data.video_url ?? data.videoUrl ?? null,
             transcription: data.transcription ?? '',

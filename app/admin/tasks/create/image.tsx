@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback, createElement } from 'react';
 import {
   View,
   Text,
@@ -8,16 +8,57 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '@/lib/supabase';
+import JSZip from 'jszip';
+
+const WEB_FILE_ACCEPT =
+  '.jpg,.jpeg,.png,.gif,.webp,.bmp,.zip,image/*,application/zip,application/x-zip-compressed';
+
+const DOCUMENT_PICKER_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/bmp',
+  'application/zip',
+  'application/x-zip-compressed',
+] as const;
+
+type SelectedFileInfo = {
+  name: string;
+  size: number;
+  uri: string;
+  mimeType?: string | null;
+  webFile?: File | null;
+};
+
+function sanitizeFileName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function guessImageContentType(fileName: string, mime?: string | null): string {
+  if (mime && mime !== 'application/octet-stream') return mime;
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.bmp')) return 'image/bmp';
+  return 'application/octet-stream';
+}
+
+function notify(msg: string) {
+  if (Platform.OS === 'web') window.alert(msg);
+  else Alert.alert('Bilgi', msg);
+}
 
 export default function CreateImageTaskScreen() {
-  const { t } = useTranslation();
   const router = useRouter();
   const { user } = useAuth();
 
@@ -30,100 +71,249 @@ export default function CreateImageTaskScreen() {
     price: 0,
   });
 
-  const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [selectedFile, setSelectedFile] = useState<SelectedFileInfo | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [sourceType, setSourceType] = useState<'local' | 'remote'>('local');
   const [remoteUrl, setRemoteUrl] = useState('');
 
-  const handleBack = () => {
-    router.back();
+  const webInputRef = useRef<HTMLInputElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+
+  const revokePreview = useCallback(() => {
+    if (objectUrlRef.current) {
+      try {
+        URL.revokeObjectURL(objectUrlRef.current);
+      } catch {
+        /* ignore */
+      }
+      objectUrlRef.current = null;
+    }
+  }, []);
+
+  const uploadBytesToStorage = async (
+    body: Blob | File | ArrayBuffer,
+    filename: string
+  ): Promise<string> => {
+    if (!user?.id) throw new Error('Oturum gerekli');
+    const safe = sanitizeFileName(filename);
+    const path = `images/${user.id}/${Date.now()}_${safe}`;
+    const contentType = guessImageContentType(filename, body instanceof Blob ? body.type : null);
+
+    const { error } = await supabase.storage.from('task-assets').upload(path, body, {
+      contentType,
+      upsert: false,
+    });
+    if (error) throw new Error(error.message || 'Storage yükleme hatası');
+
+    const { data } = supabase.storage.from('task-assets').getPublicUrl(path);
+    return data.publicUrl;
   };
 
   const handleFileSelect = async () => {
     try {
+      if (Platform.OS === 'web') {
+        revokePreview();
+        webInputRef.current?.click();
+        return;
+      }
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'image/*',
-          'image/jpeg',
-          'image/png',
-          'image/gif',
-          'image/webp',
-        ],
+        type: [...DOCUMENT_PICKER_TYPES],
         copyToCacheDirectory: true,
         multiple: false,
       });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setSelectedFile(result.assets[0]);
-        setUploadProgress(0);
-      }
+      if (result.canceled || !result.assets?.length) return;
+      const a = result.assets[0];
+      setSelectedFile({
+        name: a.name || 'image',
+        size: a.size ?? 0,
+        uri: a.uri,
+        mimeType: a.mimeType ?? null,
+        webFile: null,
+      });
+      setUploadProgress(0);
     } catch (error) {
       console.error('File selection error:', error);
       Alert.alert('Error', 'Failed to select file');
     }
   };
 
-  const simulateUpload = () => {
-    if (!selectedFile) return;
-    
-    setIsUploading(true);
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 10;
-      setUploadProgress(progress);
-      
-      if (progress >= 100) {
-        clearInterval(interval);
-        setIsUploading(false);
-        Alert.alert('Success', 'File uploaded successfully');
+  const handleWebFileInputChange = (e: Event) => {
+    const target = e.target as HTMLInputElement;
+    const file = target.files?.[0];
+    target.value = '';
+    if (!file) return;
+    const uri = URL.createObjectURL(file);
+    objectUrlRef.current = uri;
+    setSelectedFile({
+      name: file.name,
+      size: file.size,
+      uri,
+      mimeType: file.type || null,
+      webFile: file,
+    });
+    setUploadProgress(0);
+  };
+
+  const processZipFile = async (file: SelectedFileInfo) => {
+    const response = await fetch(file.uri);
+    const blob = await response.blob();
+    const zip = new JSZip();
+    const zipContent = await zip.loadAsync(blob);
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
+    const imageFiles: { name: string; zipEntry: JSZip.JSZipObject }[] = [];
+
+    zipContent.forEach((relativePath, zf) => {
+      if (zf.dir) return;
+      const extension = relativePath.toLowerCase().substring(relativePath.lastIndexOf('.'));
+      if (imageExtensions.includes(extension)) {
+        imageFiles.push({ name: relativePath, zipEntry: zf });
       }
-    }, 200);
+    });
+
+    if (imageFiles.length === 0) {
+      throw new Error('Zip dosyası içinde görsel dosyası bulunamadı!');
+    }
+    return imageFiles;
   };
 
   const handleCreateTask = async () => {
-    // 1. ADIM: Kontrol
     if (!taskData.title || !taskData.company_name) {
-      Alert.alert("Eksik Bilgi", "Lütfen Şirket Adı ve Başlığı doldurun!");
+      notify('Lütfen Şirket Adı ve Başlığı doldurun!');
       return;
     }
 
-    try {
-      console.log("📡 Supabase'e veri gönderiliyor...");
+    const hasSource =
+      sourceType === 'local' ? !!selectedFile : !!remoteUrl.trim();
+    if (!hasSource) {
+      notify('Yerel dosya seçin veya geçerli bir görüntü URL’si girin.');
+      return;
+    }
 
-      // MINIMAL VERİ PAKETİ - Sadece kesin kolonlar
-      const { data, error } = await supabase
-        .from('tasks')
-        .insert([{
-          title: taskData.title,
-          company_name: taskData.company_name, // SQL'de açtığımız kolon
-          type: 'image',
-          annotation_type: taskData.annotationType, // SQL'de TEXT olarak var
-          status: 'pending',
-          assigned_to: null // ✅ Atanmamış olarak başla
-        }])
-        .select();
+    if (!user?.id) {
+      notify('Giriş yapmanız gerekir.');
+      return;
+    }
+
+    setIsCreating(true);
+    setUploadProgress(0);
+
+    try {
+      let tasksToCreate: Record<string, unknown>[] = [];
+
+      if (sourceType === 'local' && selectedFile) {
+        const isZip =
+          selectedFile.name?.toLowerCase().endsWith('.zip') ||
+          (selectedFile.mimeType ?? '').includes('zip');
+
+        if (isZip) {
+          const imageFiles = await processZipFile(selectedFile);
+          let done = 0;
+          for (let index = 0; index < imageFiles.length; index++) {
+            const { name: innerName, zipEntry } = imageFiles[index];
+            const buf = await zipEntry.async('arraybuffer');
+            const base = innerName.split('/').pop() || innerName;
+            const publicUrl = await uploadBytesToStorage(buf, base);
+            tasksToCreate.push({
+              title: `${taskData.title} - Part ${index + 1}`,
+              company_name: taskData.company_name,
+              type: 'image',
+              annotation_type: taskData.annotationType,
+              status: 'pending',
+              assigned_to: null,
+              image_url: publicUrl,
+              description: `${taskData.description || ''}\n\nImage file: ${innerName}`,
+              is_pool_task: true,
+              price: Number(taskData.price) || 0,
+            });
+            done++;
+            setUploadProgress(Math.round((done / imageFiles.length) * 100));
+          }
+        } else {
+          let body: Blob | File | ArrayBuffer;
+          if (Platform.OS === 'web' && selectedFile.webFile) {
+            body = selectedFile.webFile;
+          } else {
+            const res = await fetch(selectedFile.uri);
+            if (!res.ok) throw new Error('Görüntü dosyası okunamadı');
+            body = await res.blob();
+          }
+          const publicUrl = await uploadBytesToStorage(body, selectedFile.name);
+          setUploadProgress(100);
+          tasksToCreate = [
+            {
+              title: taskData.title,
+              company_name: taskData.company_name,
+              type: 'image',
+              annotation_type: taskData.annotationType,
+              status: 'pending',
+              assigned_to: null,
+              image_url: publicUrl,
+              description: taskData.description || '',
+              is_pool_task: true,
+              price: Number(taskData.price) || 0,
+            },
+          ];
+        }
+      } else if (sourceType === 'remote') {
+        const url = remoteUrl.trim();
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          notify('Uzak adres https:// ile başlamalı.');
+          setIsCreating(false);
+          return;
+        }
+        tasksToCreate = [
+          {
+            title: taskData.title,
+            company_name: taskData.company_name,
+            type: 'image',
+            annotation_type: taskData.annotationType,
+            status: 'pending',
+            assigned_to: null,
+            image_url: url,
+            description: taskData.description || '',
+            is_pool_task: true,
+            price: Number(taskData.price) || 0,
+          },
+        ];
+      }
+
+      const { data, error } = await supabase.from('tasks').insert(tasksToCreate).select();
 
       if (error) {
-        console.log("❌ VERİTABANI HATASI:", error);
-        alert('DB HATASI: ' + error.message); // Hata kodunu ekrana bas
+        console.error('DB HATASI', error);
+        notify('Veritabanı: ' + error.message);
         return;
       }
 
-      console.log("✅ BAŞARILI:", data);
-      Alert.alert('Success', 'Task created successfully!'); // Success mesajı
-      router.push('/admin'); // Admin ana sayfasına yönlendir
-
-    } catch (err) {
-      console.log("💥 CRITICAL CRASH:", err);
-      alert('SİSTEM HATASI: ' + (err as Error).message);
+      const n = data?.length ?? tasksToCreate.length;
+      if (Platform.OS === 'web') window.alert(`Tamam: ${n} görev oluşturuldu.`);
+      else Alert.alert('Success', `${n} task(s) created!`);
+      router.push('/admin');
+    } catch (err: unknown) {
+      console.error(err);
+      const m = err instanceof Error ? err.message : 'Bilinmeyen hata';
+      notify('Hata: ' + m);
+    } finally {
+      setIsCreating(false);
     }
   };
 
+  const handleBack = () => router.back();
+
   return (
     <View style={styles.container}>
-      {/* Small Back Button */}
+      {Platform.OS === 'web'
+        ? createElement('input', {
+            ref: webInputRef,
+            type: 'file',
+            accept: WEB_FILE_ACCEPT,
+            style: { display: 'none' },
+            onChange: handleWebFileInputChange,
+          })
+        : null}
+
       <View style={styles.backButtonContainer}>
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <Ionicons name="arrow-back" size={16} color="#3b82f6" />
@@ -131,23 +321,22 @@ export default function CreateImageTaskScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Main Content */}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Create Image Annotation Task</Text>
-        
+        <Text style={styles.hint}>
+          Yerel dosya ve zip içindeki her görüntü Supabase Storage (task-assets/images/…) üzerine
+          yüklenir; görevde kalıcı https adresi saklanır.
+        </Text>
+
         <View style={styles.form}>
-          {/* Left Column */}
           <View style={styles.leftColumn}>
             <View style={styles.formGroup}>
               <Text style={styles.label}>Company Name *</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  focusedInput === 'company_name' && styles.inputFocused
-                ]}
+                style={[styles.input, focusedInput === 'company_name' && styles.inputFocused]}
                 value={taskData.company_name}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, company_name: text }))}
-                placeholder="Enter company or client name (e.g. TransPerfect, Google)"
+                onChangeText={(text) => setTaskData((prev) => ({ ...prev, company_name: text }))}
+                placeholder="Company or client name"
                 placeholderTextColor="#9ca3af"
                 onFocus={() => setFocusedInput('company_name')}
                 onBlur={() => setFocusedInput(null)}
@@ -157,13 +346,10 @@ export default function CreateImageTaskScreen() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Task Title *</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  focusedInput === 'title' && styles.inputFocused
-                ]}
+                style={[styles.input, focusedInput === 'title' && styles.inputFocused]}
                 value={taskData.title}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, title: text }))}
-                placeholder="Enter task title"
+                onChangeText={(text) => setTaskData((prev) => ({ ...prev, title: text }))}
+                placeholder="Task title"
                 placeholderTextColor="#9ca3af"
                 onFocus={() => setFocusedInput('title')}
                 onBlur={() => setFocusedInput(null)}
@@ -173,13 +359,10 @@ export default function CreateImageTaskScreen() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Price ($)</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  focusedInput === 'price' && styles.inputFocused
-                ]}
+                style={[styles.input, focusedInput === 'price' && styles.inputFocused]}
                 value={taskData.price.toString()}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, price: parseFloat(text) || 0 }))}
-                placeholder="Enter task price"
+                onChangeText={(text) => setTaskData((prev) => ({ ...prev, price: parseFloat(text) || 0 }))}
+                placeholder="0"
                 placeholderTextColor="#9ca3af"
                 keyboardType="numeric"
                 onFocus={() => setFocusedInput('price')}
@@ -190,13 +373,10 @@ export default function CreateImageTaskScreen() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Annotation Type</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  focusedInput === 'annotationType' && styles.inputFocused
-                ]}
+                style={[styles.input, focusedInput === 'annotationType' && styles.inputFocused]}
                 value={taskData.annotationType}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, annotationType: text }))}
-                placeholder="Enter annotation type (e.g., bbox, polygon, point)"
+                onChangeText={(text) => setTaskData((prev) => ({ ...prev, annotationType: text }))}
+                placeholder="bbox, polygon, …"
                 placeholderTextColor="#9ca3af"
                 onFocus={() => setFocusedInput('annotationType')}
                 onBlur={() => setFocusedInput(null)}
@@ -204,19 +384,14 @@ export default function CreateImageTaskScreen() {
             </View>
           </View>
 
-          {/* Right Column */}
           <View style={styles.rightColumn}>
             <View style={styles.formGroup}>
               <Text style={styles.label}>Description *</Text>
               <TextInput
-                style={[
-                  styles.input, 
-                  styles.textArea,
-                  focusedInput === 'description' && styles.inputFocused
-                ]}
+                style={[styles.input, styles.textArea, focusedInput === 'description' && styles.inputFocused]}
                 value={taskData.description}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, description: text }))}
-                placeholder="Enter detailed task description"
+                onChangeText={(text) => setTaskData((prev) => ({ ...prev, description: text }))}
+                placeholder="Description"
                 placeholderTextColor="#9ca3af"
                 multiline
                 numberOfLines={6}
@@ -225,11 +400,9 @@ export default function CreateImageTaskScreen() {
               />
             </View>
 
-            {/* File Upload Section */}
             <View style={styles.formGroup}>
               <Text style={styles.label}>Image Source</Text>
-              
-              {/* Source Type Selector */}
+
               <View style={styles.sourceSelector}>
                 <TouchableOpacity
                   style={[styles.sourceButton, sourceType === 'local' && styles.sourceButtonActive]}
@@ -251,35 +424,27 @@ export default function CreateImageTaskScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Dynamic Content Based on Source Type */}
               {sourceType === 'local' ? (
-                <TouchableOpacity 
-                  style={[
-                    styles.uploadButton,
-                    focusedInput === 'upload' && styles.uploadButtonFocused
-                  ]} 
+                <TouchableOpacity
+                  style={[styles.uploadButton, focusedInput === 'upload' && styles.uploadButtonFocused]}
                   onPress={handleFileSelect}
-                  disabled={isUploading}
+                  disabled={isCreating}
                   onFocus={() => setFocusedInput('upload')}
                   onBlur={() => setFocusedInput(null)}
                 >
                   <Ionicons name="folder" size={24} color="#facc15" />
                   <Text style={styles.uploadButtonText}>
-                    {selectedFile ? selectedFile.name : 'Click to Upload Image File'}
+                    {selectedFile ? selectedFile.name : 'Görüntü veya zip seçin'}
                   </Text>
                 </TouchableOpacity>
               ) : (
                 <View style={styles.urlInputContainer}>
                   <Ionicons name="link" size={16} color="#9ca3af" style={styles.urlInputIcon} />
                   <TextInput
-                    style={[
-                      styles.input,
-                      styles.urlInput,
-                      focusedInput === 'url' && styles.inputFocused
-                    ]}
+                    style={[styles.input, styles.urlInput, focusedInput === 'url' && styles.inputFocused]}
                     value={remoteUrl}
                     onChangeText={setRemoteUrl}
-                    placeholder="Paste Image URL"
+                    placeholder="https://… görüntü adresi"
                     placeholderTextColor="#9ca3af"
                     onFocus={() => setFocusedInput('url')}
                     onBlur={() => setFocusedInput(null)}
@@ -287,43 +452,40 @@ export default function CreateImageTaskScreen() {
                 </View>
               )}
 
-              {selectedFile && sourceType === 'local' && (
+              {selectedFile && sourceType === 'local' ? (
                 <View style={styles.fileInfo}>
                   <Text style={styles.fileName}>{selectedFile.name}</Text>
                   <Text style={styles.fileSize}>
                     {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
                   </Text>
                 </View>
-              )}
+              ) : null}
 
-              {isUploading && (
+              {isCreating && sourceType === 'local' ? (
                 <View style={styles.progressContainer}>
                   <View style={styles.progressBar}>
-                    <View 
-                      style={[
-                        styles.progressFill, 
-                        { width: `${uploadProgress}%` }
-                      ]} 
-                    />
+                    <View style={[styles.progressFill, { width: `${uploadProgress}%` }]} />
                   </View>
                   <Text style={styles.progressText}>{uploadProgress}%</Text>
                 </View>
-              )}
-
-              {selectedFile && !isUploading && (
-                <TouchableOpacity 
-                  style={styles.uploadActionButton} 
-                  onPress={simulateUpload}
-                >
-                  <Text style={styles.uploadActionText}>Start Upload</Text>
-                </TouchableOpacity>
-              )}
+              ) : null}
             </View>
           </View>
         </View>
 
-        <TouchableOpacity style={styles.saveButton} onPress={handleCreateTask}>
-          <Text style={styles.saveButtonText}>Create Task</Text>
+        <TouchableOpacity
+          style={[styles.saveButton, isCreating && styles.saveButtonDisabled]}
+          onPress={() => void handleCreateTask()}
+          disabled={isCreating}
+        >
+          {isCreating ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <ActivityIndicator color="#fff" />
+              <Text style={styles.saveButtonText}>Yükleniyor…</Text>
+            </View>
+          ) : (
+            <Text style={styles.saveButtonText}>Create Task</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -335,8 +497,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0f172a',
   },
-  
-  // Small Back Button
   backButtonContainer: {
     position: 'absolute',
     top: 20,
@@ -354,22 +514,28 @@ const styles = StyleSheet.create({
   },
   backButtonText: {
     fontSize: 14,
-    color: '#3b82f6', // ✅ Mavi renge sabitlendi
+    color: '#3b82f6',
     fontWeight: '500',
   },
-  
-  // Content
   content: {
     flex: 1,
     padding: 20,
-    paddingTop: 60, // Space for the floating back button
+    paddingTop: 60,
   },
   title: {
     fontSize: 24,
     fontWeight: '700',
     color: '#f8fafc',
-    marginBottom: 32,
+    marginBottom: 8,
     textAlign: 'center',
+  },
+  hint: {
+    fontSize: 13,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+    paddingHorizontal: 12,
   },
   form: {
     flexDirection: 'row',
@@ -408,8 +574,6 @@ const styles = StyleSheet.create({
     height: 120,
     textAlignVertical: 'top',
   },
-  
-  // File Upload
   uploadButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -475,21 +639,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     minWidth: 40,
   },
-  uploadActionButton: {
-    backgroundColor: '#facc15',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  uploadActionText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000000',
-  },
-  
-  // Source Selector Styles
   sourceSelector: {
     flexDirection: 'row',
     backgroundColor: '#1f2937',
@@ -518,8 +667,6 @@ const styles = StyleSheet.create({
   sourceButtonTextActive: {
     color: '#fff',
   },
-  
-  // URL Input Styles
   urlInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -538,8 +685,6 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
     fontSize: 14,
   },
-  
-  // Save Button
   saveButton: {
     backgroundColor: '#f472b6',
     paddingVertical: 16,
@@ -547,6 +692,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 32,
+  },
+  saveButtonDisabled: {
+    opacity: 0.7,
   },
   saveButtonText: {
     fontSize: 16,

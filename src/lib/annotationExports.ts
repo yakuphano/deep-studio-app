@@ -2,7 +2,7 @@
  * Annotation format converters for admin export.
  * Converts Supabase annotation_data (x, y, w, h coordinates) to YOLO, COCO, Pascal VOC.
  */
-import type { Annotation } from '@/components/AnnotationCanvas';
+import type { Annotation } from '@/types/annotations';
 import { ANNOTATION_LABELS } from '@/constants/annotationLabels';
 
 function labelToClassId(label: string): number {
@@ -30,8 +30,18 @@ export function toYOLO(ctx: ExportContext): string {
       const w = a.width / imageWidth;
       const h = a.height / imageHeight;
       lines.push(`${cid} ${cx.toFixed(6)} ${cy.toFixed(6)} ${w.toFixed(6)} ${h.toFixed(6)}`);
-    } else {
+    } else if (
+      a.type === 'polygon' ||
+      a.type === 'polyline' ||
+      a.type === 'brush' ||
+      a.type === 'semantic' ||
+      a.type === 'magic_wand'
+    ) {
+      if (!a.points?.length) continue;
       const pts = a.points.flatMap((p) => [p.x / imageWidth, p.y / imageHeight]);
+      lines.push(`${cid} ${pts.map((v) => v.toFixed(6)).join(' ')}`);
+    } else if (a.type === 'cuboid_wire' && a.corners.length === 8) {
+      const pts = a.corners.flatMap((p) => [p.x / imageWidth, p.y / imageHeight]);
       lines.push(`${cid} ${pts.map((v) => v.toFixed(6)).join(' ')}`);
     }
   }
@@ -66,16 +76,27 @@ export function toCOCO(ctx: ExportContext): object {
         iscrowd: 0,
       });
     } else {
-      const flat = a.points.flatMap((p) => [p.x, p.y]);
-      const xs = a.points.map((p) => p.x);
-      const ys = a.points.map((p) => p.y);
+      const pts =
+        a.type === 'cuboid_wire' && a.corners.length === 8
+          ? a.corners
+          : a.type === 'polygon' ||
+              a.type === 'polyline' ||
+              a.type === 'brush' ||
+              a.type === 'semantic' ||
+              a.type === 'magic_wand'
+            ? a.points
+            : null;
+      if (!pts?.length) continue;
+      const flat = pts.flatMap((p) => [p.x, p.y]);
+      const xs = pts.map((p) => p.x);
+      const ys = pts.map((p) => p.y);
       const minX = Math.min(...xs);
       const minY = Math.min(...ys);
       const maxX = Math.max(...xs);
       const maxY = Math.max(...ys);
       let area = 0;
-      for (let i = 0, j = a.points.length - 1; i < a.points.length; j = i++) {
-        area += a.points[i].x * a.points[j].y - a.points[j].x * a.points[i].y;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        area += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
       }
       area = Math.abs(area) / 2;
       cocoAnnotations.push({
@@ -100,7 +121,7 @@ export function toCOCO(ctx: ExportContext): object {
 /** Pascal VOC: XML with xmin, ymin, xmax, ymax per object */
 export function toPascalVOC(ctx: ExportContext): string {
   const { annotations, imageWidth, imageHeight, imageFileName } = ctx;
-  const objects = annotations.map((a) => {
+  const objects = annotations.flatMap((a) => {
     let xmin: number, ymin: number, xmax: number, ymax: number;
     if (a.type === 'bbox') {
       xmin = a.x;
@@ -108,14 +129,25 @@ export function toPascalVOC(ctx: ExportContext): string {
       xmax = a.x + a.width;
       ymax = a.y + a.height;
     } else {
-      const xs = a.points.map((p) => p.x);
-      const ys = a.points.map((p) => p.y);
+      const pts =
+        a.type === 'cuboid_wire' && a.corners.length === 8
+          ? a.corners
+          : a.type === 'polygon' ||
+              a.type === 'polyline' ||
+              a.type === 'brush' ||
+              a.type === 'semantic' ||
+              a.type === 'magic_wand'
+            ? a.points
+            : null;
+      if (!pts?.length) return [];
+      const xs = pts.map((p) => p.x);
+      const ys = pts.map((p) => p.y);
       xmin = Math.min(...xs);
       ymin = Math.min(...ys);
       xmax = Math.max(...xs);
       ymax = Math.max(...ys);
     }
-    return `<object>
+    return [`<object>
     <name>${escapeXml(a.label)}</name>
     <bndbox>
       <xmin>${Math.round(xmin)}</xmin>
@@ -123,7 +155,7 @@ export function toPascalVOC(ctx: ExportContext): string {
       <xmax>${Math.round(xmax)}</xmax>
       <ymax>${Math.round(ymax)}</ymax>
     </bndbox>
-  </object>`;
+  </object>`];
   });
   return `<?xml version="1.0" encoding="UTF-8"?>
 <annotation>

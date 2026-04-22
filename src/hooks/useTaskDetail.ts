@@ -3,6 +3,7 @@ import { Alert, Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { transcribeWithGroq } from '@/lib/groq';
+import { resolveTaskType } from '@/lib/inferTaskType';
 
 interface TaskData {
   id: string;
@@ -80,13 +81,12 @@ export const useTaskDetail = (taskId: string, userId: string | undefined) => {
 
       console.log('FETCH PROGRESS - DATA RECEIVED:', data);
       if (data) {
-        const cat = (data.category ?? '').toString().toLowerCase();
         const taskData: TaskData = {
           id: String(data.id),
           title: String(data.title ?? '') || 'Untitled Task',
           status: data.status ?? 'pending',
           price: data.price != null ? Number(data.price) : 0,
-          type: (data.type ?? (cat === 'video' ? 'video' : 'audio')) as 'audio' | 'image' | 'video',
+          type: resolveTaskType(data as Record<string, unknown>) as TaskData['type'],
           category: data.category ?? null,
           audio_url: data.audio_url ?? data.audioUrl,
           content_url: data.content_url,
@@ -281,7 +281,8 @@ export const useTaskDetail = (taskId: string, userId: string | undefined) => {
   }, [taskId]);
 
   // Normalize audio URL for external components
-  const finalAudioUrl = task?.audio_url || task?.content_url || task?.audioUrl;
+  const finalAudioUrl =
+    task?.audio_url || task?.content_url || task?.audioUrl || task?.file_url;
 
   return {
     task,

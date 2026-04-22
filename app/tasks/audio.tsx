@@ -182,30 +182,41 @@ export default function AudioTasksScreen() {
 
       {/* Content */}
       {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3b82f6" />
-          <Text style={styles.loadingText}>{t('common.loading')}</Text>
-        </View>
+        <ActivityIndicator size="large" color="#ffffff" style={{ flex: 1 }} />
       ) : audioTasks.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <View style={styles.emptyIconContainer}>
-            <Ionicons name="mic-outline" size={80} color="#3b82f6" />
-          </View>
-          <Text style={styles.emptyTitle}>No Audio Tasks Available</Text>
-          <Text style={styles.emptyDescription}>There are currently no audio tasks waiting in the pool.</Text>
-          <TouchableOpacity style={styles.refreshButton} onPress={() => fetchAudioTasks(true)}>
-            <Ionicons name="refresh" size={16} color="#ffffff" />
-            <Text style={styles.refreshButtonText}>Refresh</Text>
+        /* GÜVENL\u0130 VE GÖRÜNÜR EMPTY STATE */
+        <View style={{ 
+          flex: 1, 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          padding: 20, 
+          backgroundColor: '#0f172a' // Arka plan\u0131nla uyumlu
+        }}>
+          <Ionicons name="alert-circle-outline" size={64} color="#64748b" />
+          <Text style={{ color: '#fff', fontSize: 18, marginTop: 10 }}>Görev Bulunamad\u0131</Text>
+          
+          <TouchableOpacity 
+            style={{
+              marginTop: 20,
+              backgroundColor: '#3b82f6', // Audio için mavi
+              paddingVertical: 12,
+              paddingHorizontal: 24,
+              borderRadius: 8,
+            }}
+            onPress={() => fetchAudioTasks(true)} // Buradaki fonksiyon ismine dikkat et!
+          >
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Görevleri Yenile</Text>
           </TouchableOpacity>
         </View>
       ) : (
+        // VER\u0130 VARSA L\u0130STELE
         <View style={styles.gridContainer}>
           <FlatList
             data={audioTasks}
+            keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <AudioTaskCard key={item.id} item={item} onPress={(id) => router.push(`/tasks/audio/${id}`)} t={t} />
             )}
-            keyExtractor={(item) => item.id}
             numColumns={numColumns}
             key={numColumns}
             contentContainerStyle={numColumns > 1 ? { paddingHorizontal: 4 } : {}}

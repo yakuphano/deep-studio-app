@@ -9,6 +9,7 @@ import {
   SafeAreaView,
   Dimensions,
   Alert,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -32,9 +33,9 @@ type Task = {
   assigned_to?: string | null;
 };
 
-// --- PEMBE KART BİLEŞENİ ---
+// --- PEMBE KART BİLEŞENİ (dışarısı View: iç içe Touchable ile web'de çift tıklama sorunu olmasın) ---
 const ImageTaskCard = ({ item, onPress }: { item: Task; onPress: (id: string) => void }) => (
-  <TouchableOpacity onPress={() => onPress(item.id)} style={styles.card} activeOpacity={0.8}>
+  <View style={styles.card}>
     <View style={styles.cardTopImage}>
       <View style={styles.iconPill}>
         <Ionicons name="image" size={24} color="#ec4899" />
@@ -56,7 +57,7 @@ const ImageTaskCard = ({ item, onPress }: { item: Task; onPress: (id: string) =>
         <Ionicons name="arrow-forward" size={14} color="#fff" />
       </TouchableOpacity>
     </View>
-  </TouchableOpacity>
+  </View>
 );
 
 export default function ImageTasksScreen() {
@@ -66,97 +67,137 @@ export default function ImageTasksScreen() {
   const [imageTasks, setImageTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // KRITIK: VERI CEKME TAMAMEN DONDURULDU - BROWSER CRASH'INI ENGELLE
-  // useFocusEffect(
-  //   useCallback(() => {
-  //     let isMounted = true;
+  const fetchTasks = useCallback(async () => {
+    let isMounted = true;
 
-  //     const fetchTasks = async () => {
-  //       try {
-  //         setLoading(true);
+    try {
+      setLoading(true);
 
-  //         // 1. Session'ý AuthContext'ten deðil, DOÐRUDAN Supabase'den al
-  //         const { data: { session } } = await supabase.auth.getSession();
-  //         const uid = session?.user?.id;
+      // 1. Session'ý DOÐRUDAN Supabase'den al
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
 
-  //         if (!uid) {
-  //           if (isMounted) setLoading(false);
-  //           return;
-  //         }
+      console.log('=== IMAGE-TASKS SESSION ===', { session: !!session, uid });
 
-  //         // 2. Kullanýcýnýn dillerini doðrudan Supabase'den al (Çünkü useAuth sildik)
-  //         const { data: profile } = await supabase
-  //           .from('profiles')
-  //           .select('languages')
-  //           .eq('id', uid)
-  //           .single();
-            
-  //         const userLangs = profile?.languages || [];
+      if (!uid) {
+        if (isMounted) setLoading(false);
+        return;
+      }
 
-  //         // 3. Tabloyu sorgula (image kategorisine göre)
-  //         const cols = 'id, title, status, price, language, category, type, image_url, is_pool_task, assigned_to';
-          
-  //         const { data: assignedData } = await supabase
-  //           .from('tasks')
-  //           .select(cols)
-  //           .eq('assigned_to', uid)
-  //           .eq('status', 'pending')
-  //           .or('category.eq.image,type.eq.image')
-  //           .order('created_at', { ascending: false });
-            
-  //         const { data: poolData } = await supabase
-  //           .from('tasks')
-  //           .select(cols)
-  //           .is('assigned_to', null)
-  //           .eq('status', 'pending')
-  //           .or('category.eq.image,type.eq.image')
-  //           .order('created_at', { ascending: false });
+      // 2. Kullanýcýnýn dillerini doðrudan Supabase'den al
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('languages')
+        .eq('id', uid)
+        .single();
+        
+      const userLangs = profile?.languages || [];
+      console.log('=== IMAGE-TASKS USER LANGS ===', userLangs);
 
-  //         if (isMounted) {
-  //           const allTasks = [...(poolData || []), ...(assignedData || [])];
-  //           const filteredTasks = allTasks.filter(task => userLangs.includes(task.language));
-  //           setImageTasks(filteredTasks);
-  //           setLoading(false);
-  //         }
-  //       } catch (error) {
-  //         console.error(error);
-  //         if (isMounted) setLoading(false);
-  //       }
-  //     };
+      // 3. Tabloyu sorgula (image kategorisine göre)
+      const cols = 'id, title, status, price, language, category, type, image_url, is_pool_task, assigned_to';
+      
+      const { data: assignedData } = await supabase
+        .from('tasks')
+        .select(cols)
+        .eq('assigned_to', uid)
+        .eq('status', 'pending')
+        .or('category.eq.image,type.eq.image');
 
-  //     fetchTasks();
+      const { data: poolData } = await supabase
+        .from('tasks')
+        .select(cols)
+        .is('assigned_to', null)
+        .eq('status', 'pending')
+        .or('category.eq.image,type.eq.image');
 
-  //     return () => {
-  //       isMounted = false;
-  //     };
-  //   }, []) // <--- EN KRÝTÝK NOKTA: BURASI KESÝNLÝKLE BOÞ DÝZÝ OLACAK. ÝÇÝNE HÝÇBÝR DEÐÝÞKEN YAZMA.
-  // );
+      console.log('=== IMAGE-TASKS ASSIGNED DATA ===', assignedData);
+      console.log('=== IMAGE-TASKS POOL DATA ===', poolData);
 
-  // GEÇICI: Loading'i false yap ki statik tasarim görünsün
-  useEffect(() => {
-    setLoading(false);
+      if (isMounted) {
+        const allTasks = [...(poolData || []), ...(assignedData || [])];
+        
+        // DEBUG: Dil filtresini geçici olarak kaldýr
+        console.log('=== IMAGE-TASKS ALL TASKS (NO FILTER) ===', allTasks);
+        console.log('=== IMAGE-TASKS TASK LANGUAGES ===', allTasks.map(t => ({ id: t.id, language: t.language })));
+        
+        // Geçici olarak tüm görevleri göster
+        const filteredTasks = allTasks; // Dil filtresi kaldýrýldý
+
+        console.log('=== IMAGE-TASKS FILTERED TASKS ===', filteredTasks);
+
+        setImageTasks(filteredTasks);
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error('=== IMAGE-TASKS ERROR ===', error);
+      if (isMounted) setLoading(false);
+    }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchTasks();
+    }, [fetchTasks])
+  );
+
+  const openTaskWorkbench = useCallback(
+    (taskId: string) => {
+      router.push(`/(tabs)/task/${taskId}` as const);
+    },
+    [router]
+  );
 
   const handleClaim = async (taskId: string) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.id) return;
-      
+      const uid = session?.user?.id;
+      if (!uid) return;
+
+      const fromList = imageTasks.find((t) => t.id === taskId);
+      if (fromList?.assigned_to === uid) {
+        openTaskWorkbench(taskId);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('tasks')
-        .update({ assigned_to: session.user.id })
+        .update({ assigned_to: uid })
         .eq('id', taskId)
         .is('assigned_to', null)
-        .select();
+        .select('id');
 
-      if (!error && data && data.length > 0) {
-         router.push(`/task/${taskId}`);
-      } else {
-         Alert.alert('Uyarý', 'Bu görev alýnamadý veya baþkasý tarafýndan alýndý.');
+      if (error) {
+        console.error('[tasks/image] claim error', error);
+        if (Platform.OS === 'web') window.alert('Görev alınamadı: ' + error.message);
+        else Alert.alert('Uyarı', 'Görev alınamadı.');
+        return;
       }
+
+      if (data && data.length > 0) {
+        openTaskWorkbench(taskId);
+        return;
+      }
+
+      const { data: row } = await supabase
+        .from('tasks')
+        .select('assigned_to')
+        .eq('id', taskId)
+        .maybeSingle();
+
+      if (row?.assigned_to === uid) {
+        openTaskWorkbench(taskId);
+        return;
+      }
+
+      const msg =
+        'Bu görev havuzda değil veya başka bir annotatöre atanmış olabilir. Listeyi yenileyip tekrar deneyin.';
+      if (Platform.OS === 'web') window.alert(msg);
+      else Alert.alert('Uyarı', msg);
     } catch (error) {
       console.error('Claim error:', error);
-      Alert.alert('Hata', 'Görev alýnýrken bir hata oluþtu.');
+      if (Platform.OS === 'web') window.alert('Görev açılırken hata oluştu.');
+      else Alert.alert('Hata', 'Görev alınırken bir hata oluştu.');
     }
   };
 
@@ -172,6 +213,7 @@ export default function ImageTasksScreen() {
 
       <View style={styles.pageHeader}>
         <Text style={styles.pageTitle}>{t('tasks.pageTitleImage') || 'Image Annotation Tasks'}</Text>
+        {/* Artık burada buton yok, sadece başlık var */}
       </View>
 
       {loading ? (
@@ -180,7 +222,17 @@ export default function ImageTasksScreen() {
         <View style={styles.emptyContainer}>
           <Ionicons name="image-outline" size={80} color="#475569" style={styles.emptyIcon} />
           <Text style={styles.emptyTitle}>No Image Tasks</Text>
-          <Text style={styles.emptyDescription}>Kendi dilinizde görsel görevi bulunamadı.</Text>
+          <Text style={styles.emptyDescription}>No image tasks found in your language.</Text>
+
+          {/* RENKLİ VE MERKEZLENMİŞ BUTON */}
+          <TouchableOpacity 
+            style={styles.coloredRefreshButton} 
+            onPress={() => fetchTasks()}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.buttonText}>Refresh Tasks</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -214,12 +266,38 @@ const styles = StyleSheet.create({
   badgeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   pendingBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#422006', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, gap: 4 },
   pendingText: { color: '#fbbf24', fontSize: 10, fontWeight: 'bold' },
-  priceBadge: { backgroundColor: '#064e3b', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  priceText: { color: '#10b981', fontSize: 10, fontWeight: 'bold' },
+  priceBadge: { backgroundColor: '#831843', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  priceText: { color: '#ec4899', fontSize: 10, fontWeight: 'bold' },
   startButton: { backgroundColor: '#ec4899', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 8, borderRadius: 8, gap: 6 },
   startButtonText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-  emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  emptyContainer: {
+    flex: 1, // Ekranın tüm boş alanını kaplar
+    justifyContent: 'center', // Dikeyde tam ortalar
+    alignItems: 'center', // Yatayda tam ortalar
+    paddingHorizontal: 20,
+    marginTop: -50, // Header'ın above'ini dengelemek için hafif yukarı kaydırabilirsin
+  },
   emptyIcon: { marginBottom: 20 },
   emptyTitle: { fontSize: 22, fontWeight: 'bold', color: '#f8fafc', marginTop: 20, textAlign: 'center' },
-  emptyDescription: { fontSize: 16, color: '#94a3b8', marginTop: 8, textAlign: 'center' }
+  emptyDescription: { fontSize: 16, color: '#94a3b8', marginTop: 8, textAlign: 'center' },
+  coloredRefreshButton: {
+    marginTop: 25,
+    backgroundColor: '#ff69b4', // Image için Pembe
+    paddingVertical: 14,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#ff69b4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5, // Android için gölge
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  }
 });

@@ -80,17 +80,6 @@ export const CanvasContextMenu = ({
         onIsDrawingPolylineChange(false);
         onPolylinePointsChange([]);
       }
-    }
-    
-    // Polyline undo - son noktasi sil
-    if (activeTool === 'polyline' && isDrawingPolyline && polylinePoints.length > 0) {
-      onPolylinePointsChange(prev => prev.slice(0, -1));
-      
-      // Eger hic nokta kalmadiysa cizim modundan cik
-      if (polylinePoints.length === 1) {
-        onIsDrawingPolylineChange(false);
-        onPolylinePointsChange([]);
-      }
       return;
     }
     

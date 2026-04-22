@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProfile } from '@/hooks/useProfile';
 
 type User = {
   id: string;
@@ -45,7 +46,8 @@ function ActionCard({
 export default function AdminPanelScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { user, isAdmin } = useAuth();
+  const { user } = useAuth();
+  const { isAdmin } = useProfile();
 
   // KRITIK: Tüm useState hook'ları en başta tanımla - hooks order violation'ı engelle
   const [dashboardStats, setDashboardStats] = useState({

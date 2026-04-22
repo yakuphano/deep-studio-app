@@ -37,8 +37,7 @@ export default function ImageTaskDetailScreen() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [activeTool, setActiveTool] = useState<'pan' | 'select' | 'bbox' | 'polygon' | 'points' | 'ellipse' | 'cuboid' | 'polyline' | 'semantic' | 'brush' | 'magic_wand'>('pan');
-  const canvasTool: Tool = activeTool as Tool;
+  const [activeTool, setActiveTool] = useState<Tool>('pan');
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>('');
   const [isBrushActive, setIsBrushActive] = useState(false);
@@ -301,11 +300,12 @@ export default function ImageTaskDetailScreen() {
       points: 'Points',
       ellipse: 'Ellipse',
       cuboid: 'Cuboid',
+      cuboid_wire: 'Cuboid (wire)',
       polyline: 'Polyline',
       semantic: 'Semantic',
       brush: 'Brush'
     };
-    return names[type] || type;
+    return names[type as keyof typeof names] ?? type;
   };
 
   const taskTypeLabel = (() => {
@@ -351,8 +351,11 @@ export default function ImageTaskDetailScreen() {
               marginRight: 15,
             }} 
             onPress={() => {
-              console.log('Image back button pressed!');
-              router.replace('/tasks/image'); // TEMİZ DÖNÜŞ
+              try {
+                router.back();
+              } catch (e) {
+                console.error('Back navigation error:', e);
+              }
             }}
           >
             <Ionicons name="arrow-back" size={20} color="#3b82f6" />
@@ -373,7 +376,14 @@ export default function ImageTaskDetailScreen() {
             {/* Pan Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'pan' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('pan'); setIsBrushActive(false); }}
+              onPress={() => { 
+                try {
+                  setActiveTool('pan'); 
+                  setIsBrushActive(false); 
+                } catch (e) {
+                  console.error('Pan tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Pan (G)', title: 'Pan (G)' } as any : {})}
             >
@@ -383,14 +393,18 @@ export default function ImageTaskDetailScreen() {
             
             {/* Undo Button */}
             <TouchableOpacity
-              style={[styles.toolBtnLarge, activeTool === 'undo' && !isBrushActive && styles.toolBtnActivePurple]}
+              style={[styles.toolBtnLarge, styles.toolBtnLarge]}
               onPress={() => {
-                if (canvasRef.current?.handleUndo) {
-                  canvasRef.current.handleUndo();
-                } else {
-                  if (annotations.length > 0) {
+                try {
+                  if (canvasRef.current?.handleUndo) {
+                    canvasRef.current.handleUndo();
+                  } else if (canvasRef.current?.undo) {
+                    canvasRef.current.undo();
+                  } else if (annotations && annotations.length > 0) {
                     setAnnotations(prev => prev.slice(0, -1));
                   }
+                } catch (e) {
+                  console.error('Undo tool error:', e);
                 }
               }}
               activeOpacity={0.8}
@@ -403,7 +417,14 @@ export default function ImageTaskDetailScreen() {
             {/* Bounding Box Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'bbox' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('bbox'); setIsBrushActive(false); }}
+              onPress={() => { 
+                try {
+                  setActiveTool('bbox'); 
+                  setIsBrushActive(false); 
+                } catch (e) {
+                  console.error('Bounding Box tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Bounding Box (R)', title: 'Bounding Box (R)' } as any : {})}
             >
@@ -414,7 +435,14 @@ export default function ImageTaskDetailScreen() {
             {/* Polygon Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'polygon' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('polygon'); setIsBrushActive(false); }}
+              onPress={() => { 
+                try {
+                  setActiveTool('polygon'); 
+                  setIsBrushActive(false); 
+                } catch (e) {
+                  console.error('Polygon tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Polygon (P)', title: 'Polygon (P)' } as any : {})}
             >
@@ -425,7 +453,14 @@ export default function ImageTaskDetailScreen() {
             {/* Points Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'points' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('points'); setIsBrushActive(false); }}
+              onPress={() => { 
+                try {
+                  setActiveTool('points'); 
+                  setIsBrushActive(false); 
+                } catch (e) {
+                  console.error('Points tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Points (N)', title: 'Points (N)' } as any : {})}
             >
@@ -436,7 +471,14 @@ export default function ImageTaskDetailScreen() {
             {/* Ellipse Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'ellipse' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('ellipse'); setIsBrushActive(false); }}
+              onPress={() => { 
+                try {
+                  setActiveTool('ellipse'); 
+                  setIsBrushActive(false); 
+                } catch (e) {
+                  console.error('Ellipse tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Ellipse', title: 'Ellipse' } as any : {})}
             >
@@ -447,18 +489,54 @@ export default function ImageTaskDetailScreen() {
             {/* Cuboid Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'cuboid' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('cuboid'); setIsBrushActive(false); }}
+              onPress={() => { 
+                try {
+                  setActiveTool('cuboid'); 
+                  setIsBrushActive(false); 
+                } catch (e) {
+                  console.error('Cuboid tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Cuboid', title: 'Cuboid' } as any : {})}
             >
               <Ionicons name="cube-outline" size={20} color="#f1f5f9" />
               <Text style={styles.toolBtnLargeText}>Cuboid</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.toolBtnLarge, activeTool === 'cuboid_wire' && !isBrushActive && styles.toolBtnActivePurple]}
+              onPress={() => {
+                try {
+                  setActiveTool('cuboid_wire');
+                  setIsBrushActive(false);
+                } catch (e) {
+                  console.error('Cuboid wire tool error:', e);
+                }
+              }}
+              activeOpacity={0.8}
+              {...(isWeb
+                ? ({
+                    accessibilityLabel: 'Cuboid wire 8 corners',
+                    title: '8 tık: ön yüz 1–4, arka yüz 5–8 (köşe i ↔ i+4 derinlik)',
+                  } as any)
+                : {})}
+            >
+              <Ionicons name="git-network-outline" size={20} color="#f1f5f9" />
+              <Text style={styles.toolBtnLargeText}>Cuboid wire</Text>
+            </TouchableOpacity>
             
             {/* Polyline Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'polyline' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('polyline'); setIsBrushActive(false); }}
+              onPress={() => { 
+                try {
+                  setActiveTool('polyline'); 
+                  setIsBrushActive(false); 
+                } catch (e) {
+                  console.error('Polyline tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Polyline', title: 'Polyline' } as any : {})}
             >
@@ -469,9 +547,22 @@ export default function ImageTaskDetailScreen() {
             {/* Semantic Segmentation Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'semantic' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('semantic'); setIsBrushActive(false); }}
+              onPress={() => { 
+                try {
+                  setActiveTool('semantic'); 
+                  setIsBrushActive(false); 
+                } catch (e) {
+                  console.error('Semantic tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
-              {...(isWeb ? { accessibilityLabel: 'Semantic Segmentation', title: 'Semantic Segmentation' } as any : {})}
+              {...(isWeb
+                ? ({
+                    accessibilityLabel: 'Semantic sınıf bölgesi',
+                    title:
+                      'Sürükleyerek dikdörtgen sınıf alanı. Soldaki etiket bu bölgenin sınıfıdır; üst üste yarı saydam bölgeler.',
+                  } as any)
+                : {})}
             >
               <Ionicons name="color-filter-outline" size={20} color="#f1f5f9" />
               <Text style={styles.toolBtnLargeText}>Semantic</Text>
@@ -480,7 +571,14 @@ export default function ImageTaskDetailScreen() {
             {/* Brush Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'brush' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('brush'); setIsBrushActive(false); }}
+              onPress={() => { 
+                try {
+                  setActiveTool('brush'); 
+                  setIsBrushActive(false); 
+                } catch (e) {
+                  console.error('Brush tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Brush', title: 'Brush' } as any : {})}
             >
@@ -491,7 +589,14 @@ export default function ImageTaskDetailScreen() {
             {/* Magic Wand Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'magic_wand' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('magic_wand'); setIsBrushActive(false); }}
+              onPress={() => { 
+                try {
+                  setActiveTool('magic_wand'); 
+                  setIsBrushActive(false); 
+                } catch (e) {
+                  console.error('Magic Wand tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Magic Wand', title: 'Magic Wand' } as any : {})}
             >
@@ -502,7 +607,15 @@ export default function ImageTaskDetailScreen() {
             {/* Delete Button */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, styles.deleteToolBtn]}
-              onPress={() => selectedAnnotationId && handleDeleteAnnotation(selectedAnnotationId)}
+              onPress={() => { 
+                try {
+                  if (selectedAnnotationId) {
+                    handleDeleteAnnotation(selectedAnnotationId);
+                  }
+                } catch (e) {
+                  console.error('Delete tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Delete Selected', title: 'Delete Selected' } as any : {})}
             >
@@ -516,8 +629,7 @@ export default function ImageTaskDetailScreen() {
             <View style={[styles.annotationCanvasWrapFullWidth, styles.canvasWorkspace, styles.canvasWorkspaceWithGrid]}>
               {isWeb && (
                 <View
-                  pointerEvents="none"
-                  style={[StyleSheet.absoluteFillObject, styles.canvasGridOverlay]}
+                  style={[StyleSheet.absoluteFillObject, styles.canvasGridOverlay, { pointerEvents: 'none' }]}
                 />
               )}
               <AnnotationCanvas
@@ -527,18 +639,25 @@ export default function ImageTaskDetailScreen() {
                 taskId={task.id}
                 annotations={annotations}
                 onAnnotationsChange={setAnnotations}
-                activeTool={canvasTool}
+                activeTool={activeTool}
                 selectedId={selectedAnnotationId}
                 onSelect={setSelectedAnnotationId}
                 selectedLabel={selectedLabel}
                 isBrushActive={isBrushActive}
+                onToolChange={(tool) => {
+                  try {
+                    setActiveTool(tool);
+                  } catch (e) {
+                    console.error('Tool change error:', e);
+                  }
+                }}
                 onUndo={() => {
                   if (canvasRef.current?.handleUndo) {
                     canvasRef.current.handleUndo();
-                  } else {
-                    if (annotations.length > 0) {
-                      setAnnotations(prev => prev.slice(0, -1));
-                    }
+                  } else if (canvasRef.current?.undo) {
+                    canvasRef.current.undo();
+                  } else if (annotations.length > 0) {
+                    setAnnotations(prev => prev.slice(0, -1));
                   }
                 }}
               />
@@ -569,7 +688,7 @@ export default function ImageTaskDetailScreen() {
                         </View>
                        
                           <View style={styles.labelOptionsGrid}>
-                            {ANNOTATION_LABELS.map((label) => {
+                            {(ANNOTATION_LABELS || []).map((label) => {
                               const isSelected = a.label === label;
                               const chipColor = LABEL_COLORS[label] ?? '#94a3b8';
                               return (
@@ -658,7 +777,9 @@ export default function ImageTaskDetailScreen() {
           onPress={() => {
             try {
               router.back();
-            } catch (_) {}
+            } catch (e) {
+              console.error('Back navigation error:', e);
+            }
           }}
           activeOpacity={0.8}
         >

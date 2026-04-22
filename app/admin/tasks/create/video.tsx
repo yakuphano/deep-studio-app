@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback, createElement } from 'react';
 import {
   View,
   Text,
@@ -11,14 +11,142 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '@/lib/supabase';
 
+/** Web file dialog + DocumentPicker: zip ve video */
+const WEB_FILE_ACCEPT =
+  '.zip,application/zip,application/x-zip-compressed,video/*,.mp4,.mov,.webm,.avi,.mkv';
+
+const DOCUMENT_PICKER_TYPES = [
+  'video/*',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+  'video/x-msvideo',
+  'video/x-matroska',
+  'application/zip',
+  'application/x-zip-compressed',
+] as const;
+
+/**
+ * Uygulama üst sınırı (bellek / tarayıcı). Bunun üstü seçilemez.
+ */
+const MAX_FILE_BYTES = 500 * 1024 * 1024;
+
+/**
+ * Supabase Storage dosya limiti (Dashboard → Project Settings → Storage veya bucket).
+ * Ücretsiz planda sık görülen değer ~50MB; 94MB yüklemek için hem Dashboard limitini hem bu env değerini artırın.
+ * Örnek: EXPO_PUBLIC_MAX_STORAGE_UPLOAD_MB=100
+ */
+const PARSED_STORAGE_MB = Number(process.env.EXPO_PUBLIC_MAX_STORAGE_UPLOAD_MB);
+const MAX_STORAGE_UPLOAD_MB =
+  Number.isFinite(PARSED_STORAGE_MB) && PARSED_STORAGE_MB > 0 ? PARSED_STORAGE_MB : 50;
+const MAX_STORAGE_UPLOAD_BYTES = MAX_STORAGE_UPLOAD_MB * 1024 * 1024;
+
+const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v'];
+
+type SelectedFileInfo = {
+  name: string;
+  size: number;
+  uri: string;
+  mimeType?: string | null;
+  /** Web <input type="file"> — doğrudan upload için */
+  webFile?: File | null;
+};
+
+function sanitizeFileName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function getLowerName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function isZipFile(name: string, mime?: string | null): boolean {
+  const lower = getLowerName(name);
+  if (lower.endsWith('.zip')) return true;
+  const m = (mime || '').toLowerCase();
+  return m === 'application/zip' || m === 'application/x-zip-compressed';
+}
+
+function isVideoFile(name: string, mime?: string | null): boolean {
+  const lower = getLowerName(name);
+  if (VIDEO_EXTENSIONS.some((ext) => lower.endsWith(ext))) return true;
+  const m = (mime || '').toLowerCase();
+  return m.startsWith('video/');
+}
+
+function isValidVideoOrZip(name: string, mime?: string | null): boolean {
+  return isZipFile(name, mime) || isVideoFile(name, mime);
+}
+
+function resolveUploadContentType(name: string, mime?: string | null): string {
+  if (mime && mime !== 'application/octet-stream') return mime;
+  const lower = getLowerName(name);
+  if (lower.endsWith('.zip')) return 'application/zip';
+  if (lower.endsWith('.mp4')) return 'video/mp4';
+  if (lower.endsWith('.webm')) return 'video/webm';
+  if (lower.endsWith('.mov')) return 'video/quicktime';
+  if (lower.endsWith('.avi')) return 'video/x-msvideo';
+  if (lower.endsWith('.mkv')) return 'video/x-matroska';
+  if (lower.endsWith('.m4v')) return 'video/x-m4v';
+  return 'application/octet-stream';
+}
+
+function notifyUser(title: string, message: string) {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+}
+
+/** Konsolda tam hata ayrıntısı (Storage: message, statusCode, error) */
+function logUploadError(phase: string, err: unknown) {
+  console.error(`[CreateVideoTask / ${phase}] raw error:`, err);
+
+  if (err instanceof Error) {
+    console.error(`[CreateVideoTask / ${phase}] error.message:`, err.message);
+    console.error(`[CreateVideoTask / ${phase}] error.stack:`, err.stack);
+  }
+
+  if (err && typeof err === 'object') {
+    const o = err as Record<string, unknown>;
+    const keys = ['message', 'name', 'statusCode', 'status', 'error', 'error_description', 'hint', 'code'];
+    for (const k of keys) {
+      if (k in o && o[k] != null) {
+        console.error(`[CreateVideoTask / ${phase}] ${k}:`, o[k]);
+      }
+    }
+    try {
+      console.error(
+        `[CreateVideoTask / ${phase}] JSON:`,
+        JSON.stringify(err, [...new Set([...Object.keys(o), ...keys])])
+      );
+    } catch {
+      console.error(`[CreateVideoTask / ${phase}] (JSON.stringify failed for error object)`);
+    }
+  }
+}
+
+function validateFileSizeForStorage(sizeBytes: number): string | null {
+  if (sizeBytes > MAX_FILE_BYTES) {
+    return `Dosya boyutu çok büyük. En fazla ${(MAX_FILE_BYTES / 1024 / 1024).toFixed(0)} MB yükleyebilirsiniz.`;
+  }
+  if (sizeBytes > MAX_STORAGE_UPLOAD_BYTES) {
+    return (
+      `Dosya boyutu Supabase Storage limitinizi aşıyor (yapılandırılan üst sınır: ${MAX_STORAGE_UPLOAD_MB} MB, ` +
+      `dosya: ${(sizeBytes / 1024 / 1024).toFixed(1)} MB). ` +
+      `Supabase Dashboard'dan dosya boyutu limitini artırın veya .env içinde EXPO_PUBLIC_MAX_STORAGE_UPLOAD_MB değerini güncelleyin.`
+    );
+  }
+  return null;
+}
+
 export default function CreateVideoTaskScreen() {
-  const { t } = useTranslation();
   const router = useRouter();
   const { user } = useAuth();
 
@@ -31,151 +159,352 @@ export default function CreateVideoTaskScreen() {
     price: 0,
   });
 
-  const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [selectedFile, setSelectedFile] = useState<SelectedFileInfo | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [sourceType, setSourceType] = useState<'local' | 'remote'>('local');
   const [remoteUrl, setRemoteUrl] = useState('');
+  const [uploadedPublicUrl, setUploadedPublicUrl] = useState<string | null>(null);
+  const [fileStatusMessage, setFileStatusMessage] = useState<string | null>(null);
 
-  const handleBack = () => {
-    router.back();
-  };
+  const webInputRef = useRef<HTMLInputElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+
+  const revokePreviewUrl = useCallback(() => {
+    if (objectUrlRef.current) {
+      try {
+        URL.revokeObjectURL(objectUrlRef.current);
+      } catch {
+        /* ignore */
+      }
+      objectUrlRef.current = null;
+    }
+  }, []);
+
+  type UploadTrigger = 'auto' | 'manual';
+
+  const uploadToStorage = useCallback(
+    async (file: SelectedFileInfo, opts?: { trigger?: UploadTrigger }): Promise<string | null> => {
+      const trigger = opts?.trigger ?? 'manual';
+
+      if (!user?.id) {
+        const msg = 'Yükleme için giriş yapmanız gerekir.';
+        logUploadError('auth', new Error(msg));
+        notifyUser('Oturum', msg);
+        return null;
+      }
+
+      const sizeErr = validateFileSizeForStorage(file.size);
+      if (sizeErr) {
+        logUploadError('validate-size', new Error(sizeErr));
+        notifyUser('Dosya boyutu çok büyük', sizeErr);
+        return null;
+      }
+
+      setIsUploading(true);
+      setUploadProgress(5);
+      setFileStatusMessage(trigger === 'auto' ? 'Dosya seçildi — yükleniyor…' : 'Yükleniyor…');
+
+      let progressTimer: ReturnType<typeof setInterval> | null = null;
+
+      try {
+        progressTimer = setInterval(() => {
+          setUploadProgress((p) => (p < 88 ? Math.min(88, p + 3) : p));
+        }, 350);
+
+        const safe = sanitizeFileName(file.name);
+        const path = `videos/${user.id}/${Date.now()}_${safe}`;
+        const contentType = resolveUploadContentType(file.name, file.mimeType);
+
+        console.log('[CreateVideoTask / upload] start', {
+          path,
+          contentType,
+          sizeBytes: file.size,
+          sizeMB: (file.size / 1024 / 1024).toFixed(2),
+          maxConfiguredMB: MAX_STORAGE_UPLOAD_MB,
+        });
+
+        let body: Blob | File | ArrayBuffer;
+
+        try {
+          if (Platform.OS === 'web' && file.webFile) {
+            body = file.webFile;
+          } else {
+            console.log('[CreateVideoTask / upload] fetching file body from uri…');
+            const response = await fetch(file.uri);
+            if (!response.ok) {
+              throw new Error(
+                `Dosya okunamadı (HTTP ${response.status}). Ağ veya önbellek sorunu olabilir.`
+              );
+            }
+            body = await response.blob();
+          }
+        } catch (readErr) {
+          logUploadError('read-body', readErr);
+          throw readErr instanceof Error
+            ? readErr
+            : new Error('Dosya okunurken hata oluştu.');
+        }
+
+        setUploadProgress(40);
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('task-assets')
+          .upload(path, body, {
+            contentType,
+            upsert: false,
+          });
+
+        if (uploadError) {
+          logUploadError('supabase-storage', uploadError);
+          const msg =
+            uploadError.message ||
+            (typeof uploadError === 'object' && uploadError !== null && 'error' in uploadError
+              ? String((uploadError as { error?: string }).error)
+              : 'Storage yükleme hatası');
+          throw new Error(msg);
+        }
+
+        console.log('[CreateVideoTask / upload] success', { path: uploadData?.path });
+
+        setUploadProgress(100);
+
+        const { data } = supabase.storage.from('task-assets').getPublicUrl(path);
+        const publicUrl = data.publicUrl;
+        setUploadedPublicUrl(publicUrl);
+        setFileStatusMessage('Yükleme tamamlandı — gönderime hazır.');
+
+        if (trigger === 'manual') {
+          notifyUser('Başarılı', 'Dosya Supabase Storage’a yüklendi.');
+        }
+
+        return publicUrl;
+      } catch (err) {
+        logUploadError('uploadToStorage-catch', err);
+
+        const rawMsg = err instanceof Error ? err.message : String(err);
+        const friendly =
+          /payload too large|413|maximum|too large|size/i.test(rawMsg)
+            ? `Dosya boyutu sunucu veya Supabase limitini aşıyor olabilir. (${rawMsg})`
+            : rawMsg;
+
+        setFileStatusMessage('Yükleme başarısız — ayrıntı tarayıcı konsolunda (F12).');
+        notifyUser('Yükleme hatası', friendly);
+        return null;
+      } finally {
+        if (progressTimer) clearInterval(progressTimer);
+        setIsUploading(false);
+      }
+    },
+    [user?.id]
+  );
+
+  const applySelectedFile = useCallback(
+    (info: SelectedFileInfo) => {
+      const sizeErr = validateFileSizeForStorage(info.size);
+      if (sizeErr) {
+        notifyUser('Dosya boyutu çok büyük', sizeErr);
+        return;
+      }
+      if (!isValidVideoOrZip(info.name, info.mimeType)) {
+        notifyUser(
+          'Geçersiz format',
+          'Lütfen geçerli bir video (.mp4, .mov, .webm, .avi, .mkv, .m4v) veya .zip dosyası seçin.'
+        );
+        return;
+      }
+
+      if (info.uri.startsWith('blob:')) {
+        objectUrlRef.current = info.uri;
+      } else {
+        revokePreviewUrl();
+      }
+
+      setUploadedPublicUrl(null);
+      setSelectedFile(info);
+      setUploadProgress(0);
+      setFileStatusMessage(`Dosya seçildi: ${info.name}`);
+
+      queueMicrotask(() => {
+        void uploadToStorage(info, { trigger: 'auto' });
+      });
+    },
+    [revokePreviewUrl, uploadToStorage]
+  );
+
+  const handleWebFileInputChange = useCallback(
+    (e: Event) => {
+      const target = e.target as HTMLInputElement;
+      const file = target.files?.[0];
+      target.value = '';
+      if (!file) return;
+
+      revokePreviewUrl();
+      const uri = URL.createObjectURL(file);
+      objectUrlRef.current = uri;
+
+      applySelectedFile({
+        name: file.name,
+        size: file.size,
+        uri,
+        mimeType: file.type || null,
+        webFile: file,
+      });
+    },
+    [applySelectedFile, revokePreviewUrl]
+  );
 
   const handleFileSelect = async () => {
     try {
+      if (Platform.OS === 'web') {
+        const input = webInputRef.current;
+        if (input) {
+          input.value = '';
+          input.click();
+        } else {
+          notifyUser('Hata', 'Dosya seçici hazır değil. Sayfayı yenileyip tekrar deneyin.');
+        }
+        return;
+      }
+
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'video/*',
-          'video/mp4',
-          'video/mov',
-          'video/avi',
-          'video/webm',
-        ],
+        type: [...DOCUMENT_PICKER_TYPES],
         copyToCacheDirectory: true,
         multiple: false,
       });
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setSelectedFile(result.assets[0]);
-        setUploadProgress(0);
-      }
+      if (result.canceled || !result.assets?.length) return;
+
+      const asset = result.assets[0];
+      const name = asset.name || 'video';
+      const size = asset.size ?? 0;
+      const mimeType = asset.mimeType ?? null;
+
+      applySelectedFile({
+        name,
+        size,
+        uri: asset.uri,
+        mimeType,
+        webFile: null,
+      });
     } catch (error) {
       console.error('File selection error:', error);
-      Alert.alert('Error', 'Failed to select file');
+      notifyUser('Dosya seçimi', 'Dosya seçilirken bir hata oluştu. Lütfen tekrar deneyin.');
     }
   };
 
-  const simulateUpload = () => {
-    if (!selectedFile) return;
-    
-    setIsUploading(true);
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 10;
-      setUploadProgress(progress);
-      
-      if (progress >= 100) {
-        clearInterval(interval);
-        setIsUploading(false);
-        Alert.alert('Success', 'File uploaded successfully');
-      }
-    }, 200);
+  const uploadSelectedFile = async (): Promise<string | null> => {
+    if (!selectedFile) {
+      notifyUser('Eksik dosya', 'Önce bir dosya seçin.');
+      return null;
+    }
+    return uploadToStorage(selectedFile, { trigger: 'manual' });
   };
 
   const handleCreateTask = async () => {
     setIsCreating(true);
     try {
-    console.log("Butona tıklandı!");
-    
-    // Validation - sadece title kontrolü
-    if (!taskData.title) {
-      Alert.alert("Eksik Bilgi", "Lütfen Başlığı doldurun!");
-      return;
+      if (!taskData.title) {
+        notifyUser('Eksik Bilgi', 'Lütfen Başlığı doldurun!');
+        return;
+      }
+
+      if (!taskData.price || taskData.price <= 0) {
+        notifyUser('Eksik Bilgi', 'Lütfen geçerli bir fiyat girin!');
+        return;
+      }
+
+      let videoUrl = '';
+
+      if (sourceType === 'local') {
+        if (!selectedFile) {
+          notifyUser('Eksik Bilgi', 'Lütfen bir video veya .zip dosyası seçin ve yükleyin.');
+          return;
+        }
+        if (isUploading) {
+          notifyUser('Bekleyin', 'Dosya hâlâ yükleniyor; tamamlanana kadar bekleyin.');
+          return;
+        }
+        let url = uploadedPublicUrl;
+        if (!url) {
+          url = await uploadToStorage(selectedFile, { trigger: 'auto' });
+          if (!url) return;
+        }
+        videoUrl = url;
+      } else if (remoteUrl.trim()) {
+        videoUrl = remoteUrl.trim();
+      } else {
+        notifyUser('Eksik Bilgi', 'Lütfen uzak URL girin veya yerel dosya seçin.');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('tasks')
+        .insert([
+          {
+            title: taskData.title,
+            description: taskData.description || '',
+            type: 'video',
+            video_url: videoUrl || null,
+            price: Number(taskData.price),
+          },
+        ])
+        .select();
+
+      if (error) {
+        console.error('DB Hatası:', error);
+        notifyUser('Hata', error.message || 'Görev oluşturulurken bir sorun oluştu.');
+        return;
+      }
+
+      console.log('Başarılı:', data);
+      if (Platform.OS === 'web') {
+        window.alert('Success: Task created successfully!');
+      } else {
+        Alert.alert('Success', 'Task created successfully!');
+      }
+
+      router.push('/admin');
+    } catch (err) {
+      console.error('Hata:', err);
+      notifyUser('Hata', (err as Error).message || 'Something went wrong while creating the task');
+    } finally {
+      setIsCreating(false);
     }
-    
-    let videoUrl = '';
-    
-    // Video kayna\u011f\u0131 i\u015fleme
-    if (selectedFile) {
-      videoUrl = `https://storage.supabase.co/videos/${selectedFile.name}`;
-    } else if (remoteUrl) {
-      videoUrl = remoteUrl;
-    }
-    
-    // Validation - fiyat kontrolü
-    if (!taskData.price || taskData.price <= 0) {
-      Alert.alert("Eksik Bilgi", "L\u00fctfen ge\u00e7erli bir fiyat girin!");
-      return;
-    }
-    
-    // Supabase kay\u0131t i\u015flemi - en sade hali
-    const { data, error } = await supabase
-      .from('tasks')
-      .insert([{
-        title: taskData.title,
-        description: taskData.description || '',
-        type: 'video',
-        video_url: videoUrl || null,
-        price: Number(taskData.price)
-      }])
-      .select();
-      
-    if (error) {
-      console.error("DB Hatası:", error);
-      Alert.alert('Error', error.message || 'Something went wrong while creating the task');
-      return;
-    }
-    
-    console.log("Başarılı:", data);
-    console.log("Task created successfully!");
-    
-    // Platform'a özel uyarı göster
-    if (Platform.OS === 'web') {
-      window.alert('Success: Task created successfully!');
-    } else {
-      Alert.alert('Success', 'Task created successfully!');
-    }
-    
-    // Direkt yönlendirme
-    router.push('/admin');
-    
-  } catch (err) {
-    console.error("Hata:", err);
-    console.log('CRITICAL ERROR:', err);
-    Alert.alert('Error', (err as Error).message || 'Something went wrong while creating the task');
-  } finally {
-    setIsCreating(false);
-  }
-};
+  };
 
   return (
     <View style={styles.container}>
-      {/* Small Back Button */}
+      {Platform.OS === 'web'
+        ? createElement('input', {
+            ref: webInputRef,
+            type: 'file',
+            accept: WEB_FILE_ACCEPT,
+            style: { display: 'none' },
+            onChange: handleWebFileInputChange,
+          })
+        : null}
+
       <View style={styles.backButtonContainer}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={16} color="#3b82f6" />
           <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Main Content */}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Create Video Annotation Task</Text>
-        
+
         <View style={styles.form}>
-          {/* Left Column */}
           <View style={styles.leftColumn}>
             <View style={styles.formGroup}>
               <Text style={styles.label}>Company Name *</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  focusedInput === 'company_name' && styles.inputFocused
-                ]}
+                style={[styles.input, focusedInput === 'company_name' && styles.inputFocused]}
                 value={taskData.company_name}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, company_name: text }))}
+                onChangeText={(text) => setTaskData((prev) => ({ ...prev, company_name: text }))}
                 placeholder="Enter company or client name (e.g. TransPerfect, Google)"
                 placeholderTextColor="#9ca3af"
                 onFocus={() => setFocusedInput('company_name')}
@@ -186,12 +515,9 @@ export default function CreateVideoTaskScreen() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Task Title *</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  focusedInput === 'title' && styles.inputFocused
-                ]}
+                style={[styles.input, focusedInput === 'title' && styles.inputFocused]}
                 value={taskData.title}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, title: text }))}
+                onChangeText={(text) => setTaskData((prev) => ({ ...prev, title: text }))}
                 placeholder="Enter task title"
                 placeholderTextColor="#9ca3af"
                 onFocus={() => setFocusedInput('title')}
@@ -202,12 +528,11 @@ export default function CreateVideoTaskScreen() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Price ($)</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  focusedInput === 'price' && styles.inputFocused
-                ]}
+                style={[styles.input, focusedInput === 'price' && styles.inputFocused]}
                 value={taskData.price.toString()}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, price: parseFloat(text) || 0 }))}
+                onChangeText={(text) =>
+                  setTaskData((prev) => ({ ...prev, price: parseFloat(text) || 0 }))
+                }
                 placeholder="Enter task price"
                 placeholderTextColor="#9ca3af"
                 keyboardType="numeric"
@@ -219,12 +544,9 @@ export default function CreateVideoTaskScreen() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Annotation Type</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  focusedInput === 'annotationType' && styles.inputFocused
-                ]}
+                style={[styles.input, focusedInput === 'annotationType' && styles.inputFocused]}
                 value={taskData.annotationType}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, annotationType: text }))}
+                onChangeText={(text) => setTaskData((prev) => ({ ...prev, annotationType: text }))}
                 placeholder="Enter annotation type (e.g., bbox, polygon, point)"
                 placeholderTextColor="#9ca3af"
                 onFocus={() => setFocusedInput('annotationType')}
@@ -233,18 +555,13 @@ export default function CreateVideoTaskScreen() {
             </View>
           </View>
 
-          {/* Right Column */}
           <View style={styles.rightColumn}>
             <View style={styles.formGroup}>
               <Text style={styles.label}>Description *</Text>
               <TextInput
-                style={[
-                  styles.input, 
-                  styles.textArea,
-                  focusedInput === 'description' && styles.inputFocused
-                ]}
+                style={[styles.input, styles.textArea, focusedInput === 'description' && styles.inputFocused]}
                 value={taskData.description}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, description: text }))}
+                onChangeText={(text) => setTaskData((prev) => ({ ...prev, description: text }))}
                 placeholder="Enter detailed task description"
                 placeholderTextColor="#9ca3af"
                 multiline
@@ -254,39 +571,56 @@ export default function CreateVideoTaskScreen() {
               />
             </View>
 
-            {/* File Upload Section */}
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Video Kaynağı (Dosya veya URL)</Text>
-              
-              {/* Source Type Selector */}
+              <Text style={styles.label}>Video Kaynağı (Video / .zip veya URL)</Text>
+              <Text style={styles.hintText}>
+                Yerel yükleme üst sınırı (yapılandırma): {MAX_STORAGE_UPLOAD_MB} MB — 94 MB gibi dosyalar için
+                Supabase Dashboard’daki Storage limitini ve .env içinde EXPO_PUBLIC_MAX_STORAGE_UPLOAD_MB değerini
+                artırın.
+              </Text>
+
               <View style={styles.sourceSelector}>
                 <TouchableOpacity
                   style={[styles.sourceButton, sourceType === 'local' && styles.sourceButtonActive]}
-                  onPress={() => setSourceType('local')}
+                  onPress={() => {
+                    setSourceType('local');
+                    setRemoteUrl('');
+                  }}
                 >
-                  <Ionicons name="cloud-upload" size={16} color={sourceType === 'local' ? '#fff' : '#9ca3af'} />
-                  <Text style={[styles.sourceButtonText, sourceType === 'local' && styles.sourceButtonTextActive]}>
+                  <Ionicons
+                    name="cloud-upload"
+                    size={16}
+                    color={sourceType === 'local' ? '#fff' : '#9ca3af'}
+                  />
+                  <Text
+                    style={[styles.sourceButtonText, sourceType === 'local' && styles.sourceButtonTextActive]}
+                  >
                     Local File
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.sourceButton, sourceType === 'remote' && styles.sourceButtonActive]}
-                  onPress={() => setSourceType('remote')}
+                  onPress={() => {
+                    setSourceType('remote');
+                    revokePreviewUrl();
+                    setSelectedFile(null);
+                    setUploadedPublicUrl(null);
+                    setFileStatusMessage(null);
+                    setUploadProgress(0);
+                  }}
                 >
                   <Ionicons name="link" size={16} color={sourceType === 'remote' ? '#fff' : '#9ca3af'} />
-                  <Text style={[styles.sourceButtonText, sourceType === 'remote' && styles.sourceButtonTextActive]}>
+                  <Text
+                    style={[styles.sourceButtonText, sourceType === 'remote' && styles.sourceButtonTextActive]}
+                  >
                     Remote URL
                   </Text>
                 </TouchableOpacity>
               </View>
 
-              {/* Dynamic Content Based on Source Type */}
               {sourceType === 'local' ? (
-                <TouchableOpacity 
-                  style={[
-                    styles.uploadButton,
-                    focusedInput === 'upload' && styles.uploadButtonFocused
-                  ]} 
+                <TouchableOpacity
+                  style={[styles.uploadButton, focusedInput === 'upload' && styles.uploadButtonFocused]}
                   onPress={handleFileSelect}
                   disabled={isUploading}
                   onFocus={() => setFocusedInput('upload')}
@@ -294,18 +628,14 @@ export default function CreateVideoTaskScreen() {
                 >
                   <Ionicons name="folder" size={24} color="#facc15" />
                   <Text style={styles.uploadButtonText}>
-                    {selectedFile ? selectedFile.name : 'Click to Upload Video File'}
+                    {selectedFile ? selectedFile.name : 'Video veya .zip dosyası seçin'}
                   </Text>
                 </TouchableOpacity>
               ) : (
                 <View style={styles.urlInputContainer}>
                   <Ionicons name="link" size={16} color="#9ca3af" style={styles.urlInputIcon} />
                   <TextInput
-                    style={[
-                      styles.input,
-                      styles.urlInput,
-                      focusedInput === 'url' && styles.inputFocused
-                    ]}
+                    style={[styles.input, styles.urlInput, focusedInput === 'url' && styles.inputFocused]}
                     value={remoteUrl}
                     onChangeText={setRemoteUrl}
                     placeholder="Paste Video URL"
@@ -316,49 +646,74 @@ export default function CreateVideoTaskScreen() {
                 </View>
               )}
 
-              {selectedFile && sourceType === 'local' && (
+              {fileStatusMessage ? (
+                <Text style={styles.statusText}>{fileStatusMessage}</Text>
+              ) : null}
+
+              {selectedFile && sourceType === 'local' ? (
                 <View style={styles.fileInfo}>
                   <Text style={styles.fileName}>{selectedFile.name}</Text>
                   <Text style={styles.fileSize}>
                     {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
                   </Text>
+                  {uploadedPublicUrl ? (
+                    <Text style={styles.uploadedHint}>Storage’a yüklendi.</Text>
+                  ) : null}
                 </View>
-              )}
+              ) : null}
 
-              {isUploading && (
+              {isUploading ? (
                 <View style={styles.progressContainer}>
-                  <View style={styles.progressBar}>
-                    <View 
-                      style={[
-                        styles.progressFill, 
-                        { width: `${uploadProgress}%` }
-                      ]} 
-                    />
+                  <ActivityIndicator color="#3b82f6" />
+                  <View style={styles.progressColumn}>
+                    <View style={styles.progressBar}>
+                      <View style={[styles.progressFill, { width: `${uploadProgress}%` }]} />
+                    </View>
+                    <Text style={styles.progressLabel}>
+                      Yükleniyor… %{Math.min(100, Math.round(uploadProgress))}
+                    </Text>
                   </View>
-                  <Text style={styles.progressText}>{uploadProgress}%</Text>
                 </View>
-              )}
+              ) : null}
 
-              {selectedFile && !isUploading && (
-                <TouchableOpacity 
-                  style={styles.uploadActionButton} 
-                  onPress={simulateUpload}
+              {selectedFile && sourceType === 'local' && !isUploading ? (
+                <TouchableOpacity
+                  style={[
+                    styles.uploadActionButton,
+                    uploadedPublicUrl && styles.uploadActionButtonSuccess,
+                  ]}
+                  onPress={() => void uploadSelectedFile()}
+                  disabled={!!uploadedPublicUrl}
                 >
-                  <Text style={styles.uploadActionText}>Start Upload</Text>
+                  <Text
+                    style={[
+                      styles.uploadActionText,
+                      uploadedPublicUrl && styles.uploadActionTextSuccess,
+                    ]}
+                  >
+                    {uploadedPublicUrl ? 'Yüklendi' : 'Storage’a yükle'}
+                  </Text>
                 </TouchableOpacity>
-              )}
+              ) : null}
+
+              {selectedFile && sourceType === 'local' && uploadedPublicUrl && !isUploading ? (
+                <TouchableOpacity
+                  style={styles.uploadRetryButton}
+                  onPress={() => void uploadSelectedFile()}
+                >
+                  <Text style={styles.uploadRetryText}>Yeniden yükle</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
         </View>
 
-        <TouchableOpacity 
-          style={styles.saveButton} 
-          onPress={handleCreateTask}
-          disabled={isCreating}
-        >
-          <Text style={styles.saveButtonText}>
-            {isCreating ? 'Creating...' : 'Create Task'}
-          </Text>
+        <TouchableOpacity style={styles.saveButton} onPress={() => void handleCreateTask()} disabled={isCreating}>
+          {isCreating ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.saveButtonText}>Create Task</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -370,8 +725,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0f172a',
   },
-  
-  // Small Back Button
   backButtonContainer: {
     position: 'absolute',
     top: 20,
@@ -389,15 +742,13 @@ const styles = StyleSheet.create({
   },
   backButtonText: {
     fontSize: 14,
-    color: '#3b82f6', // ✅ Mavi renge sabitlendi
+    color: '#3b82f6',
     fontWeight: '500',
   },
-  
-  // Content
   content: {
     flex: 1,
     padding: 20,
-    paddingTop: 60, // Space for the floating back button
+    paddingTop: 60,
   },
   title: {
     fontSize: 24,
@@ -426,6 +777,12 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     marginBottom: 8,
   },
+  hintText: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginBottom: 10,
+    lineHeight: 18,
+  },
   input: {
     backgroundColor: '#1f2937',
     borderWidth: 1,
@@ -443,8 +800,6 @@ const styles = StyleSheet.create({
     height: 120,
     textAlignVertical: 'top',
   },
-  
-  // File Upload
   uploadButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -468,6 +823,12 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
   },
+  statusText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: '#86efac',
+    fontWeight: '600',
+  },
   fileInfo: {
     marginTop: 12,
     padding: 12,
@@ -485,6 +846,11 @@ const styles = StyleSheet.create({
   fileSize: {
     fontSize: 12,
     color: '#64748b',
+  },
+  uploadedHint: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#34d399',
   },
   progressContainer: {
     marginTop: 12,
@@ -518,13 +884,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
   },
+  uploadActionButtonSuccess: {
+    backgroundColor: '#059669',
+    opacity: 1,
+  },
   uploadActionText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#000000',
   },
-  
-  // Source Selector Styles
+  uploadActionTextSuccess: {
+    color: '#ecfdf5',
+  },
+  uploadRetryButton: {
+    marginTop: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  uploadRetryText: {
+    fontSize: 14,
+    color: '#60a5fa',
+    fontWeight: '600',
+  },
   sourceSelector: {
     flexDirection: 'row',
     backgroundColor: '#1f2937',
@@ -553,8 +934,6 @@ const styles = StyleSheet.create({
   sourceButtonTextActive: {
     color: '#fff',
   },
-  
-  // URL Input Styles
   urlInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -573,8 +952,6 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
     fontSize: 14,
   },
-  
-  // Save Button
   saveButton: {
     backgroundColor: '#3b82f6',
     paddingVertical: 16,
@@ -582,6 +959,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 32,
+    minHeight: 52,
+    justifyContent: 'center',
   },
   saveButtonText: {
     fontSize: 16,
@@ -589,13 +968,3 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 });
-
-
-
-
-
-
-
-
-
-

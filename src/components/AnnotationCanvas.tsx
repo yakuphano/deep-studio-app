@@ -1,26 +1,14 @@
-import React from 'react';
+import React, { forwardRef, useImperativeHandle } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import type { Annotation, Tool } from '@/types/annotations';
 
-export type Tool = 'bbox' | 'polygon' | 'select';
+export type { Annotation, Tool } from '@/types/annotations';
 
-export interface BboxAnnotation {
-  id: string;
-  type: 'bbox';
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  label: string;
-}
-
-export interface PolygonAnnotation {
-  id: string;
-  type: 'polygon';
-  points: Array<{ x: number; y: number }>;
-  label: string;
-}
-
-export type Annotation = BboxAnnotation | PolygonAnnotation;
+export type AnnotationCanvasHandle = {
+  resetView?: () => void;
+  undo?: () => void;
+  handleUndo?: () => void;
+};
 
 interface AnnotationCanvasProps {
   imageSource?: { uri: string } | null;
@@ -28,7 +16,9 @@ interface AnnotationCanvasProps {
   initialAnnotations?: unknown;
   taskId?: string;
   annotations: Annotation[];
-  onAnnotationsChange: (annotations: Annotation[]) => void;
+  onAnnotationsChange: (
+    annotations: Annotation[] | ((prev: Annotation[]) => Annotation[])
+  ) => void;
   activeTool?: Tool;
   selectedId?: string | null;
   onSelect?: (id: string | null) => void;
@@ -36,15 +26,27 @@ interface AnnotationCanvasProps {
   isBrushActive?: boolean;
   brushSize?: number;
   selectedLabel?: string;
+  onToolChange?: (tool: Tool) => void;
+  onUndo?: () => void;
+  hideFloatingToolbar?: boolean;
 }
 
-export default function AnnotationCanvas(_props: AnnotationCanvasProps) {
-  return (
-    <View style={styles.placeholder}>
-      <Text style={styles.text}>Görsel etiketleme sadece web için desteklenir.</Text>
-    </View>
-  );
-}
+const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCanvasProps>(
+  function AnnotationCanvas(_props, ref) {
+    useImperativeHandle(ref, () => ({
+      resetView: () => {},
+      undo: () => {},
+      handleUndo: () => {},
+    }));
+    return (
+      <View style={styles.placeholder}>
+        <Text style={styles.text}>Görsel etiketleme sadece web için desteklenir.</Text>
+      </View>
+    );
+  }
+);
+
+export default AnnotationCanvas;
 
 const styles = StyleSheet.create({
   placeholder: {

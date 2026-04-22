@@ -3,12 +3,14 @@ import {
   View,
   Text,
   TouchableOpacity,
+  Pressable,
   ScrollView,
   StyleSheet,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { ANNOTATION_LABELS, LABEL_COLORS } from '@/constants/annotationLabels';
-import type { Annotation } from '@/components/AnnotationCanvas';
+import type { Annotation } from '@/types/annotations';
 
 interface ObjectListProps {
   annotations: Annotation[];
@@ -23,6 +25,13 @@ const getObjectDisplayName = (a: Annotation, idx: number) => {
   if ((a as any).type === 'bbox') return `Bounding Box #${n}`;
   if ((a as any).type === 'polygon') return `Polygon #${n}`;
   if ((a as any).type === 'point') return `Point #${n}`;
+  if ((a as any).type === 'semantic') return `Semantic #${n}`;
+  if ((a as any).type === 'magic_wand') return `Wand #${n}`;
+  if ((a as any).type === 'cuboid') return `Cuboid #${n}`;
+  if ((a as any).type === 'cuboid_wire') return `Cuboid (wire) #${n}`;
+  if ((a as any).type === 'polyline') return `Polyline #${n}`;
+  if ((a as any).type === 'ellipse') return `Ellipse #${n}`;
+  if ((a as any).type === 'brush') return `Brush #${n}`;
   return `Object #${n}`;
 };
 
@@ -49,20 +58,30 @@ export default function ObjectList({
             const isSelected = selectedAnnotationId === annotation.id;
             
             return (
-              <TouchableOpacity
+              <View
                 key={annotation.id}
                 style={[styles.objectListItem, isSelected && styles.objectListItemSelected]}
-                onPress={() => onSelectAnnotation(annotation.id)}
-                activeOpacity={0.8}
               >
                 <View style={styles.objectListItemHeader}>
                   <View style={styles.objectListItemInfo}>
-                    <Text style={[styles.objectListItemTitle, { color: labelColor }]}>
-                      {(annotation as any).type === 'bbox' && `BBox #${idx + 1} - ${labelStr || 'Other'}`}
-                      {(annotation as any).type === 'polygon' && `Polygon #${idx + 1}`}
-                      {(annotation as any).type === 'point' && `Point #${idx + 1}`}
-                      {(annotation as any).type !== 'bbox' && (annotation as any).type !== 'polygon' && (annotation as any).type !== 'point' && getObjectDisplayName(annotation, idx)}
-                    </Text>
+                    <Pressable
+                      onPress={() => onSelectAnnotation(annotation.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={getObjectDisplayName(annotation, idx)}
+                    >
+                      <Text style={[styles.objectListItemTitle, { color: labelColor }]}>
+                        {(annotation as any).type === 'bbox' && `BBox #${idx + 1} - ${labelStr || 'Other'}`}
+                        {(annotation as any).type === 'polygon' && `Polygon #${idx + 1}`}
+                        {(annotation as any).type === 'point' && `Point #${idx + 1}`}
+                        {(annotation as any).type === 'semantic' &&
+                          `Semantic #${idx + 1} - ${labelStr || 'Other'}`}
+                        {(annotation as any).type !== 'bbox' &&
+                          (annotation as any).type !== 'polygon' &&
+                          (annotation as any).type !== 'point' &&
+                          (annotation as any).type !== 'semantic' &&
+                          getObjectDisplayName(annotation, idx)}
+                      </Text>
+                    </Pressable>
                     {/* Label Selection Chips */}
                     <View style={styles.labelChipsContainer}>
                       {ANNOTATION_LABELS.map((labelItem) => (
@@ -86,9 +105,18 @@ export default function ObjectList({
                       ))}
                     </View>
                   </View>
-                  <View style={[styles.objectListItemColor, { backgroundColor: labelColor }]} />
+                  <View style={styles.objectListItemActions}>
+                    <TouchableOpacity
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={() => onDeleteAnnotation(annotation.id)}
+                      style={styles.deleteIconBtn}
+                    >
+                      <Ionicons name="trash-outline" size={18} color="#94a3b8" />
+                    </TouchableOpacity>
+                    <View style={[styles.objectListItemColor, { backgroundColor: labelColor }]} />
+                  </View>
                 </View>
-              </TouchableOpacity>
+              </View>
             );
           })
         )}
@@ -99,10 +127,17 @@ export default function ObjectList({
 
 const styles = StyleSheet.create({
   objectListSidebar: {
-    width: 240,
+    flex: 1,
+    alignSelf: 'stretch',
     backgroundColor: '#1e293b',
-    borderLeftWidth: 1,
-    borderLeftColor: '#334155',
+  },
+  objectListItemActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  deleteIconBtn: {
+    padding: 4,
   },
   objectListTitle: {
     fontSize: 12,

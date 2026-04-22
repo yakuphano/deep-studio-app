@@ -1,21 +1,17 @@
-import React from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { View, ScrollView, TouchableOpacity, Text, TextInput } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
-import { useTaskDetail } from '@/hooks/useTaskDetail';
+import { useTaskWorkbench } from '@/hooks/useTaskWorkbench';
 import { taskDetailStyles } from '@/theme/taskDetailStyles';
-import { 
-  type TaskData, 
-  type TaskType 
-} from '@/types/taskDetail';
 import TaskHeader from '@/components/workbench/TaskHeader';
-import { TaskMediaView } from '@/components/task/TaskMediaView';
+import { TaskMediaView, type TaskMediaViewCanvasHandle } from '@/components/task/TaskMediaView';
 import { TaskEditor } from '@/components/task/TaskEditor';
-import WorkbenchSidebar from '@/components/workbench/WorkbenchSidebar';
 import VideoPlayer from '../../components/VideoPlayer';
+import ImageAnnotationThreeColumn from '@/components/workbench/ImageAnnotationThreeColumn';
+import { ANNOTATION_LABELS } from '@/constants/annotationLabels';
 
 export default function TaskDetailScreen() {
-  console.log('--- VIDEO TASARIM UYGULANDI ---');
   const params = useLocalSearchParams<{ id: string | string[] }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const router = useRouter();
@@ -25,10 +21,6 @@ export default function TaskDetailScreen() {
   if (!id || id === 'undefined' || typeof id !== 'string') {
     return <View style={taskDetailStyles.container}><Text style={taskDetailStyles.loadingText}>Loading...</Text></View>;
   }
-
-  // Debug: Log ID parameter
-  console.log('Task Detail Page Loaded with ID:', id);
-  console.log('ID Params:', id);
 
   // Use extracted hooks
   const {
@@ -40,7 +32,7 @@ export default function TaskDetailScreen() {
     selectedAnnotationId,
     taskType,
     taskTypeLabel,
-    finalAudioUrl,
+    saving,
     handleAITranscription,
     handleAIFix,
     handleSaveDraft,
@@ -50,11 +42,59 @@ export default function TaskDetailScreen() {
     setActiveTool,
     setSelectedAnnotationId,
     setAnnotations,
-    setTranscription
-  } = useTaskDetail(id, user?.id);
+    setTranscription,
+  } = useTaskWorkbench(id, user?.id);
 
-  // Debug: Log task data and type
-  console.log('DEBUG - Task Type:', task?.type, 'Task Data:', task);
+  const [selectedLabel, setSelectedLabel] = useState<string>(
+    String(ANNOTATION_LABELS[0] ?? 'Other')
+  );
+  const imageCanvasRef = useRef<TaskMediaViewCanvasHandle | null>(null);
+  const activeToolRef = useRef(activeTool);
+  useLayoutEffect(() => {
+    activeToolRef.current = activeTool;
+  }, [activeTool]);
+
+  const handleUpdateAnnotationLabel = useCallback(
+    (annotationId: string, label: string) => {
+      setSelectedLabel(label);
+      setAnnotations((prev: any[]) =>
+        prev.map((a) => (a.id === annotationId ? { ...a, label } : a))
+      );
+    },
+    [setAnnotations]
+  );
+
+  const handleUndoAnnotations = useCallback(() => {
+    const canvasUndo = imageCanvasRef.current?.undo;
+    if (typeof canvasUndo === 'function') {
+      canvasUndo();
+      return;
+    }
+    setAnnotations((prev: any[]) => (prev.length > 0 ? prev.slice(0, -1) : prev));
+  }, [setAnnotations]);
+
+  /** Tuval onSelect(id): pan, select, bbox, cuboid, semantic veya magic_wand aktifken uygulanır; diğer araçlarda yok sayılır. Nesne listesi doğrudan seçer. */
+  const handleCanvasAnnotationSelect = useCallback(
+    (annotationId: string | null) => {
+      if (annotationId !== null) {
+        const t = activeToolRef.current;
+        if (
+          t !== 'pan' &&
+          t !== 'select' &&
+          t !== 'cuboid' &&
+          t !== 'bbox' &&
+          t !== 'semantic' &&
+          t !== 'magic_wand'
+        )
+          return;
+      }
+      setSelectedAnnotationId(annotationId);
+    },
+    [setSelectedAnnotationId]
+  );
+
+  const finalAudioUrl =
+    task?.audio_url || task?.content_url || task?.file_url || null;
 
   // Loading guard
   if (loading || !task) {
@@ -74,8 +114,86 @@ export default function TaskDetailScreen() {
     );
   }
 
-  // Audio Task
-  if (task?.type?.toLowerCase() === 'audio') {
+  const typeLc = (task?.type ?? '').toString().toLowerCase();
+  const catLc = (task?.category ?? '').toString().toLowerCase();
+  const hasImageUrl = String(task?.image_url ?? '').trim().length > 0;
+  /** Görsel görev: tip veya (video olmayan) image_url — ses arayüzüne düşmesini engeller */
+  const isImageTask =
+    typeLc === 'image' ||
+    catLc === 'image' ||
+    (hasImageUrl && typeLc !== 'video');
+  const isAudioLike =
+    !isImageTask &&
+    (typeLc === 'audio' ||
+      typeLc === 'transcription' ||
+      catLc.includes('transcription') ||
+      catLc.includes('audio'));
+
+  // Görüntü etiketleme — ses düzeninden önce
+  if (isImageTask) {
+    return (
+      <View style={taskDetailStyles.container}>
+        <TaskHeader title={task?.title || ''} price={task?.price} taskTypeLabel={taskTypeLabel} onBack={handleExit} />
+
+        <View style={{ flex: 1, minHeight: 0 }}>
+          <ImageAnnotationThreeColumn
+            activeTool={activeTool}
+            onToolChange={(t) => setActiveTool(t)}
+            onUndo={handleUndoAnnotations}
+            onResetImageView={() => imageCanvasRef.current?.resetImageView()}
+            selectedAnnotationId={selectedAnnotationId}
+            annotations={annotations}
+            onSelectAnnotation={setSelectedAnnotationId}
+            onUpdateAnnotationLabel={handleUpdateAnnotationLabel}
+            onDeleteAnnotation={handleAnnotationDelete}
+          >
+            <TaskMediaView
+              ref={imageCanvasRef}
+              task={task}
+              taskType={taskType}
+              annotations={annotations}
+              activeTool={activeTool}
+              selectedAnnotationId={selectedAnnotationId}
+              onToolChange={setActiveTool}
+              onAnnotationSelect={handleCanvasAnnotationSelect}
+              onAnnotationDelete={handleAnnotationDelete}
+              onAnnotationsChange={setAnnotations}
+              finalAudioUrl={finalAudioUrl}
+              hideCanvasToolbar
+              selectedLabel={selectedLabel}
+            />
+          </ImageAnnotationThreeColumn>
+        </View>
+        
+        <View style={taskDetailStyles.bottomButtonBar}>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity style={taskDetailStyles.exitButton} onPress={handleExit}>
+              <Text style={taskDetailStyles.exitButtonText}>Exit</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={taskDetailStyles.submitExitButton}
+              onPress={() => void handleSubmit(false)}
+              disabled={saving}
+            >
+              <Text style={taskDetailStyles.submitExitButtonText}>Submit & Exit</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <TouchableOpacity
+            style={taskDetailStyles.submitButtonGreen}
+            onPress={() => void handleSubmit(true)}
+            disabled={saving}
+          >
+            <Text style={taskDetailStyles.submitButtonGreenText}>Submit Next</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Ses / transkripsiyon görevleri
+  if (isAudioLike) {
     return (
       <View style={taskDetailStyles.container}>
         <TaskHeader title={task?.title || ''} price={task?.price} taskTypeLabel={taskTypeLabel} onBack={handleExit} />
@@ -88,9 +206,10 @@ export default function TaskDetailScreen() {
             activeTool={activeTool}
             selectedAnnotationId={selectedAnnotationId}
             onToolChange={setActiveTool}
-            onAnnotationSelect={setSelectedAnnotationId}
+            onAnnotationSelect={handleCanvasAnnotationSelect}
             onAnnotationDelete={handleAnnotationDelete}
             onAnnotationsChange={setAnnotations}
+            finalAudioUrl={finalAudioUrl}
           />
           
           <TaskEditor
@@ -261,72 +380,12 @@ export default function TaskDetailScreen() {
     );
   }
 
-  // Image Task
-  if (task?.type?.toLowerCase() === 'image') {
-    return (
-      <View style={taskDetailStyles.container}>
-        <TaskHeader title={task?.title || ''} price={task?.price} taskTypeLabel={taskTypeLabel} onBack={handleExit} />
-        
-        <View style={taskDetailStyles.annotationLayout}>
-          <WorkbenchSidebar
-            activeTool={activeTool}
-            selectedAnnotationId={selectedAnnotationId}
-            annotations={annotations}
-            onToolChange={setActiveTool}
-            onAnnotationSelect={setSelectedAnnotationId}
-            onAnnotationDelete={handleAnnotationDelete}
-            onAnnotationsChange={setAnnotations}
-          />
-          
-          <TaskMediaView
-            task={task}
-            taskType={taskType}
-            annotations={annotations}
-            activeTool={activeTool}
-            selectedAnnotationId={selectedAnnotationId}
-            onToolChange={setActiveTool}
-            onAnnotationSelect={setSelectedAnnotationId}
-            onAnnotationDelete={handleAnnotationDelete}
-            onAnnotationsChange={setAnnotations}
-            finalAudioUrl={finalAudioUrl}
-          />
-        </View>
-        
-        <View style={taskDetailStyles.bottomButtonBar}>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <TouchableOpacity style={taskDetailStyles.exitButton} onPress={handleExit}>
-              <Text style={taskDetailStyles.exitButtonText}>Exit</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={taskDetailStyles.submitExitButton} onPress={() => handleSubmit(false)}>
-              <Text style={taskDetailStyles.submitExitButtonText}>Submit & Exit</Text>
-            </TouchableOpacity>
-          </View>
-          
-          <TouchableOpacity style={taskDetailStyles.submitButtonGreen} onPress={() => handleSubmit(true)}>
-            <Text style={taskDetailStyles.submitButtonGreenText}>Submit Next</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
   // Default
   return (
     <View style={taskDetailStyles.container}>
       <TaskHeader title={task?.title || ''} price={task?.price} taskTypeLabel={taskTypeLabel} onBack={handleExit} />
       
-      <View style={taskDetailStyles.annotationLayout}>
-        <WorkbenchSidebar
-          activeTool={activeTool}
-          selectedAnnotationId={selectedAnnotationId}
-          annotations={annotations}
-          onToolChange={setActiveTool}
-          onAnnotationSelect={setSelectedAnnotationId}
-          onAnnotationDelete={handleAnnotationDelete}
-          onAnnotationsChange={setAnnotations}
-        />
-        
+      <View style={{ flex: 1, minHeight: 0 }}>
         <TaskMediaView
           task={task}
           taskType={taskType}
@@ -334,7 +393,7 @@ export default function TaskDetailScreen() {
           activeTool={activeTool}
           selectedAnnotationId={selectedAnnotationId}
           onToolChange={setActiveTool}
-          onAnnotationSelect={setSelectedAnnotationId}
+          onAnnotationSelect={handleCanvasAnnotationSelect}
           onAnnotationDelete={handleAnnotationDelete}
           onAnnotationsChange={setAnnotations}
           finalAudioUrl={finalAudioUrl}

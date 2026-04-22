@@ -43,14 +43,33 @@ export default function WorkbenchSidebar({
 }: WorkbenchSidebarProps) {
 
   const tools = [
-    { id: 'pan', icon: 'hand-right-outline', label: 'Pan', shortcut: 'G' },
+    {
+      id: 'pan',
+      icon: 'hand-right-outline',
+      label: 'Pan',
+      shortcut: 'G',
+      hint: 'Shift+sürükle: tüm nesneleri taşı',
+    },
     { id: 'bbox', icon: 'square-outline', label: 'Bounding Box', shortcut: 'R' },
     { id: 'polygon', icon: 'git-merge-outline', label: 'Polygon', shortcut: 'P' },
     { id: 'points', icon: 'radio-button-off-outline', label: 'Points', shortcut: 'N' },
     { id: 'ellipse', icon: 'ellipse-outline', label: 'Ellipse', shortcut: '' },
     { id: 'cuboid', icon: 'cube-outline', label: 'Cuboid', shortcut: '' },
+    {
+      id: 'cuboid_wire',
+      icon: 'git-network-outline',
+      label: 'Cuboid (wire)',
+      shortcut: '',
+      hint: '8 tık: ön 1–4, arka 5–8; köşe i ile i+4 derinlik',
+    },
     { id: 'polyline', icon: 'create-outline', label: 'Polyline', shortcut: '' },
-    { id: 'semantic', icon: 'color-filter-outline', label: 'Semantic', shortcut: '' },
+    {
+      id: 'semantic',
+      icon: 'color-filter-outline',
+      label: 'Semantic',
+      shortcut: '',
+      hint: 'Dikdörtgen sınıf bölgesi; etiket soldan. Bbox gibi 8 tutamaçla yeniden boyutlandırma, Pan ile taşıma.',
+    },
     { id: 'brush', icon: 'brush-outline', label: 'Brush', shortcut: '' },
     { id: 'magic_wand', icon: 'sparkles', label: 'Magic Wand', shortcut: '' },
   ];
@@ -72,7 +91,12 @@ export default function WorkbenchSidebar({
                 onActiveToolChange(tool.id);
               }}
               activeOpacity={0.8}
-              {...(isWeb ? { accessibilityLabel: `${tool.label} (${tool.shortcut})`, title: `${tool.label} (${tool.shortcut})` } as any : {})}
+              {...(isWeb
+                ? ({
+                    accessibilityLabel: `${tool.label} (${tool.shortcut})${(tool as any).hint ? `. ${(tool as any).hint}` : ''}`,
+                    title: `${tool.label} (${tool.shortcut})${(tool as any).hint ? ` — ${(tool as any).hint}` : ''}`,
+                  } as any)
+                : {})}
             >
               <Ionicons name={tool.icon as any} size={20} color="#f1f5f9" />
               <Text style={styles.toolButtonText}>{tool.label}</Text>

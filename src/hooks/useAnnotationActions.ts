@@ -1,17 +1,164 @@
-import { useCallback } from 'react';
-import { Annotation, Tool } from '@/types/annotations';
+import { useCallback, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { Annotation, Tool, MIN_BOX_SIZE } from '@/types/annotations';
+import {
+  resizeBbox,
+  computeBboxResizeDeltas,
+  distance,
+  isPointInPolygon,
+  isPointNearLine,
+  translateAnnotationByDelta,
+  isCuboidBackCornerHandle,
+  pointsQuadToBoxBounds,
+} from '@/utils/canvasHelpers';
+import type { BboxHandle } from '@/types/annotations';
+
+/** Tel kutu çizgileri — ön 0–3, arka 4–7, derinlik i↔i+4 */
+const CUBOID_WIRE_EDGES: [number, number][] = [
+  [0, 1],
+  [1, 2],
+  [2, 3],
+  [3, 0],
+  [4, 5],
+  [5, 6],
+  [6, 7],
+  [7, 4],
+  [0, 4],
+  [1, 5],
+  [2, 6],
+  [3, 7],
+];
+
+/** Ön + arka yüzün birleşik sınırlayıcı kutusu (tıklanabilir alan) */
+function pointInCuboidBounds(
+  ann: { x: number; y: number; width: number; height: number; dx?: number; dy?: number },
+  image: { x: number; y: number }
+): boolean {
+  const dx = ann.dx ?? 0;
+  const dy = ann.dy ?? 0;
+  const minX = Math.min(ann.x, ann.x + dx);
+  const maxX = Math.max(ann.x + ann.width, ann.x + ann.width + dx);
+  const minY = Math.min(ann.y, ann.y + dy);
+  const maxY = Math.max(ann.y + ann.height, ann.y + ann.height + dy);
+  return image.x >= minX && image.x <= maxX && image.y >= minY && image.y <= maxY;
+}
+
+/** Tuval (pan) modunda tıklanan noktada hangi anotasyon var — üstteki son eşleşme */
+function findTopAnnotationAtImagePoint(
+  annotations: Annotation[],
+  image: { x: number; y: number },
+  scale: number
+): Annotation | undefined {
+  const lineTol = Math.max(10 / Math.max(scale, 0.08), 6);
+  const pointTol = Math.max(14 / Math.max(scale, 0.08), 8);
+
+  const contains = (ann: Annotation): boolean => {
+    switch (ann.type) {
+      case 'bbox':
+        return (
+          image.x >= ann.x &&
+          image.x <= ann.x + ann.width &&
+          image.y >= ann.y &&
+          image.y <= ann.y + ann.height
+        );
+      case 'cuboid':
+        return pointInCuboidBounds(ann, image);
+      case 'ellipse': {
+        const dx = image.x - ann.cx;
+        const dy = image.y - ann.cy;
+        const rx = Math.max(ann.rx, 1);
+        const ry = Math.max(ann.ry, 1);
+        return (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) <= 1;
+      }
+      case 'polygon':
+        return ann.points.length >= 3 && isPointInPolygon(image.x, image.y, ann.points);
+      case 'polyline':
+        if (ann.points.length < 2) return false;
+        for (let i = 0; i < ann.points.length - 1; i++) {
+          if (isPointNearLine(image, ann.points[i], ann.points[i + 1], lineTol)) return true;
+        }
+        return false;
+      case 'cuboid_wire': {
+        const corners = ann.corners;
+        if (!corners || corners.length !== 8) return false;
+        for (const [a, b] of CUBOID_WIRE_EDGES) {
+          if (isPointNearLine(image, corners[a], corners[b], lineTol)) return true;
+        }
+        return false;
+      }
+      case 'point':
+        return distance(image, { x: ann.x, y: ann.y }) < pointTol;
+      case 'brush':
+        if (ann.points.length < 2) return false;
+        for (let i = 0; i < ann.points.length - 1; i++) {
+          if (isPointNearLine(image, ann.points[i], ann.points[i + 1], lineTol)) return true;
+        }
+        return false;
+      case 'semantic':
+      case 'magic_wand': {
+        const pts = ann.points;
+        if (!pts || pts.length < 3) return false;
+        return isPointInPolygon(image.x, image.y, pts);
+      }
+      default:
+        return false;
+    }
+  };
+
+  for (let i = annotations.length - 1; i >= 0; i--) {
+    if (contains(annotations[i])) return annotations[i];
+  }
+  return undefined;
+}
+
+function dragOffsetForAnnotation(ann: Annotation, image: { x: number; y: number }): { x: number; y: number } {
+  if (ann.type === 'polygon' || ann.type === 'polyline') {
+    const fp = ann.points[0];
+    return { x: image.x - fp.x, y: image.y - fp.y };
+  }
+  if (ann.type === 'semantic' || ann.type === 'magic_wand') {
+    const pts = ann.points;
+    if (pts?.length) {
+      const fp = pts[0];
+      return { x: image.x - fp.x, y: image.y - fp.y };
+    }
+  }
+  if (ann.type === 'ellipse') {
+    return { x: image.x - ann.cx, y: image.y - ann.cy };
+  }
+  if (ann.type === 'point') {
+    return { x: image.x - ann.x, y: image.y - ann.y };
+  }
+  if (ann.type === 'bbox' || ann.type === 'cuboid') {
+    return { x: image.x - ann.x, y: image.y - ann.y };
+  }
+  return { x: image.x, y: image.y };
+}
+
+/** Yeni anotasyon sonrası gecikmeli click / pan isabeti seçmesin */
+const SUPPRESS_OBJECT_SELECT_MS = 900;
+function armSuppressObjectSelectAfterCreate(ref: MutableRefObject<number>) {
+  ref.current = Date.now() + SUPPRESS_OBJECT_SELECT_MS;
+}
+function isObjectSelectSuppressed(ref: MutableRefObject<number>): boolean {
+  return Date.now() < ref.current;
+}
 
 interface UseAnnotationActionsProps {
   activeTool: Tool;
   selectedId: string | null;
   annotations: Annotation[];
-  onAnnotationsChange: (annotations: Annotation[]) => void;
+  onAnnotationsChange: (
+    annotations: Annotation[] | ((prev: Annotation[]) => Annotation[])
+  ) => void;
   onSelect: (id: string | null) => void;
   selectedLabel: string | null;
   screenToImage: (clientX: number, clientY: number) => { x: number; y: number };
   getHandleAt: (x: number, y: number, annotation: any, scale: number) => any;
   scale: number;
   handleUndo: () => void;
+  imageSize: { w: number; h: number } | null;
+  activeDrawing: any;
+  setActiveDrawing: Dispatch<SetStateAction<any>>;
   // Drawing states
   drawStart: { x: number; y: number } | null;
   setDrawStart: (start: { x: number; y: number } | null) => void;
@@ -20,25 +167,29 @@ interface UseAnnotationActionsProps {
   isDrawing: boolean;
   setIsDrawing: (drawing: boolean) => void;
   polygonPoints: { x: number; y: number }[];
-  setPolygonPoints: (points: { x: number; y: number }[]) => void;
+  setPolygonPoints: Dispatch<SetStateAction<{ x: number; y: number }[]>>;
   isDrawingPolygon: boolean;
   setIsDrawingPolygon: (drawing: boolean) => void;
   polylinePoints: { x: number; y: number }[];
-  setPolylinePoints: (points: { x: number; y: number }[]) => void;
+  setPolylinePoints: Dispatch<SetStateAction<{ x: number; y: number }[]>>;
   isDrawingPolyline: boolean;
   setIsDrawingPolyline: (drawing: boolean) => void;
   polylinePreviewPoint: { x: number; y: number } | null;
   setPolylinePreviewPoint: (point: { x: number; y: number } | null) => void;
+  cuboidWireCorners: { x: number; y: number }[];
+  setCuboidWireCorners: Dispatch<SetStateAction<{ x: number; y: number }[]>>;
+  isDrawingCuboidWire: boolean;
+  setIsDrawingCuboidWire: (drawing: boolean) => void;
   brushPoints: { x: number; y: number }[];
-  setBrushPoints: (points: { x: number; y: number }[]) => void;
+  setBrushPoints: Dispatch<SetStateAction<{ x: number; y: number }[]>>;
   brushColor: string;
   setBrushColor: (color: string) => void;
   isPaletteOpen: boolean;
   setIsPaletteOpen: (open: boolean) => void;
   savedBrushes: any[];
-  setSavedBrushes: (brushes: any[]) => void;
+  setSavedBrushes: Dispatch<SetStateAction<any[]>>;
   history: any[];
-  setHistory: (history: any[]) => void;
+  setHistory: Dispatch<SetStateAction<any[]>>;
   // Resize states
   isResizing: boolean;
   setIsResizing: (resizing: boolean) => void;
@@ -59,6 +210,10 @@ interface UseAnnotationActionsProps {
   panStartOffset: { x: number; y: number } | null;
   setPanStartOffset: (offset: { x: number; y: number } | null) => void;
   setOffset: (offset: { x: number; y: number }) => void;
+  /** Boş alanda pan başlarken mevcut translate (zoom sonrası kaybolmaması için) */
+  viewOffset: { x: number; y: number };
+  /** Yeni şekil eklendikten sonra kısa süre tuval/SVG seçimini yoksay */
+  suppressObjectSelectUntilRef: MutableRefObject<number>;
 }
 
 export const useAnnotationActions = ({
@@ -72,6 +227,9 @@ export const useAnnotationActions = ({
   getHandleAt,
   scale,
   handleUndo,
+  imageSize,
+  activeDrawing,
+  setActiveDrawing,
   drawStart,
   setDrawStart,
   drawPreview,
@@ -88,6 +246,10 @@ export const useAnnotationActions = ({
   setIsDrawingPolyline,
   polylinePreviewPoint,
   setPolylinePreviewPoint,
+  cuboidWireCorners,
+  setCuboidWireCorners,
+  isDrawingCuboidWire,
+  setIsDrawingCuboidWire,
   brushPoints,
   setBrushPoints,
   brushColor,
@@ -115,13 +277,96 @@ export const useAnnotationActions = ({
   panStartOffset,
   setPanStartOffset,
   setOffset,
+  viewOffset,
+  suppressObjectSelectUntilRef,
 }: UseAnnotationActionsProps) => {
+  /** Points: bbox gibi anotasyonu pointerup’ta yaz; aynı tıklamada oluşan seçim vuruşlarından kaçınılır */
+  const pendingPointPlacementRef = useRef<{ x: number; y: number } | null>(null);
+  /** Pan + Shift: son görüntü koordinatı (toplu taşıma için artımlı delta) */
+  const groupPanLastImageRef = useRef<{ x: number; y: number } | null>(null);
+
+  /** Polyline: sağ tık ile çizimi bitir (en az 2 nokta). Sol tık + Undo ile nokta geri alınır. */
+  const finalizePolylineDraft = useCallback(() => {
+    if (!isDrawingPolyline || polylinePoints.length < 2) {
+      setIsDrawingPolyline(false);
+      setPolylinePoints([]);
+      setPolylinePreviewPoint(null);
+      return;
+    }
+    const withinBounds =
+      imageSize &&
+      polylinePoints.every(
+        (point) =>
+          point.x >= 0 &&
+          point.y >= 0 &&
+          point.x <= imageSize.w &&
+          point.y <= imageSize.h
+      );
+    if (withinBounds) {
+      const newPolyline = {
+        id: `polyline-${Date.now()}`,
+        type: 'polyline' as const,
+        points: polylinePoints,
+        label: '',
+      };
+      onAnnotationsChange((prev) => [...prev, newPolyline]);
+      setHistory((prev) => [...prev, { type: 'annotation', data: newPolyline }]);
+      armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
+      onSelect?.(null);
+    }
+    setIsDrawingPolyline(false);
+    setPolylinePoints([]);
+    setPolylinePreviewPoint(null);
+  }, [
+    isDrawingPolyline,
+    polylinePoints,
+    imageSize,
+    onAnnotationsChange,
+    setHistory,
+    onSelect,
+    setIsDrawingPolyline,
+    setPolylinePoints,
+    setPolylinePreviewPoint,
+    suppressObjectSelectUntilRef,
+  ]);
 
   // Handle pointer down
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      if (e.button === 2) return;
-      
+      /** Sağ tık: polyline çizimini bitir; poligon çizerken son köşeyi geri al */
+      if (e.button === 2) {
+        e.preventDefault();
+        if (activeTool === 'polyline' && isDrawingPolyline) {
+          if (polylinePoints.length >= 2) {
+            finalizePolylineDraft();
+          } else if (polylinePoints.length === 1) {
+            setPolylinePoints([]);
+            setIsDrawingPolyline(false);
+            setPolylinePreviewPoint(null);
+          }
+          return;
+        }
+        if (activeTool === 'polygon' && isDrawingPolygon) {
+          if (polygonPoints.length > 1) {
+            setPolygonPoints((prev) => prev.slice(0, -1));
+          } else if (polygonPoints.length === 1) {
+            setPolygonPoints([]);
+            setIsDrawingPolygon(false);
+            setPolylinePreviewPoint(null);
+          }
+        }
+        if (activeTool === 'cuboid_wire' && isDrawingCuboidWire) {
+          if (cuboidWireCorners.length > 1) {
+            setCuboidWireCorners((prev) => prev.slice(0, -1));
+          } else if (cuboidWireCorners.length === 1) {
+            setCuboidWireCorners([]);
+            setIsDrawingCuboidWire(false);
+            setPolylinePreviewPoint(null);
+          }
+        }
+        return;
+      }
+
       // Undo butonu için özel handling
       if (activeTool === 'undo') {
         handleUndo();
@@ -130,70 +375,170 @@ export const useAnnotationActions = ({
       
       const image = screenToImage(e.clientX, e.clientY);
 
-      // Resize kontrolü - selectedId varsa önce resize tutamacý kontrol et
-      if (selectedId) {
-        const selectedAnnotation = annotations.find(ann => ann.id === selectedId);
-        if (selectedAnnotation && (selectedAnnotation.type === 'bbox' || selectedAnnotation.type === 'cuboid' || selectedAnnotation.type === 'polyline' || selectedAnnotation.type === 'brush' || selectedAnnotation.type === 'point')) {
+      // Resize kontrolü — points aracıyla tıklama her zaman yeni nokta eklemeli (bbox-tutamaç mantığı noktada yanlış pozitif verebilir)
+      if (selectedId && activeTool !== 'points') {
+        const selectedAnnotation = annotations.find((ann) => ann.id === selectedId);
+        if (
+          selectedAnnotation &&
+          (selectedAnnotation.type === 'bbox' ||
+            selectedAnnotation.type === 'cuboid' ||
+            selectedAnnotation.type === 'semantic' ||
+            selectedAnnotation.type === 'magic_wand' ||
+            selectedAnnotation.type === 'polyline' ||
+            selectedAnnotation.type === 'brush' ||
+            selectedAnnotation.type === 'point')
+        ) {
           const handle = getHandleAt(image.x, image.y, selectedAnnotation as any, scale);
           if (handle) {
-            console.log('[AnnotationCanvas] Resize handle clicked via getHandleAt:', handle);
-            setIsResizing(true);
-            setResizeHandle(handle);
-            setResizeStartBox(selectedAnnotation as any);
-            return; // Resize baþladý, diðer mantýklarý çalýþtýrma
+            if (selectedAnnotation.type === 'semantic' || selectedAnnotation.type === 'magic_wand') {
+              const b = pointsQuadToBoxBounds((selectedAnnotation as any).points);
+              if (b) {
+                console.log('[AnnotationCanvas] Resize handle clicked via getHandleAt:', handle);
+                setIsResizing(true);
+                setResizeHandle(handle);
+                setResizeStartBox({
+                  id: selectedAnnotation.id,
+                  type: selectedAnnotation.type,
+                  ...b,
+                });
+                return;
+              }
+            } else {
+              console.log('[AnnotationCanvas] Resize handle clicked via getHandleAt:', handle);
+              setIsResizing(true);
+              setResizeHandle(handle);
+              setResizeStartBox(selectedAnnotation as any);
+              return;
+            }
           }
         }
       }
 
       // Tool-Specific Initialization
       switch (activeTool) {
-        case 'pan':
-          console.log('[AnnotationCanvas] PAN MODE ACTIVATED');
-          console.log('[AnnotationCanvas] Pan mode - checking annotations at:', image);
-          console.log('[AnnotationCanvas] Total annotations:', annotations.length);
-          console.log('[AnnotationCanvas] SelectedId:', selectedId);
-          // Pan modunda çizimleri seçmek ve taþýmak için annotation tespiti
-          const clickedAnnotation = annotations.find(ann => {
-            console.log('[AnnotationCanvas] Checking annotation:', ann.id, ann.type);
-            if ((ann as any).type === 'bbox' || (ann as any).type === 'cuboid') {
-              const hit = image.x >= (ann as any).x && image.x <= (ann as any).x + (ann as any).width &&
-                      image.y >= (ann as any).y && image.y <= (ann as any).y + (ann as any).height;
-              console.log('[AnnotationCanvas] Bbox/Cuboid hit test:', hit, 'coords:', {x: (ann as any).x, y: (ann as any).y, w: (ann as any).width, h: (ann as any).height}, 'click:', image);
-              return hit;
-            }
-            return false;
-          });
-          
+        case 'pan': {
+          /** Shift basılıyken tüm anotasyonları birlikte taşı (görüntü üzerinde boş veya dolu alan) */
+          if (e.shiftKey && annotations.length > 0) {
+            groupPanLastImageRef.current = { x: image.x, y: image.y };
+            break;
+          }
+          const clickedAnnotation = findTopAnnotationAtImagePoint(annotations, image, scale);
           if (clickedAnnotation) {
-            console.log('[AnnotationCanvas] Annotation found in pan mode, selecting:', clickedAnnotation.id);
+            if (isObjectSelectSuppressed(suppressObjectSelectUntilRef)) {
+              break;
+            }
             onSelect?.(clickedAnnotation.id);
             setIsDragging(true);
-            setDragOffset({ x: image.x - (clickedAnnotation as any).x, y: image.y - (clickedAnnotation as any).y });
+            setDragOffset(dragOffsetForAnnotation(clickedAnnotation, image));
           } else {
-            console.log('[AnnotationCanvas] No annotation found, starting pan');
             setIsPanning(true);
             setPanStart({ x: e.clientX, y: e.clientY });
-            setPanStartOffset({ x: 0, y: 0 });
+            setPanStartOffset({ x: viewOffset.x, y: viewOffset.y });
           }
           break;
+        }
 
         case 'bbox':
-          console.log('[AnnotationCanvas] BBOX MODE - Starting bbox draw at:', image);
+        case 'ellipse':
+        case 'semantic':
           setDrawStart(image);
           setDrawPreview({ x: image.x, y: image.y, width: 0, height: 0 });
           setIsDrawing(true);
           break;
 
-        case 'polygon':
+        case 'cuboid':
+          if (activeDrawing?.tool === 'cuboid' && activeDrawing.step === 2) {
+            break;
+          }
+          setActiveDrawing({
+            tool: 'cuboid',
+            x: image.x,
+            y: image.y,
+            width: 0,
+            height: 0,
+            dx: 0,
+            dy: 0,
+            step: 1,
+          });
+          setDrawStart(image);
+          setDrawPreview({ x: image.x, y: image.y, width: 0, height: 0 });
+          setIsDrawing(true);
+          break;
+
+        case 'magic_wand': {
+          if (!imageSize) break;
+          const half = 18;
+          const cx = image.x;
+          const cy = image.y;
+          const x1 = Math.max(0, cx - half);
+          const y1 = Math.max(0, cy - half);
+          const x2 = Math.min(imageSize.w, cx + half);
+          const y2 = Math.min(imageSize.h, cy + half);
+          if (x2 - x1 < MIN_BOX_SIZE || y2 - y1 < MIN_BOX_SIZE) break;
+          const pts = [
+            { x: x1, y: y1 },
+            { x: x2, y: y1 },
+            { x: x2, y: y2 },
+            { x: x1, y: y2 },
+          ];
+          const wand = {
+            id: `magic_wand-${Date.now()}`,
+            type: 'magic_wand' as const,
+            points: pts,
+            label: selectedLabel ?? '',
+          };
+          onAnnotationsChange((prev) => [...prev, wand as Annotation]);
+          armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
+          onSelect?.(wand.id);
+          break;
+        }
+
+        case 'polygon': {
+          /** İlk noktaya bu kadar yakınsa (görüntü px) poligon kapanır; en az 3 köşe gerekir */
+          const closeThreshold = Math.max(14 / Math.max(scale, 0.08), 10);
           if (!isDrawingPolygon) {
-            console.log('[AnnotationCanvas] POLYGON MODE - Starting polygon at:', image);
             setPolygonPoints([image]);
             setIsDrawingPolygon(true);
-          } else {
-            console.log('[AnnotationCanvas] POLYGON MODE - Adding point:', image);
-            setPolygonPoints(prev => [...prev, image]);
+            break;
           }
+          const first = polygonPoints[0];
+          const nearFirst = distance(image, first) < closeThreshold;
+          if (nearFirst && polygonPoints.length >= 3) {
+            const withinBounds =
+              imageSize &&
+              polygonPoints.every(
+                (point) =>
+                  point.x >= 0 &&
+                  point.y >= 0 &&
+                  point.x <= imageSize.w &&
+                  point.y <= imageSize.h
+              );
+            if (withinBounds) {
+              e.preventDefault();
+              e.stopPropagation();
+              const newPolygon = {
+                id: `polygon-${Date.now()}`,
+                type: 'polygon' as const,
+                points: polygonPoints,
+                /** Etiket sol araçtaki seçimden kopyalanmasın; kullanıcı Object List’ten seçsin */
+                label: '',
+              };
+              onAnnotationsChange((prev) => [...prev, newPolygon]);
+              setHistory((prev) => [...prev, { type: 'annotation', data: newPolygon }]);
+              armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
+              onSelect?.(null);
+            }
+            setIsDrawingPolygon(false);
+            setPolygonPoints([]);
+            setPolylinePreviewPoint(null);
+            break;
+          }
+          if (nearFirst && polygonPoints.length < 3) {
+            break;
+          }
+          setPolygonPoints((prev) => [...prev, image]);
           break;
+        }
 
         case 'polyline':
           if (!isDrawingPolyline) {
@@ -206,20 +551,51 @@ export const useAnnotationActions = ({
           }
           break;
 
-        case 'points':
-          console.log('[AnnotationCanvas] POINTS MODE - Creating point at:', image);
-          if (selectedLabel) {
-            const pointAnnotation = {
-              id: `point-${Date.now()}`,
-              type: 'point' as const,
-              x: image.x,
-              y: image.y,
-              label: selectedLabel,
-            };
-            onAnnotationsChange(prev => [...prev, pointAnnotation]);
-            onSelect?.(pointAnnotation.id);
+        case 'cuboid_wire': {
+          if (!isDrawingCuboidWire) {
+            setCuboidWireCorners([image]);
+            setIsDrawingCuboidWire(true);
+            break;
           }
+          const nextCorners = [...cuboidWireCorners, image];
+          if (nextCorners.length < 8) {
+            setCuboidWireCorners(nextCorners);
+            break;
+          }
+          const withinBoundsWire =
+            imageSize &&
+            nextCorners.every(
+              (point) =>
+                point.x >= 0 &&
+                point.y >= 0 &&
+                point.x <= imageSize.w &&
+                point.y <= imageSize.h
+            );
+          if (withinBoundsWire) {
+            const newWire = {
+              id: `cuboid_wire-${Date.now()}`,
+              type: 'cuboid_wire' as const,
+              corners: nextCorners,
+              label: '',
+            };
+            onAnnotationsChange((prev) => [...prev, newWire]);
+            setHistory((prev) => [...prev, { type: 'annotation', data: newWire }]);
+            armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
+            onSelect?.(null);
+          }
+          setIsDrawingCuboidWire(false);
+          setCuboidWireCorners([]);
+          setPolylinePreviewPoint(null);
           break;
+        }
+
+        case 'points': {
+          armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
+          onSelect?.(null);
+          /** Bbox/polygon ile aynı: etiket boş; kullanıcı nesne listesinden seçer — chip vurgusu yanlış “seçim” gibi görünmesin */
+          pendingPointPlacementRef.current = { x: image.x, y: image.y };
+          break;
+        }
 
         case 'brush':
           if (!isDrawing) {
@@ -230,56 +606,163 @@ export const useAnnotationActions = ({
           }
           break;
 
-        default:
-          // Default behavior - check for annotation selection
-          const clickedDefaultAnnotation = annotations.find(ann => {
-            if ((ann as any).type === 'bbox' || (ann as any).type === 'cuboid') {
-              return image.x >= (ann as any).x && image.x <= (ann as any).x + (ann as any).width &&
-                     image.y >= (ann as any).y && image.y <= (ann as any).y + (ann as any).height;
-            }
-            return false;
-          });
-          
+        case 'select': {
+          const clickedDefaultAnnotation = findTopAnnotationAtImagePoint(annotations, image, scale);
           if (clickedDefaultAnnotation) {
-            onSelect?.(clickedDefaultAnnotation.id);
+            if (!isObjectSelectSuppressed(suppressObjectSelectUntilRef)) {
+              onSelect?.(clickedDefaultAnnotation.id);
+            }
           } else {
             onSelect?.(null);
           }
           break;
+        }
+
+        default:
+          break;
       }
     },
-    [activeTool, selectedId, annotations, onAnnotationsChange, onSelect, selectedLabel, screenToImage, getHandleAt, scale, handleUndo, drawStart, setDrawStart, drawPreview, setDrawPreview, isDrawing, setIsDrawing, polygonPoints, setPolygonPoints, isDrawingPolygon, setIsDrawingPolygon, polylinePoints, setPolylinePoints, isDrawingPolyline, setIsDrawingPolyline, brushPoints, setBrushPoints, setIsDrawing, brushColor, setBrushColor, isPaletteOpen, setIsPaletteOpen, savedBrushes, setSavedBrushes, history, setHistory, isResizing, setIsResizing, resizeHandle, setResizeHandle, resizeStartBox, setResizeStartBox, isDragging, setIsDragging, dragOffset, setDragOffset, isPanning, setIsPanning, panStart, setPanStart, panStartOffset, setPanStartOffset, setOffset]
+    [
+      activeTool,
+      selectedId,
+      annotations,
+      onAnnotationsChange,
+      onSelect,
+      selectedLabel,
+      screenToImage,
+      getHandleAt,
+      scale,
+      handleUndo,
+      drawStart,
+      setDrawStart,
+      drawPreview,
+      setDrawPreview,
+      isDrawing,
+      setIsDrawing,
+      polygonPoints,
+      setPolygonPoints,
+      isDrawingPolygon,
+      setIsDrawingPolygon,
+      polylinePoints,
+      setPolylinePoints,
+      isDrawingPolyline,
+      setIsDrawingPolyline,
+      cuboidWireCorners,
+      setCuboidWireCorners,
+      isDrawingCuboidWire,
+      setIsDrawingCuboidWire,
+      brushPoints,
+      setBrushPoints,
+      setIsDrawing,
+      brushColor,
+      setBrushColor,
+      isPaletteOpen,
+      setIsPaletteOpen,
+      savedBrushes,
+      setSavedBrushes,
+      history,
+      setHistory,
+      isResizing,
+      setIsResizing,
+      resizeHandle,
+      setResizeHandle,
+      resizeStartBox,
+      setResizeStartBox,
+      isDragging,
+      setIsDragging,
+      dragOffset,
+      setDragOffset,
+      isPanning,
+      setIsPanning,
+      panStart,
+      setPanStart,
+      panStartOffset,
+      setPanStartOffset,
+      setOffset,
+      viewOffset,
+      imageSize,
+      activeDrawing,
+      setActiveDrawing,
+      MIN_BOX_SIZE,
+      setPolylinePreviewPoint,
+      suppressObjectSelectUntilRef,
+      finalizePolylineDraft,
+    ]
   );
 
   // Handle pointer move
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    console.log('[AnnotationCanvas] handlePointerMove called - isDragging:', isDragging, 'activeTool:', activeTool, 'dragOffset:', dragOffset);
-    
     // Handle resizing
     if (isResizing && resizeHandle && resizeStartBox) {
       const image = screenToImage(e.clientX, e.clientY);
       console.log('[AnnotationCanvas] Resizing - handle:', resizeHandle, 'image:', image);
       
-      onAnnotationsChange(prev => prev.map(ann => {
-        if (ann.id === resizeStartBox.id && (ann.type === 'bbox' || ann.type === 'cuboid')) {
-          let newX = resizeStartBox.x;
-          let newY = resizeStartBox.y;
-          let newWidth = resizeStartBox.width;
-          let newHeight = resizeStartBox.height;
-          
-          // Use resize helper
-          const resized = resizeBbox(resizeStartBox, resizeHandle, image.x - resizeStartBox.x, image.y - resizeStartBox.y, imageSize);
-          newX = resized.x;
-          newY = resized.y;
-          newWidth = resized.width;
-          newHeight = resized.height;
-          
-          console.log('[AnnotationCanvas] New size:', { newX, newY, newWidth, newHeight });
-          
-          return { ...ann, x: newX, y: newY, width: newWidth, height: newHeight };
-        }
-        return ann;
-      }));
+      onAnnotationsChange((prev) =>
+        prev.map((ann) => {
+          if (ann.id !== resizeStartBox.id) return ann;
+
+          if (ann.type === 'cuboid' && isCuboidBackCornerHandle(resizeHandle)) {
+            const sb = resizeStartBox;
+            const ix = image.x;
+            const iy = image.y;
+            let ndx = ix - sb.x;
+            let ndy = iy - sb.y;
+            if (resizeHandle === 'b_tr') {
+              ndx = ix - sb.x - sb.width;
+              ndy = iy - sb.y;
+            } else if (resizeHandle === 'b_br') {
+              ndx = ix - sb.x - sb.width;
+              ndy = iy - sb.y - sb.height;
+            } else if (resizeHandle === 'b_bl') {
+              ndx = ix - sb.x;
+              ndy = iy - sb.y - sb.height;
+            }
+            return { ...ann, dx: ndx, dy: ndy };
+          }
+
+          if (ann.type === 'bbox' || ann.type === 'cuboid') {
+            const edgeHandle = resizeHandle as BboxHandle;
+            const { deltaX, deltaY } = computeBboxResizeDeltas(
+              resizeStartBox,
+              edgeHandle,
+              image.x,
+              image.y
+            );
+            const resized = resizeBbox(resizeStartBox, edgeHandle, deltaX, deltaY, imageSize);
+            return {
+              ...ann,
+              x: resized.x,
+              y: resized.y,
+              width: resized.width,
+              height: resized.height,
+            };
+          }
+          if (
+            (ann.type === 'semantic' || ann.type === 'magic_wand') &&
+            ann.points?.length === 4 &&
+            !isCuboidBackCornerHandle(resizeHandle)
+          ) {
+            const edgeHandle = resizeHandle as BboxHandle;
+            const { deltaX, deltaY } = computeBboxResizeDeltas(
+              resizeStartBox,
+              edgeHandle,
+              image.x,
+              image.y
+            );
+            const resized = resizeBbox(resizeStartBox as any, edgeHandle, deltaX, deltaY, imageSize);
+            return {
+              ...ann,
+              points: [
+                { x: resized.x, y: resized.y },
+                { x: resized.x + resized.width, y: resized.y },
+                { x: resized.x + resized.width, y: resized.y + resized.height },
+                { x: resized.x, y: resized.y + resized.height },
+              ],
+            };
+          }
+          return ann;
+        })
+      );
       return;
     }
     
@@ -291,6 +774,19 @@ export const useAnnotationActions = ({
       const newOffsetY = panStartOffset.y + deltaY;
       
       setOffset({ x: newOffsetX, y: newOffsetY });
+      return;
+    }
+
+    // Pan + Shift: tüm anotasyonları görüntü uzayında birlikte kaydır
+    if (activeTool === 'pan' && groupPanLastImageRef.current) {
+      const image = screenToImage(e.clientX, e.clientY);
+      const last = groupPanLastImageRef.current;
+      const dx = image.x - last.x;
+      const dy = image.y - last.y;
+      groupPanLastImageRef.current = { x: image.x, y: image.y };
+      if (dx !== 0 || dy !== 0) {
+        onAnnotationsChange((prev) => prev.map((ann) => translateAnnotationByDelta(ann, dx, dy)));
+      }
       return;
     }
     
@@ -336,6 +832,35 @@ export const useAnnotationActions = ({
                 y: point.y + moveDeltaY
               }))
             };
+          } else if (
+            (ann.type === 'semantic' || ann.type === 'magic_wand') &&
+            ann.points?.length
+          ) {
+            const deltaX = image.x - dragOffset.x;
+            const deltaY = image.y - dragOffset.y;
+            const originalFirstPoint = ann.points[0];
+            const moveDeltaX = deltaX - originalFirstPoint.x;
+            const moveDeltaY = deltaY - originalFirstPoint.y;
+            return {
+              ...ann,
+              points: ann.points.map((point) => ({
+                x: point.x + moveDeltaX,
+                y: point.y + moveDeltaY,
+              })),
+            };
+          } else if (ann.type === 'cuboid_wire') {
+            const deltaX = image.x - dragOffset.x;
+            const deltaY = image.y - dragOffset.y;
+            const originalFirstPoint = ann.corners[0];
+            const moveDeltaX = deltaX - originalFirstPoint.x;
+            const moveDeltaY = deltaY - originalFirstPoint.y;
+            return {
+              ...ann,
+              corners: ann.corners.map((point) => ({
+                x: point.x + moveDeltaX,
+                y: point.y + moveDeltaY,
+              })),
+            };
           }
         }
         return ann;
@@ -343,8 +868,18 @@ export const useAnnotationActions = ({
       return;
     }
     
-    if (!isDrawing) return;
+    const needsMoveDraw =
+      isDrawing ||
+      (isDrawingPolygon && polygonPoints.length > 0) ||
+      (isDrawingPolyline && polylinePoints.length > 0) ||
+      (isDrawingCuboidWire && cuboidWireCorners.length > 0);
+    if (!needsMoveDraw) return;
     const image = screenToImage(e.clientX, e.clientY);
+
+    if (activeTool === 'cuboid' && activeDrawing?.tool === 'cuboid' && activeDrawing.step === 2) {
+      setActiveDrawing((p: any) => ({ ...p, dx: image.x - p.x, dy: image.y - p.y }));
+      return;
+    }
 
     // Tool-Specific Updates
     switch (activeTool) {
@@ -360,20 +895,14 @@ export const useAnnotationActions = ({
         break;
 
       case 'polyline':
-        if (activeDrawing) {
-          if (isDrawingPolyline && polylinePoints.length > 0) {
-            setPolylinePoints(prev => {
-              const newPoints = [...prev, image];
-              // History'e her nokta ekle
-              setHistory(historyPrev => [...historyPrev, { type: 'polyline_point', data: image }]);
-              return newPoints;
-            });
-          }
+        if (isDrawingPolyline && polylinePoints.length > 0) {
+          setPolylinePreviewPoint(image);
         }
         break;
 
       case 'bbox':
       case 'ellipse':
+      case 'semantic':
         if (drawStart) {
           const width = image.x - drawStart.x;
           const height = image.y - drawStart.y;
@@ -387,16 +916,67 @@ export const useAnnotationActions = ({
         }
         break;
 
+      case 'cuboid':
+        if (activeDrawing?.tool === 'cuboid' && activeDrawing.step === 1 && drawStart) {
+          const width = image.x - drawStart.x;
+          const height = image.y - drawStart.y;
+          const newPreview = {
+            x: width < 0 ? image.x : drawStart.x,
+            y: height < 0 ? image.y : drawStart.y,
+            width: Math.abs(width),
+            height: Math.abs(height),
+          };
+          setDrawPreview(newPreview);
+          setActiveDrawing((p: any) => (p?.tool === 'cuboid' ? { ...p, ...newPreview } : p));
+        }
+        break;
+
       case 'polygon':
         if (isDrawingPolygon && polygonPoints.length > 0) {
           setPolylinePreviewPoint(image);
         }
         break;
+
+      case 'cuboid_wire':
+        if (isDrawingCuboidWire && cuboidWireCorners.length > 0) {
+          setPolylinePreviewPoint(image);
+        }
+        break;
     }
-  }, [isDragging, activeTool, dragOffset, selectedId, isResizing, resizeHandle, resizeStartBox, screenToImage, onAnnotationsChange, isPanning, panStart, panStartOffset, setOffset, isDrawing, activeDrawing, isDrawingPolyline, polylinePoints, setPolylinePoints, setHistory, drawStart, setDrawPreview, isDrawingPolygon, polygonPoints, setPolylinePreviewPoint]);
+  }, [
+    isDragging,
+    activeTool,
+    dragOffset,
+    selectedId,
+    isResizing,
+    resizeHandle,
+    resizeStartBox,
+    screenToImage,
+    onAnnotationsChange,
+    isPanning,
+    panStart,
+    panStartOffset,
+    setOffset,
+    isDrawing,
+    isDrawingPolyline,
+    polylinePoints,
+    setPolylinePreviewPoint,
+    drawStart,
+    setDrawPreview,
+    isDrawingPolygon,
+    polygonPoints,
+    activeDrawing,
+    setActiveDrawing,
+    isDrawingCuboidWire,
+    cuboidWireCorners,
+  ]);
 
   // Handle pointer up
   const handlePointerUp = useCallback(() => {
+    if (activeTool !== 'points') {
+      pendingPointPlacementRef.current = null;
+    }
+
     // Reset resizing state
     if (isResizing) {
       console.log('[AnnotationCanvas] Resizing completed');
@@ -416,6 +996,10 @@ export const useAnnotationActions = ({
     if (isDragging) {
       setIsDragging(false);
       setDragOffset(null);
+    }
+
+    if (groupPanLastImageRef.current) {
+      groupPanLastImageRef.current = null;
     }
     
     // Tool-Specific Saving
@@ -438,6 +1022,76 @@ export const useAnnotationActions = ({
         }
         break;
 
+      case 'cuboid':
+        if (activeDrawing?.tool === 'cuboid' && activeDrawing.step === 1) {
+          if (drawPreview && drawPreview.width > MIN_BOX_SIZE) {
+            setActiveDrawing((prev: any) => ({
+              ...prev,
+              step: 2,
+              x: drawPreview.x,
+              y: drawPreview.y,
+              width: drawPreview.width,
+              height: drawPreview.height,
+            }));
+            setDrawPreview(null);
+            setDrawStart(null);
+          } else {
+            setActiveDrawing(null);
+            setIsDrawing(false);
+            setDrawPreview(null);
+            setDrawStart(null);
+          }
+          return;
+        }
+        if (activeDrawing?.tool === 'cuboid' && activeDrawing.step === 2) {
+          const { tool: _ct, step: _cs, ...rest } = activeDrawing;
+          const newCuboid = {
+            ...rest,
+            id: `cuboid-${Date.now()}`,
+            type: 'cuboid' as const,
+            label: '',
+          };
+          onAnnotationsChange((prev) => [...prev, newCuboid]);
+          setHistory((prev) => [...prev, { type: 'annotation', data: newCuboid }]);
+          armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
+          onSelect?.(newCuboid.id);
+          setActiveDrawing(null);
+          setIsDrawing(false);
+          setDrawPreview(null);
+          setDrawStart(null);
+          return;
+        }
+        break;
+
+      case 'semantic':
+        if (drawPreview && drawPreview.width > MIN_BOX_SIZE) {
+          const withinBoundsSemantic =
+            imageSize &&
+            drawPreview.x >= 0 &&
+            drawPreview.y >= 0 &&
+            drawPreview.x + drawPreview.width <= imageSize.w &&
+            drawPreview.y + drawPreview.height <= imageSize.h;
+          if (withinBoundsSemantic) {
+            const { x: sx, y: sy, width: sw, height: sh } = drawPreview;
+            const newSemantic = {
+              id: `semantic-${Date.now()}`,
+              type: 'semantic' as const,
+              points: [
+                { x: sx, y: sy },
+                { x: sx + sw, y: sy },
+                { x: sx + sw, y: sy + sh },
+                { x: sx, y: sy + sh },
+              ],
+              label: selectedLabel ?? '',
+            };
+            onAnnotationsChange((prev) => [...prev, newSemantic as Annotation]);
+            setHistory((prev) => [...prev, { type: 'annotation', data: newSemantic }]);
+            armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
+            onSelect?.(newSemantic.id);
+          }
+        }
+        break;
+
       case 'bbox':
         if (drawPreview && drawPreview.width > MIN_BOX_SIZE) {
           // Check if bbox is within image bounds
@@ -454,10 +1108,10 @@ export const useAnnotationActions = ({
               ...drawPreview, 
               label: '' 
             };
-            onAnnotationsChange(prev => [...prev, newBbox]);
+            onAnnotationsChange((prev) => [...prev, newBbox as Annotation]);
             // History'e ekle
             setHistory(prev => [...prev, { type: 'annotation', data: newBbox }]);
-            // Otomatik olarak yeni çizileni seç
+            armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
             onSelect?.(newBbox.id);
           } else {
             console.log('[AnnotationCanvas] Bbox outside image bounds, not saving');
@@ -477,18 +1131,18 @@ export const useAnnotationActions = ({
           if (withinBounds) {
             const newEllipse = {
               id: `ellipse-${Date.now()}`,
-              type: 'ellipse',
+              type: 'ellipse' as const,
               cx: drawPreview.x + drawPreview.width / 2,
               cy: drawPreview.y + drawPreview.height / 2,
               rx: Math.abs(drawPreview.width / 2),
               ry: Math.abs(drawPreview.height / 2),
-              label: ''
+              label: '',
             };
-            onAnnotationsChange(prev => [...prev, newEllipse]);
+            onAnnotationsChange((prev) => [...prev, newEllipse]);
             // History'e ekle
             setHistory(prev => [...prev, { type: 'annotation', data: newEllipse }]);
-            // Otomatik olarak yeni çizileni seç
-            onSelect?.(newEllipse.id);
+            armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
+            onSelect?.(null);
           } else {
             console.log('[AnnotationCanvas] Ellipse outside image bounds, not saving');
           }
@@ -496,78 +1150,42 @@ export const useAnnotationActions = ({
         break;
 
       case 'polygon':
-        if (isDrawingPolygon && polygonPoints.length >= 3) {
-          // Check if all polygon points are within image bounds
-          const withinBounds = imageSize && polygonPoints.every(point => 
-            point.x >= 0 && 
-            point.y >= 0 && 
-            point.x <= imageSize.w && 
-            point.y <= imageSize.h
-          );
-          
-          if (withinBounds) {
-            const newPolygon = {
-              id: `polygon-${Date.now()}`,
-              type: 'polygon',
-              points: polygonPoints,
-              label: ''
-            };
-            onAnnotationsChange(prev => [...prev, newPolygon]);
-            // History'e ekle
-            setHistory(prev => [...prev, { type: 'annotation', data: newPolygon }]);
-            // Otomatik olarak yeni çizileni seç
-            onSelect?.(newPolygon.id);
-          } else {
-            console.log('[AnnotationCanvas] Polygon outside image bounds, not saving');
-          }
-          setIsDrawingPolygon(false);
-          setPolygonPoints([]);
-        }
+        // Poligon yalnızca ilk köşeye tıklanınca kapanır (pointerDown); mouseUp ile otomatik bitmez
         break;
 
       case 'polyline':
-        if (isDrawingPolyline && polylinePoints.length >= 2) {
-          // Check if all polyline points are within image bounds
-          const withinBounds = imageSize && polylinePoints.every(point => 
-            point.x >= 0 && 
-            point.y >= 0 && 
-            point.x <= imageSize.w && 
-            point.y <= imageSize.h
-          );
-          
-          if (withinBounds) {
-            const newPolyline = {
-              id: `polyline-${Date.now()}`,
-              type: 'polyline',
-              points: polylinePoints,
-              label: ''
-            };
-            onAnnotationsChange(prev => [...prev, newPolyline]);
-            // History'e ekle
-            setHistory(prev => [...prev, { type: 'annotation', data: newPolyline }]);
-            // Otomatik olarak yeni çizileni seç
-            onSelect?.(newPolyline.id);
-          } else {
-            console.log('[AnnotationCanvas] Polyline outside image bounds, not saving');
-          }
-          setIsDrawingPolyline(false);
-          setPolylinePoints([]);
-          setPolylinePreviewPoint(null);
-        }
+        // Polyline sol tıkla nokta eklenir; bitiş sağ tık (finalizePolylineDraft), Undo son noktayı siler
         break;
 
-      case 'points':
-        // Points are saved immediately on click, no action needed here
+      case 'cuboid_wire':
         break;
+
+      case 'points': {
+        const pending = pendingPointPlacementRef.current;
+        pendingPointPlacementRef.current = null;
+        armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
+        onSelect?.(null);
+        if (!pending) break;
+        const pointAnnotation = {
+          id: `point-${Date.now()}`,
+          type: 'point' as const,
+          x: pending.x,
+          y: pending.y,
+          label: '',
+        };
+        onAnnotationsChange((prev) => [...prev, pointAnnotation]);
+        setHistory((prev) => [...prev, { type: 'annotation', data: pointAnnotation }]);
+        break;
+      }
     }
     
     // Reset drawing state for tools that need it
-    if (['bbox', 'ellipse'].includes(activeTool)) {
+    if (['bbox', 'ellipse', 'semantic'].includes(activeTool)) {
       setIsDrawing(false);
       setDrawStart(null);
       setDrawPreview(null);
     }
-  }, [isResizing, resizeHandle, resizeStartBox, setIsResizing, setResizeHandle, setResizeStartBox, isPanning, panStart, panStartOffset, setIsPanning, setPanStart, setPanStartOffset, isDragging, dragOffset, setIsDragging, setDragOffset, activeTool, brushPoints, brushColor, setSavedBrushes, setHistory, setBrushPoints, setIsDrawing, drawPreview, MIN_BOX_SIZE, imageSize, onAnnotationsChange, onSelect, isDrawingPolygon, polygonPoints, setIsDrawingPolygon, setPolygonPoints, isDrawingPolyline, polylinePoints, setIsDrawingPolyline, setPolylinePoints, setPolylinePreviewPoint, setIsDrawing, setDrawStart, setDrawPreview]);
+  }, [isResizing, resizeHandle, resizeStartBox, setIsResizing, setResizeHandle, setResizeStartBox, isPanning, panStart, panStartOffset, setIsPanning, setPanStart, setPanStartOffset, isDragging, dragOffset, setIsDragging, setDragOffset, activeTool, brushPoints, brushColor, setSavedBrushes, setHistory, setBrushPoints, setIsDrawing, drawPreview, MIN_BOX_SIZE, imageSize, onAnnotationsChange, onSelect, isDrawingPolygon, polygonPoints, setIsDrawingPolygon, setPolygonPoints, isDrawingPolyline, polylinePoints, setIsDrawingPolyline, setPolylinePoints, setPolylinePreviewPoint, setIsDrawing, setDrawStart, setDrawPreview, activeDrawing, setActiveDrawing, selectedLabel, suppressObjectSelectUntilRef, isDrawingCuboidWire, cuboidWireCorners, setIsDrawingCuboidWire, setCuboidWireCorners]);
 
   return {
     handlePointerDown,

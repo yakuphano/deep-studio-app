@@ -60,139 +60,11 @@ const VideoTaskCard = ({ item, onPress }: { item: Task; onPress: (id: string) =>
 );
 
 export default function VideoTasksScreen() {
-  const { t } = useTranslation();
-  const router = useRouter();
+  console.log('=== NUCLEAR TEST - VIDEO DOSYASI CALISIYOR ===');
   
-  const [videoTasks, setVideoTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Manuel yenileme fonksiyonu
-  const fetchTasks = useCallback(async () => {
-    try {
-      setLoading(true);
-
-      // 1. Session'ı doğrudan Supabase'den al
-      const { data: { session } } = await supabase.auth.getSession();
-      const uid = session?.user?.id;
-
-      if (!uid) {
-        setLoading(false);
-        return;
-      }
-
-      // 2. Kullanıcının dillerini doğrudan Supabase'den al
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('languages')
-        .eq('id', uid)
-        .single();
-        
-      const userLangs = profile?.languages || [];
-
-      // 3. Tabloyu sorgula (video kategorisine göre)
-      const cols = 'id, title, status, price, language, category, type, video_url, is_pool_task, assigned_to';
-      
-      const { data: assignedData } = await supabase
-        .from('tasks')
-        .select(cols)
-        .eq('assigned_to', uid)
-        .eq('status', 'pending')
-        .or('category.eq.video,type.eq.video')
-        .order('created_at', { ascending: false });
-            
-      const { data: poolData } = await supabase
-        .from('tasks')
-        .select(cols)
-        .is('assigned_to', null)
-        .eq('status', 'pending')
-        .or('category.eq.video,type.eq.video')
-        .order('created_at', { ascending: false });
-
-      const allTasks = [...(poolData || []), ...(assignedData || [])];
-      const filteredTasks = allTasks.filter(task => userLangs.includes(task.language));
-
-      setVideoTasks(filteredTasks);
-      setLoading(false);
-    } catch (error) {
-      console.error('Claim error:', error);
-      Alert.alert('Uyarı', 'Bu görev alınamadı veya başkası tarafından alındı.');
-    }
-  }, []);
-
-  // useFocusEffect ile manuel yenileme
-  useFocusEffect(
-    useCallback(() => {
-      fetchTasks();
-    }, [fetchTasks])
-  );
-//     };
-//   }, []) // <--- EN KRÝTÝK NOKTA: BURASI KESÝNLÝKLE BOÞ DÝZÝ OLACAK. ÝÇÝNE HÝÇBÝR DEÐÝÞKEN YAZMA.
-// );
-
-// GEÇICI: Loading'i false yap ki statik tasarim görünsün
-useEffect(() => {
-  setLoading(false);
-}, []);
-
-  const handleClaim = async (taskId: string) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.id) return;
-      
-      const { data, error } = await supabase
-        .from('tasks')
-        .update({ assigned_to: session.user.id })
-        .eq('id', taskId)
-        .is('assigned_to', null)
-        .select();
-
-      if (!error && data && data.length > 0) {
-         router.push(`/task/${taskId}`);
-      } else {
-         Alert.alert('Uyarý', 'Bu görev alýnamadý veya baþkasý tarafýndan alýndý.');
-      }
-    } catch (error) {
-      console.error('Claim error:', error);
-      Alert.alert('Hata', 'Görev alýnýrken bir hata oluþtu.');
-    }
-  };
-
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.breadcrumbRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={16} color="#94a3b8" />
-            <Text style={styles.backText}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.breadcrumbText}>Tasks {'>'} Video</Text>
-      </View>
-
-      <View style={styles.pageHeader}>
-        <Text style={styles.pageTitle}>{t('tasks.pageTitleVideo') || 'Video Annotation Tasks'}</Text>
-        <TouchableOpacity style={styles.refreshButton} onPress={fetchTasks}>
-          <Ionicons name="refresh" size={16} color="#8b5cf6" />
-          <Text style={styles.refreshButtonText}>Yenile</Text>
-        </TouchableOpacity>
-      </View>
-
-      {loading ? (
-        <ActivityIndicator size="large" color="#8b5cf6" style={{ flex: 1 }} />
-      ) : videoTasks.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="videocam-outline" size={80} color="#475569" style={styles.emptyIcon} />
-          <Text style={styles.emptyTitle}>No Video Tasks</Text>
-          <Text style={styles.emptyDescription}>Kendi dilinizde video görevi bulunamadı.</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={videoTasks}
-          keyExtractor={(item) => item.id}
-          numColumns={4}
-          columnWrapperStyle={styles.columnWrapper}
-          contentContainerStyle={styles.listContainer}
-          renderItem={({ item }) => <VideoTaskCard item={item} onPress={handleClaim} />}
-        />
-      )}
+    <SafeAreaView style={{ flex: 1, backgroundColor: 'red', justifyContent: 'center', alignItems: 'center' }}>
+      <Text style={{ color: 'white', fontSize: 30 }}>VIDEO DOSYASI CALISIYOR!</Text>
     </SafeAreaView>
   );
 }
@@ -200,7 +72,6 @@ useEffect(() => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' }, 
   breadcrumbRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12, alignItems: 'center' },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   backText: { color: '#94a3b8', fontSize: 14, fontWeight: '600' },
   refreshButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#8b5cf6', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, marginLeft: 10 },
   refreshButtonText: { color: '#ffffff', fontSize: 14, fontWeight: '600' },

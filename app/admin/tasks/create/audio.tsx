@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback, createElement } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +16,52 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '@/lib/supabase';
+import JSZip from 'jszip';
+
+const WEB_FILE_ACCEPT =
+  '.mp3,.wav,.m4a,.ogg,.flac,.zip,audio/*,application/zip,application/x-zip-compressed';
+
+const DOCUMENT_PICKER_TYPES = [
+  'audio/mp3',
+  'audio/mpeg',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/m4a',
+  'audio/mp4',
+  'audio/ogg',
+  'audio/flac',
+  'application/zip',
+  'application/x-zip-compressed',
+] as const;
+
+type SelectedFileInfo = {
+  name: string;
+  size: number;
+  uri: string;
+  mimeType?: string | null;
+  webFile?: File | null;
+};
+
+function sanitizeFileName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function guessAudioContentType(fileName: string, mime?: string | null): string {
+  if (mime && mime !== 'application/octet-stream') return mime;
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith('.mp3')) return 'audio/mpeg';
+  if (lower.endsWith('.wav')) return 'audio/wav';
+  if (lower.endsWith('.m4a')) return 'audio/mp4';
+  if (lower.endsWith('.ogg')) return 'audio/ogg';
+  if (lower.endsWith('.flac')) return 'audio/flac';
+  if (lower.endsWith('.webm')) return 'audio/webm';
+  return 'application/octet-stream';
+}
+
+function notify(msg: string) {
+  if (Platform.OS === 'web') window.alert(msg);
+  else Alert.alert('Bilgi', msg);
+}
 
 export default function CreateAudioTaskScreen() {
   const { t } = useTranslation();
@@ -29,200 +76,346 @@ export default function CreateAudioTaskScreen() {
     price: 0,
   });
 
-  const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [selectedFile, setSelectedFile] = useState<SelectedFileInfo | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [sourceType, setSourceType] = useState<'local' | 'remote' | 'record'>('local');
   const [remoteUrl, setRemoteUrl] = useState('');
-  
-  // Audio recording states
+
   const [isRecording, setIsRecording] = useState(false);
   const [audioURL, setAudioURL] = useState('');
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
 
-  const handleBack = () => {
-    router.back();
+  const webInputRef = useRef<HTMLInputElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+
+  const revokePreview = useCallback(() => {
+    if (objectUrlRef.current) {
+      try {
+        URL.revokeObjectURL(objectUrlRef.current);
+      } catch {
+        /* ignore */
+      }
+      objectUrlRef.current = null;
+    }
+  }, []);
+
+  const uploadBytesToStorage = async (
+    body: Blob | File | ArrayBuffer,
+    filename: string
+  ): Promise<string> => {
+    if (!user?.id) throw new Error('Oturum gerekli');
+    const safe = sanitizeFileName(filename);
+    const path = `audios/${user.id}/${Date.now()}_${safe}`;
+    const contentType = guessAudioContentType(filename, body instanceof Blob ? body.type : null);
+
+    const { error } = await supabase.storage.from('task-assets').upload(path, body, {
+      contentType,
+      upsert: false,
+    });
+    if (error) throw new Error(error.message || 'Storage yükleme hatası');
+
+    const { data } = supabase.storage.from('task-assets').getPublicUrl(path);
+    return data.publicUrl;
   };
 
   const handleFileSelect = async () => {
     try {
+      if (Platform.OS === 'web') {
+        revokePreview();
+        webInputRef.current?.click();
+        return;
+      }
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'audio/mp3',
-          'audio/wav',
-          'audio/m4a',
-        ],
+        type: [...DOCUMENT_PICKER_TYPES],
         copyToCacheDirectory: true,
         multiple: false,
       });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setSelectedFile(result.assets[0]);
-        setUploadProgress(0);
-      }
+      if (result.canceled || !result.assets?.length) return;
+      const a = result.assets[0];
+      setSelectedFile({
+        name: a.name || 'audio',
+        size: a.size ?? 0,
+        uri: a.uri,
+        mimeType: a.mimeType ?? null,
+        webFile: null,
+      });
+      setUploadProgress(0);
     } catch (error) {
       console.error('File selection error:', error);
       Alert.alert('Error', 'Failed to select file');
     }
   };
 
-  const simulateUpload = () => {
-    if (!selectedFile) return;
-    
-    setIsUploading(true);
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 10;
-      setUploadProgress(progress);
-      
-      if (progress >= 100) {
-        clearInterval(interval);
-        setIsUploading(false);
-        Alert.alert('Success', 'File uploaded successfully');
-      }
-    }, 200);
+  const handleWebFileInputChange = (e: Event) => {
+    const target = e.target as HTMLInputElement;
+    const file = target.files?.[0];
+    target.value = '';
+    if (!file) return;
+    const uri = URL.createObjectURL(file);
+    objectUrlRef.current = uri;
+    setSelectedFile({
+      name: file.name,
+      size: file.size,
+      uri,
+      mimeType: file.type || null,
+      webFile: file,
+    });
+    setUploadProgress(0);
   };
 
   const startRecording = async () => {
+    if (Platform.OS !== 'web') {
+      Alert.alert('Kayıt', 'Ses kaydı şu an yalnızca web tarayıcıda desteklenir.');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       setMediaRecorder(recorder);
       const audioChunks: Blob[] = [];
-      
+
       recorder.ondataavailable = (event) => {
         audioChunks.push(event.data);
       };
-      
+
       recorder.onstop = () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-        const audioURL = URL.createObjectURL(audioBlob);
-        setAudioURL(audioURL);
+        const audioBlob = new Blob(audioChunks, { type: recorder.mimeType || 'audio/webm' });
+        revokePreview();
+        const url = URL.createObjectURL(audioBlob);
+        objectUrlRef.current = url;
+        setAudioURL(url);
         setRecordedBlob(audioBlob);
         setIsRecording(false);
         setMediaRecorder(null);
-        
-        console.log('Audio recorded successfully:', audioURL);
-        Alert.alert('Success', 'Audio recorded successfully!');
+        stream.getTracks().forEach((tr) => tr.stop());
       };
-      
+
       recorder.start();
       setIsRecording(true);
-      
-      console.log('Recording started...');
     } catch (error) {
       console.error('Error accessing microphone:', error);
       Alert.alert('Error', 'Failed to access microphone');
     }
   };
-  
+
   const stopRecording = () => {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
     }
   };
 
+  const processZipFile = async (file: SelectedFileInfo) => {
+    const response = await fetch(file.uri);
+    const blob = await response.blob();
+    const zip = new JSZip();
+    const zipContent = await zip.loadAsync(blob);
+    const audioExtensions = ['.mp3', '.wav', '.m4a', '.ogg', '.flac'];
+    const audioFiles: { name: string; zipEntry: JSZip.JSZipObject }[] = [];
+
+    zipContent.forEach((relativePath, zf) => {
+      if (zf.dir) return;
+      const extension = relativePath.toLowerCase().substring(relativePath.lastIndexOf('.'));
+      if (audioExtensions.includes(extension)) {
+        audioFiles.push({ name: relativePath, zipEntry: zf });
+      }
+    });
+
+    if (audioFiles.length === 0) {
+      throw new Error('Zip dosyası içinde ses dosyası bulunamadı!');
+    }
+    return audioFiles;
+  };
+
   const handleCreateTask = async () => {
-    console.log("--- TASK OLUSTURMA BASLATILDI ---", taskData);
-    
-    // Validation
     if (!taskData.title || !taskData.company_name) {
-      console.log("❌ Validation Hatası:", { title: taskData.title, company_name: taskData.company_name });
-      alert("Lütfen Company Name ve Title doldurun!");
+      notify('Lütfen Company Name ve Title doldurun!');
       return;
     }
 
-    // Check if audio source is provided
-    const hasAudioSource = selectedFile || remoteUrl || audioURL;
+    const hasAudioSource =
+      sourceType === 'local'
+        ? !!selectedFile
+        : sourceType === 'remote'
+          ? !!remoteUrl.trim()
+          : !!recordedBlob;
     if (!hasAudioSource) {
-      console.log("❌ Audio Source Hatası:", { selectedFile, remoteUrl, audioURL });
-      alert("Lütfen bir ses kayna seçin (Dosya, URL veya Kaydet)!");
+      notify('Lütfen bir ses kaynağı seçin (Dosya, URL veya Kayıt).');
       return;
     }
 
-    console.log("✅ Validation Geçti, Creating başlıyor...");
+    if (!user?.id) {
+      notify('Giriş yapmanız gerekir.');
+      return;
+    }
+
     setIsCreating(true);
+    setUploadProgress(0);
 
     try {
-      // Audio URL'i belirle
-      let audioUrlToSave = '';
-      if (selectedFile) {
-        audioUrlToSave = selectedFile.uri || selectedFile.name || 'local_file';
-      } else if (remoteUrl) {
-        audioUrlToSave = remoteUrl;
-      } else if (audioURL) {
-        audioUrlToSave = audioURL;
+      let tasksToCreate: Record<string, unknown>[] = [];
+
+      if (sourceType === 'local' && selectedFile) {
+        const isZip =
+          selectedFile.name?.toLowerCase().endsWith('.zip') ||
+          (selectedFile.mimeType ?? '').includes('zip');
+
+        if (isZip) {
+          setIsUploading(true);
+          const audioFiles = await processZipFile(selectedFile);
+          let done = 0;
+          for (let index = 0; index < audioFiles.length; index++) {
+            const { name: innerName, zipEntry } = audioFiles[index];
+            const buf = await zipEntry.async('arraybuffer');
+            const publicUrl = await uploadBytesToStorage(buf, innerName.split('/').pop() || innerName);
+            tasksToCreate.push({
+              title: `${taskData.title} - Part ${index + 1}`,
+              company_name: taskData.company_name,
+              description: `${taskData.description}\n\nAudio file: ${innerName}`,
+              language: taskData.language,
+              price: taskData.price,
+              audio_url: publicUrl,
+              type: 'audio',
+              category: 'audio',
+              is_pool_task: true,
+            });
+            done++;
+            setUploadProgress(Math.round((done / audioFiles.length) * 100));
+          }
+          setIsUploading(false);
+        } else {
+          setIsUploading(true);
+          let body: Blob | File | ArrayBuffer;
+          if (Platform.OS === 'web' && selectedFile.webFile) {
+            body = selectedFile.webFile;
+          } else {
+            const res = await fetch(selectedFile.uri);
+            if (!res.ok) throw new Error('Ses dosyası okunamadı');
+            body = await res.blob();
+          }
+          const publicUrl = await uploadBytesToStorage(body, selectedFile.name);
+          setIsUploading(false);
+          setUploadProgress(100);
+          tasksToCreate = [
+            {
+              title: taskData.title,
+              company_name: taskData.company_name,
+              description: taskData.description,
+              language: taskData.language,
+              price: taskData.price,
+              audio_url: publicUrl,
+              type: 'audio',
+              category: 'audio',
+              is_pool_task: true,
+            },
+          ];
+        }
+      } else if (sourceType === 'remote') {
+        const url = remoteUrl.trim();
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          notify('Uzak adres https:// ile başlamalı.');
+          setIsCreating(false);
+          return;
+        }
+        tasksToCreate = [
+          {
+            title: taskData.title,
+            company_name: taskData.company_name,
+            description: taskData.description,
+            language: taskData.language,
+            price: taskData.price,
+            audio_url: url,
+            type: 'audio',
+            category: 'audio',
+            is_pool_task: true,
+          },
+        ];
+      } else if (sourceType === 'record') {
+        if (!recordedBlob) {
+          notify('Önce kayıt yapın.');
+          setIsCreating(false);
+          return;
+        }
+        setIsUploading(true);
+        const ext = recordedBlob.type.includes('webm') ? 'webm' : 'wav';
+        const fname = `recording_${Date.now()}.${ext}`;
+        const publicUrl = await uploadBytesToStorage(recordedBlob, fname);
+        setIsUploading(false);
+        setUploadProgress(100);
+        tasksToCreate = [
+          {
+            title: taskData.title,
+            company_name: taskData.company_name,
+            description: taskData.description,
+            language: taskData.language,
+            price: taskData.price,
+            audio_url: publicUrl,
+            type: 'audio',
+            category: 'audio',
+            is_pool_task: true,
+          },
+        ];
       }
 
-      console.log("📊 Gönderilecek Veri:", {
-        title: taskData.title,
-        company_name: taskData.company_name,
-        description: taskData.description,
-        language: taskData.language,
-        price: taskData.price,
-        audio_url: audioUrlToSave
-      });
-
-      const { data, error } = await supabase.from('tasks').insert([{
-        title: taskData.title,
-        company_name: taskData.company_name,
-        description: taskData.description,
-        language: taskData.language,
-        price: taskData.price,
-        audio_url: audioUrlToSave,
-        category: 'audio'
-      }]).select();
+      const { data, error } = await supabase.from('tasks').insert(tasksToCreate).select();
 
       if (error) {
-        console.error("--- DB HATASI ---", error);
-        alert("Veritabanı Hatası: " + error.message);
+        console.error('DB HATASI', error);
+        notify('Veritabanı Hatası: ' + error.message);
         return;
       }
 
-      console.log("--- TASK BASARIYLA OLUSTURULDU ---", data);
-      Alert.alert('Success', 'Task Created');
-      
-      // Admin paneline yönlendir
+      const n = data?.length ?? tasksToCreate.length;
+      if (Platform.OS === 'web') window.alert(`Success: ${n} task(s) created successfully!`);
+      else Alert.alert('Success', `${n} task(s) created successfully!`);
       router.push('/admin');
-
-    } catch (err: any) {
-      console.error("--- KRITIK HATA ---", err);
-      alert("Sistem Hatası: " + (err.message || 'Bilinmeyen hata'));
+    } catch (err: unknown) {
+      console.error('KRITIK HATA', err);
+      const m = err instanceof Error ? err.message : 'Bilinmeyen hata';
+      notify('Sistem Hatası: ' + m);
     } finally {
-      console.log("--- CREATING ISLEMI BITTI ---");
       setIsCreating(false);
+      setIsUploading(false);
     }
   };
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {Platform.OS === 'web'
+        ? createElement('input', {
+            ref: webInputRef,
+            type: 'file',
+            accept: WEB_FILE_ACCEPT,
+            style: { display: 'none' },
+            onChange: handleWebFileInputChange,
+          })
+        : null}
+
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={20} color="#ffffff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Create Audio Task</Text>
       </View>
 
-      {/* Main Content */}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Create Audio Transcription Task</Text>
-        
+        <Text style={styles.hint}>
+          Yerel dosya ve zip içindeki her ses Supabase Storage&apos;a yüklenir; görevde kalıcı https adresi
+          saklanır (eski file:// / blob: kayıtları çalmaz).
+        </Text>
+
         <View style={styles.form}>
-          {/* Left Column */}
           <View style={styles.leftColumn}>
             <View style={styles.formGroup}>
               <Text style={styles.label}>Company Name *</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  focusedInput === 'company_name' && styles.inputFocused
-                ]}
+                style={[styles.input, focusedInput === 'company_name' && styles.inputFocused]}
                 value={taskData.company_name}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, company_name: text }))}
+                onChangeText={(text) => setTaskData((prev) => ({ ...prev, company_name: text }))}
                 placeholder="Enter company or client name (e.g. TransPerfect, Google)"
                 placeholderTextColor="#9ca3af"
                 onFocus={() => setFocusedInput('company_name')}
@@ -233,12 +426,9 @@ export default function CreateAudioTaskScreen() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Task Title *</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  focusedInput === 'title' && styles.inputFocused
-                ]}
+                style={[styles.input, focusedInput === 'title' && styles.inputFocused]}
                 value={taskData.title}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, title: text }))}
+                onChangeText={(text) => setTaskData((prev) => ({ ...prev, title: text }))}
                 placeholder="Enter task title (e.g. Medical Report Transcription)"
                 placeholderTextColor="#9ca3af"
                 onFocus={() => setFocusedInput('title')}
@@ -248,13 +438,13 @@ export default function CreateAudioTaskScreen() {
 
             <View style={styles.formGroup}>
               <Text style={styles.label}>Language</Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.languageSelector}
                 onPress={() => {
                   const languages = ['tr', 'en', 'ku', 'az'];
                   const currentIndex = languages.indexOf(taskData.language);
                   const nextIndex = (currentIndex + 1) % languages.length;
-                  setTaskData(prev => ({ ...prev, language: languages[nextIndex] }));
+                  setTaskData((prev) => ({ ...prev, language: languages[nextIndex] }));
                 }}
               >
                 <Text style={styles.languageText}>{taskData.language.toUpperCase()}</Text>
@@ -265,12 +455,9 @@ export default function CreateAudioTaskScreen() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Price ($)</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  focusedInput === 'price' && styles.inputFocused
-                ]}
+                style={[styles.input, focusedInput === 'price' && styles.inputFocused]}
                 value={taskData.price.toString()}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, price: parseFloat(text) || 0 }))}
+                onChangeText={(text) => setTaskData((prev) => ({ ...prev, price: parseFloat(text) || 0 }))}
                 placeholder="0.00"
                 placeholderTextColor="#9ca3af"
                 keyboardType="numeric"
@@ -280,18 +467,13 @@ export default function CreateAudioTaskScreen() {
             </View>
           </View>
 
-          {/* Right Column */}
           <View style={styles.rightColumn}>
             <View style={styles.formGroup}>
               <Text style={styles.label}>Description *</Text>
               <TextInput
-                style={[
-                  styles.input, 
-                  styles.textArea,
-                  focusedInput === 'description' && styles.inputFocused
-                ]}
+                style={[styles.input, styles.textArea, focusedInput === 'description' && styles.inputFocused]}
                 value={taskData.description}
-                onChangeText={(text) => setTaskData(prev => ({ ...prev, description: text }))}
+                onChangeText={(text) => setTaskData((prev) => ({ ...prev, description: text }))}
                 placeholder="Enter detailed task description"
                 placeholderTextColor="#9ca3af"
                 multiline
@@ -301,15 +483,18 @@ export default function CreateAudioTaskScreen() {
               />
             </View>
 
-            {/* Audio Source Section */}
             <View style={styles.formGroup}>
               <Text style={styles.label}>Audio Source (Dosya veya URL)</Text>
-              
-              {/* Source Type Selector */}
+
               <View style={styles.sourceSelector}>
                 <TouchableOpacity
                   style={[styles.sourceButton, sourceType === 'local' && styles.sourceButtonActive]}
-                  onPress={() => setSourceType('local')}
+                  onPress={() => {
+                    setSourceType('local');
+                    setRecordedBlob(null);
+                    setAudioURL('');
+                    revokePreview();
+                  }}
                 >
                   <Ionicons name="cloud-upload" size={16} color={sourceType === 'local' ? '#fff' : '#9ca3af'} />
                   <Text style={[styles.sourceButtonText, sourceType === 'local' && styles.sourceButtonTextActive]}>
@@ -336,35 +521,27 @@ export default function CreateAudioTaskScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Dynamic Content Based on Source Type */}
               {sourceType === 'local' ? (
-                <TouchableOpacity 
-                  style={[
-                    styles.uploadButton,
-                    focusedInput === 'upload' && styles.uploadButtonFocused
-                  ]} 
+                <TouchableOpacity
+                  style={[styles.uploadButton, focusedInput === 'upload' && styles.uploadButtonFocused]}
                   onPress={handleFileSelect}
-                  disabled={isUploading}
+                  disabled={isUploading || isCreating}
                   onFocus={() => setFocusedInput('upload')}
                   onBlur={() => setFocusedInput(null)}
                 >
                   <Ionicons name="folder" size={24} color="#facc15" />
                   <Text style={styles.uploadButtonText}>
-                    {selectedFile ? selectedFile.name : 'Click to Upload Audio File'}
+                    {selectedFile ? selectedFile.name : 'Ses veya zip dosyası seçin'}
                   </Text>
                 </TouchableOpacity>
               ) : sourceType === 'remote' ? (
                 <View style={styles.urlInputContainer}>
                   <Ionicons name="link" size={16} color="#9ca3af" style={styles.urlInputIcon} />
                   <TextInput
-                    style={[
-                      styles.input,
-                      styles.urlInput,
-                      focusedInput === 'url' && styles.inputFocused
-                    ]}
+                    style={[styles.input, styles.urlInput, focusedInput === 'url' && styles.inputFocused]}
                     value={remoteUrl}
                     onChangeText={setRemoteUrl}
-                    placeholder="Enter audio URL (e.g. https://example.com/audio.mp3)"
+                    placeholder="https://... ile doğrudan erişilebilir ses adresi"
                     placeholderTextColor="#9ca3af"
                     onFocus={() => setFocusedInput('url')}
                     onBlur={() => setFocusedInput(null)}
@@ -372,63 +549,44 @@ export default function CreateAudioTaskScreen() {
                 </View>
               ) : (
                 <View style={styles.recordContainer}>
-                  {/* Recording Button */}
-                  <TouchableOpacity 
-                    style={[styles.recordButton, isRecording && styles.recordButtonRecording]} 
+                  <TouchableOpacity
+                    style={[styles.recordButton, isRecording && styles.recordButtonRecording]}
                     onPress={isRecording ? stopRecording : startRecording}
                   >
-                    <Ionicons 
-                      name={isRecording ? 'stop' : 'mic'} 
-                      size={20} 
-                      color={isRecording ? '#ef4444' : '#10b981'} 
+                    <Ionicons
+                      name={isRecording ? 'stop' : 'mic'}
+                      size={20}
+                      color={isRecording ? '#ef4444' : '#10b981'}
                     />
                     <Text style={styles.recordButtonText}>
                       {isRecording ? 'Stop Recording' : 'Record Audio'}
                     </Text>
                   </TouchableOpacity>
-                  
-                  {/* Recorded Audio Preview */}
-                  {audioURL && (
+                  {audioURL && recordedBlob ? (
                     <View style={styles.audioPreview}>
-                      <Text style={styles.audioPreviewText}>Recorded Audio</Text>
-                      <Text style={styles.audioURL}>{audioURL}</Text>
+                      <Text style={styles.audioPreviewText}>Kayıt hazır (gönderimde Storage&apos;a yüklenecek)</Text>
                     </View>
-                  )}
+                  ) : null}
                 </View>
               )}
 
-              {/* Upload Progress */}
-              {isUploading && (
+              {(isUploading || (isCreating && sourceType === 'local')) && (
                 <View style={styles.progressContainer}>
                   <View style={styles.progressBar}>
-                    <View 
-                      style={[
-                        styles.progressFill, 
-                        { width: `${uploadProgress}%` }
-                      ]} 
-                    />
+                    <View style={[styles.progressFill, { width: `${uploadProgress}%` }]} />
                   </View>
-                  <Text style={styles.progressText}>{uploadProgress}%</Text>
+                  <Text style={styles.progressText}>
+                    {uploadProgress >= 100 ? 'Tamamlandı' : `Yükleniyor… ${uploadProgress}%`}
+                  </Text>
                 </View>
-              )}
-
-              {/* Upload Action Button */}
-              {selectedFile && !isUploading && (
-                <TouchableOpacity 
-                  style={styles.uploadActionButton} 
-                  onPress={simulateUpload}
-                >
-                  <Text style={styles.uploadActionText}>Start Upload</Text>
-                </TouchableOpacity>
               )}
             </View>
           </View>
         </View>
 
-        {/* Save Button */}
-        <TouchableOpacity 
-          style={[styles.saveButton, isCreating && styles.saveButtonDisabled]} 
-          onPress={handleCreateTask}
+        <TouchableOpacity
+          style={[styles.saveButton, isCreating && styles.saveButtonDisabled]}
+          onPress={() => void handleCreateTask()}
           disabled={isCreating}
         >
           {isCreating ? (
@@ -475,7 +633,13 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     color: '#f8fafc',
-    marginBottom: 20,
+    marginBottom: 8,
+  },
+  hint: {
+    fontSize: 13,
+    color: '#94a3b8',
+    marginBottom: 16,
+    lineHeight: 20,
   },
   form: {
     flexDirection: 'row',

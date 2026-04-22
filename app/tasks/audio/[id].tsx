@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput, Pressable, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
-import AudioPlayer from "../../../components/AudioPlayer";
+import AudioPlayer from '@/components/AudioPlayer';
 
 interface TaskData {
   id: string;
@@ -17,6 +17,7 @@ interface TaskData {
   type?: 'audio' | 'image' | 'video' | string | null;
   category?: string | null;
   audio_url?: string;
+  content_url?: string;
   image_url?: string | null;
   video_url?: string | null;
   file_url?: string | null;
@@ -37,18 +38,18 @@ export default function AudioTaskDetailScreen() {
   const [transcription, setTranscription] = useState('');
   const [transcribing, setTranscribing] = useState(false);
   const [aiFixing, setAiFixing] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [position, setPosition] = useState(0);
-  const [duration, setDuration] = useState<number | null>(null);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const progressBarWidth = useRef(0);
-  const MIN_SPEED = 0.5;
-  const MAX_SPEED = 3;
 
-  const audioUrl = task?.audio_url;
+  const audioUrl = task?.audio_url || task?.content_url || task?.file_url;
   const imageUrl = task?.image_url;
   const videoUrl = task?.video_url;
-  const isAudioTask = task?.type === 'audio' || (task?.category ?? '').toString().toLowerCase().includes('audio');
+  const typeLower = (task?.type ?? '').toString().toLowerCase();
+  const categoryLower = (task?.category ?? '').toString().toLowerCase();
+  const isAudioTask =
+    typeLower === 'audio' ||
+    typeLower === 'transcription' ||
+    categoryLower.includes('audio') ||
+    categoryLower.includes('transcription') ||
+    !!audioUrl;
   const isSubmitted = task?.status === 'submitted';
 
   useEffect(() => {
@@ -75,9 +76,15 @@ export default function AudioTaskDetailScreen() {
           title: String(data.title ?? '') || 'İsimsiz Görev',
           status: data.status ?? 'pending',
           price: data.price != null ? Number(data.price) : 0,
-          type: (data.type ?? (cat === 'video' ? 'video' : 'audio')) as 'audio' | 'image' | 'video',
+          type: (data.type ??
+            (cat === 'video' ? 'video' : cat === 'transcription' ? 'transcription' : 'audio')) as
+            | 'audio'
+            | 'image'
+            | 'video'
+            | string,
           category: data.category ?? null,
           audio_url: data.audio_url ?? data.audioUrl,
+          content_url: data.content_url,
           image_url: data.image_url ?? data.imageUrl ?? null,
           file_url: data.file_url ?? null,
           transcription: data.transcription ?? '',
@@ -91,35 +98,6 @@ export default function AudioTaskDetailScreen() {
     };
     fetchTask();
   }, [id]);
-
-  const togglePlayPause = useCallback(() => {
-    setIsPlaying(prev => !prev);
-  }, []);
-
-  const handleSeek = useCallback((e: any) => {
-    if (!duration || !progressBarWidth.current) return;
-    const { locationX } = e.nativeEvent;
-    const percentage = locationX / progressBarWidth.current;
-    setPosition(percentage * duration);
-  }, [duration]);
-
-  const formatTime = useCallback((seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  }, []);
-
-  const speedUp = useCallback(() => {
-    setPlaybackSpeed(prev => Math.min(MAX_SPEED, prev + 0.25));
-  }, []);
-
-  const speedDown = useCallback(() => {
-    setPlaybackSpeed(prev => Math.max(MIN_SPEED, prev - 0.25));
-  }, []);
-
-  const resetToNormal = useCallback(() => {
-    setPlaybackSpeed(1);
-  }, []);
 
   const handleAITranscription = useCallback(async () => {
     if (!audioUrl) return;
@@ -288,69 +266,7 @@ export default function AudioTaskDetailScreen() {
           <Text style={styles.sectionLabel}>{t('taskDetail.audioLabel')}</Text>
           <View style={styles.audioCard}>
             {audioUrl && isAudioTask ? (
-              <>
-                {Platform.OS === 'web' ? (
-                  <AudioPlayer uri={audioUrl} />
-                ) : (
-                  <View style={styles.playerContent}>
-                    <TouchableOpacity
-                      style={styles.playButton}
-                      onPress={togglePlayPause}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.playIcon}>{isPlaying ? '⏸' : '▶'}</Text>
-                    </TouchableOpacity>
-                    <View style={styles.playerInfo}>
-                      <Pressable
-                        style={styles.progressBar}
-                        onLayout={(e) => {
-                          progressBarWidth.current = e.nativeEvent.layout.width;
-                        }}
-                        onPress={handleSeek}
-                      >
-                        <View
-                          style={[
-                            styles.progressFill,
-                            {
-                              width: duration
-                                ? `${Math.min(100, (position / duration) * 100)}%`
-                                : '0%',
-                            },
-                          ]}
-                        />
-                      </Pressable>
-                      <Text style={styles.timeText}>
-                        {formatTime(position)}
-                        {duration !== null ? ` / ${formatTime(duration)}` : ''}
-                      </Text>
-                    </View>
-                  </View>
-                )}
-                <View style={styles.speedRow}>
-                  <Text style={styles.speedLabel}>{t('taskDetail.playbackSpeed')}</Text>
-                  <View style={styles.speedControlRow}>
-                    <TouchableOpacity
-                      style={[styles.speedBtn, playbackSpeed <= MIN_SPEED && styles.speedBtnDisabled]}
-                      onPress={speedDown}
-                      disabled={playbackSpeed <= MIN_SPEED}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.speedBtnText}>−</Text>
-                    </TouchableOpacity>
-                    <Pressable style={styles.speedValue} onPress={resetToNormal}>
-                      <Text style={styles.speedValueText}>{playbackSpeed.toFixed(1)}x</Text>
-                    </Pressable>
-                    <TouchableOpacity
-                      style={[styles.speedBtn, playbackSpeed >= MAX_SPEED && styles.speedBtnDisabled]}
-                      onPress={speedUp}
-                      disabled={playbackSpeed >= MAX_SPEED}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.speedBtnText}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </>
+              <AudioPlayer uri={audioUrl} />
             ) : (
               <Text style={styles.noAudioText}>{t('taskDetail.noAudio')}</Text>
             )}
@@ -361,33 +277,25 @@ export default function AudioTaskDetailScreen() {
           <View style={styles.transcriptionHeader}>
             <Text style={styles.sectionLabel}>{t('taskDetail.transcriptionLabel')}</Text>
           </View>
-          <View style={styles.aiButtonWrapper}>
-            <Pressable
-              style={[
-                styles.aiTranscribeButton,
-                transcribing && styles.aiTranscribeButtonDisabled,
-                { zIndex: 9999 },
-              ]}
-              onPress={handleAITranscription}
-              disabled={transcribing}
-            >
-              {transcribing ? (
-                <>
-                  <ActivityIndicator size="small" color="#fff" />
-                  <Text style={styles.aiTranscribeButtonText}>
-                    {t('taskDetail.aiTranscribing')}
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Ionicons name="sparkles" size={18} color="#fff" />
-                  <Text style={styles.aiTranscribeButtonText}>
-                    {t('taskDetail.aiTranscribe')}
-                  </Text>
-                </>
-              )}
-            </Pressable>
-          </View>
+          
+          {/* AI Transcribe Butonu */}
+          <TouchableOpacity 
+            style={styles.compactButton}
+            onPress={handleAITranscription}
+            disabled={transcribing}
+          >
+            {transcribing ? (
+              <>
+                <ActivityIndicator size="small" color="#ffffff" />
+                <Text style={styles.compactButtonText}>AI Transcribing...</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="sparkles" size={16} color="#ffffff" />
+                <Text style={styles.compactButtonText}>AI Transcribe</Text>
+              </>
+            )}
+          </TouchableOpacity>
           <View style={styles.transcriptionCard}>
             <TextInput
               style={styles.transcriptionInput}
@@ -400,33 +308,23 @@ export default function AudioTaskDetailScreen() {
               editable={true}
             />
           </View>
-          <View style={styles.aiButtonWrapper}>
-            <Pressable
-              style={[
-                styles.aiTranscribeButton,
-                aiFixing && styles.aiTranscribeButtonDisabled,
-                { zIndex: 9999 },
-              ]}
-              onPress={handleAIFix}
-              disabled={aiFixing}
-            >
-              {aiFixing ? (
-                <>
-                  <ActivityIndicator size="small" color="#fff" />
-                  <Text style={styles.aiTranscribeButtonText}>
-                    AI Fixing...
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Ionicons name="sparkles" size={18} color="#fff" />
-                  <Text style={styles.aiTranscribeButtonText}>
-                    ✨ AI Fix
-                  </Text>
-                </>
-              )}
-            </Pressable>
-          </View>
+          <TouchableOpacity 
+            style={styles.compactButton}
+            onPress={handleAIFix}
+            disabled={aiFixing}
+          >
+            {aiFixing ? (
+              <>
+                <ActivityIndicator size="small" color="#ffffff" />
+                <Text style={styles.compactButtonText}>AI Fixing...</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="sparkles" size={16} color="#ffffff" />
+                <Text style={styles.compactButtonText}>AI Fix</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -690,6 +588,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#fff',
+  },
+  
+  // Compact Button styles
+  compactButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start', // ÖNEMLI: Butonu içeriðe göre daraltýr, sola yaslar.
+    backgroundColor: '#7c3aed', // Mor tonunu koruduk
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+    gap: 8, // Ýkon ve metin arasý boþluk
+  },
+  compactButtonText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    fontSize: 14,
   },
   
   // Bottom buttons

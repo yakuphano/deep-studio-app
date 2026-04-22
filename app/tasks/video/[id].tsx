@@ -285,7 +285,14 @@ export default function VideoTaskDetailScreen() {
             {/* Pan Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'pan' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('pan'); setIsBrushActive(false); }}
+              onPress={() => { 
+                try {
+                  setActiveTool('pan'); 
+                  setIsBrushActive(false); 
+                } catch (e) {
+                  console.error('Pan tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Pan (G)', title: 'Pan (G)' } as any : {})}
             >
@@ -295,14 +302,18 @@ export default function VideoTaskDetailScreen() {
             
             {/* Undo Button */}
             <TouchableOpacity
-              style={[styles.toolBtnLarge, activeTool === 'undo' && !isBrushActive && styles.toolBtnActivePurple]}
+              style={[styles.toolBtnLarge, styles.toolBtnLarge]}
               onPress={() => {
-                if (canvasRef.current?.handleUndo) {
-                  canvasRef.current.handleUndo();
-                } else {
-                  if (annotations.length > 0) {
-                    setAnnotations(prev => prev.slice(0, -1));
+                try {
+                  if (canvasRef.current?.handleUndo) {
+                    canvasRef.current.handleUndo();
+                  } else {
+                    if (annotations && annotations.length > 0) {
+                      setAnnotations(prev => prev.slice(0, -1));
+                    }
                   }
+                } catch (e) {
+                  console.error('Undo tool error:', e);
                 }
               }}
               activeOpacity={0.8}
@@ -315,7 +326,14 @@ export default function VideoTaskDetailScreen() {
             {/* Bounding Box Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'bbox' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('bbox'); setIsBrushActive(false); }}
+              onPress={() => { 
+                try {
+                  setActiveTool('bbox'); 
+                  setIsBrushActive(false); 
+                } catch (e) {
+                  console.error('Bounding Box tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Bounding Box (R)', title: 'Bounding Box (R)' } as any : {})}
             >
@@ -326,7 +344,14 @@ export default function VideoTaskDetailScreen() {
             {/* Polygon Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'polygon' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('polygon'); setIsBrushActive(false); }}
+              onPress={() => { 
+                try {
+                  setActiveTool('polygon'); 
+                  setIsBrushActive(false); 
+                } catch (e) {
+                  console.error('Polygon tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Polygon (P)', title: 'Polygon (P)' } as any : {})}
             >
@@ -337,7 +362,14 @@ export default function VideoTaskDetailScreen() {
             {/* Points Tool */}
             <TouchableOpacity
               style={[styles.toolBtnLarge, activeTool === 'points' && !isBrushActive && styles.toolBtnActivePurple]}
-              onPress={() => { setActiveTool('points'); setIsBrushActive(false); }}
+              onPress={() => { 
+                try {
+                  setActiveTool('points'); 
+                  setIsBrushActive(false); 
+                } catch (e) {
+                  console.error('Points tool error:', e);
+                }
+              }}
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Points (N)', title: 'Points (N)' } as any : {})}
             >

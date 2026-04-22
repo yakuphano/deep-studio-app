@@ -8,6 +8,7 @@ interface CanvasToolbarProps {
   onToolChange: (tool: string) => void;
   onBrushColorChange: (color: string) => void;
   onPaletteToggle: () => void;
+  onResetView?: () => void;
 }
 
 export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
@@ -17,17 +18,16 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   onToolChange,
   onBrushColorChange,
   onPaletteToggle,
+  onResetView,
 }) => {
   return (
     <View style={styles.toolbarContainer}>
       {/* Reset/Center Butonu */}
       <button
-        onClick={() => {
-          // Reset view functionality would be handled by parent
-          console.log('[CanvasToolbar] Reset view clicked');
-        }}
+        type="button"
+        onClick={() => onResetView?.()}
         style={styles.resetButton}
-        title="Görünümü Sıfırla - Nesneler"
+        title="Görünümü sıfırla (zoom ve konum)"
       >
         <svg
           width="20"
@@ -49,10 +49,22 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         {/* Toolbar Butonu */}
         <button
           onClick={() => {
-            if (activeTool !== 'brush') {
-              onToolChange('brush');
+            try {
+              if (activeTool !== 'brush') {
+                if (typeof onToolChange === 'function') {
+                  onToolChange('brush');
+                } else {
+                  console.warn("Dikkat: onToolChange fonksiyonu bu sayfaya tanımlanmamış.");
+                }
+              }
+              if (typeof onPaletteToggle === 'function') {
+                onPaletteToggle();
+              } else {
+                console.warn("Dikkat: onPaletteToggle fonksiyonu bu sayfaya tanımlanmamış.");
+              }
+            } catch (e) {
+              console.error('Brush tool change error:', e);
             }
-            onPaletteToggle();
           }}
           style={{
             ...styles.toolbarButton,
@@ -96,8 +108,20 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
               <button
                 key={item.color}
                 onClick={() => {
-                  onBrushColorChange(item.color);
-                  onPaletteToggle();
+                  try {
+                    if (typeof onBrushColorChange === 'function') {
+                      onBrushColorChange(item.color);
+                    } else {
+                      console.warn("Dikkat: onBrushColorChange fonksiyonu bu sayfaya tanımlanmamış.");
+                    }
+                    if (typeof onPaletteToggle === 'function') {
+                      onPaletteToggle();
+                    } else {
+                      console.warn("Dikkat: onPaletteToggle fonksiyonu bu sayfaya tanımlanmamış.");
+                    }
+                  } catch (e) {
+                    console.error('Color change error:', e);
+                  }
                 }}
                 style={{
                   ...styles.colorButton,
@@ -129,14 +153,17 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     backgroundColor: '#2563eb',
-    border: '2px solid white',
+    borderWidth: 2,
+    borderColor: 'white',
     borderRadius: 6,
     cursor: 'pointer',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    transition: 'all 0.2s ease',
   },
   toolbarButtonContainer: {
     position: 'relative',
@@ -145,12 +172,13 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 6,
-    cursor: 'pointer',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    transition: 'all 0.2s ease',
   },
   colorPalette: {
     position: 'absolute',
@@ -159,19 +187,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     padding: 8,
     zIndex: 10000,
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: 6,
-    boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
     borderRadius: 6,
-    border: '1px solid #e5e7eb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
     minWidth: 180,
   },
   colorButton: {
     width: 28,
     height: 28,
     borderRadius: 4,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
 });

@@ -3,9 +3,12 @@ export interface TaskData {
   title: string;
   status: 'pending' | 'in_progress' | 'submitted' | 'completed';
   price: number;
-  type: 'audio' | 'image' | 'video';
+  type: 'audio' | 'image' | 'video' | 'transcription' | string;
   category: string | null;
   audio_url: string | null;
+  /** Bazı görevlerde ses yolu burada tutulur */
+  content_url?: string | null;
+  file_url?: string | null;
   image_url: string | null;
   video_url: string | null;
   transcription: string;
@@ -37,8 +40,20 @@ export interface VideoAnnotation {
   seconds: number;
 }
 
-export type TaskType = 'audio' | 'image' | 'video';
+export type TaskType = 'audio' | 'image' | 'video' | 'transcription' | string;
 
 export type TaskStatus = 'pending' | 'in_progress' | 'submitted' | 'completed';
 
-export type Tool = 'pan' | 'select' | 'bbox' | 'polygon' | 'points' | 'ellipse' | 'cuboid' | 'polyline' | 'semantic' | 'brush' | 'magic_wand';
+export type Tool =
+  | 'pan'
+  | 'select'
+  | 'bbox'
+  | 'polygon'
+  | 'points'
+  | 'ellipse'
+  | 'cuboid'
+  | 'cuboid_wire'
+  | 'polyline'
+  | 'semantic'
+  | 'brush'
+  | 'magic_wand';

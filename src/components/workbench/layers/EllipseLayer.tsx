@@ -1,5 +1,11 @@
 import React from 'react';
 import { EllipseAnnotation } from '@/types/annotations';
+import { resolveAnnotationLabelColor } from '@/constants/annotationLabels';
+import {
+  AnnotationLabelBadge,
+  annotationLabelToString,
+  getAnnotationLabelBadgeLayout,
+} from './AnnotationLabelBadge';
 
 interface EllipseLayerProps {
   annotation: EllipseAnnotation;
@@ -10,24 +16,18 @@ interface EllipseLayerProps {
   activeTool: string;
 }
 
-// Get color for label with fallback - preserve purple styling
-const getLabelColor = (label: string | any): string => {
-  const labelStr = typeof label === 'object'
-    ? (label as any).name || (label as any).label || ''
-    : String(label ?? '');
-  return '#94a3b8';
-};
-
 export const EllipseLayer: React.FC<EllipseLayerProps> = ({
   annotation,
   isSelected,
   scale,
-  imageToScreen,
+  imageToScreen: _imageToScreen,
   onSelect,
   activeTool,
 }) => {
-  const color = getLabelColor(annotation.label);
-  
+  const color = resolveAnnotationLabelColor(annotation.label);
+  const labelText = annotationLabelToString(annotation.label).trim();
+  const badgeLayout = labelText ? getAnnotationLabelBadgeLayout(labelText, scale) : null;
+
   return (
     <g style={{ pointerEvents: 'none' }}>
       <ellipse
@@ -45,36 +45,22 @@ export const EllipseLayer: React.FC<EllipseLayerProps> = ({
         }}
         onClick={(e) => {
           e.stopPropagation();
-          if (activeTool !== 'pan') {
+          if (activeTool === 'pan' || activeTool === 'select') {
             onSelect(annotation.id);
           }
         }}
       />
       
-      {/* Label text near ellipse */}
-      {(() => {
-        const labelText =
-          typeof annotation.label === 'object'
-            ? (annotation.label as any).name ||
-              (annotation.label as any).label ||
-              ''
-            : String(annotation.label ?? '');
-        
-        return labelText.trim() ? (
-          <text
-            x={annotation.cx - annotation.rx + 4}
-            y={annotation.cy - annotation.ry - 4}
-            fill="#FFFFFF"
-            fontSize={12 / scale}
-            fontWeight="bold"
-            style={{
-              pointerEvents: 'none',
-            }}
-          >
-            {labelText}
-          </text>
-        ) : null;
-      })()}
+      {badgeLayout && (
+        <AnnotationLabelBadge
+          labelText={labelText}
+          color={color}
+          scale={scale}
+          anchorX={annotation.cx - annotation.rx + 4}
+          topY={annotation.cy - annotation.ry - 4 - badgeLayout.h}
+          fontWeight="700"
+        />
+      )}
     </g>
   );
 };

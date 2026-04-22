@@ -1,5 +1,12 @@
 import React from 'react';
 import { CuboidAnnotation } from '@/types/annotations';
+import { screenConstantRadius } from '@/utils/canvasHelpers';
+import { resolveAnnotationLabelColor } from '@/constants/annotationLabels';
+import {
+  AnnotationLabelBadge,
+  annotationLabelToString,
+  getAnnotationLabelBadgeLayout,
+} from './AnnotationLabelBadge';
 
 interface CuboidLayerProps {
   annotation: CuboidAnnotation;
@@ -10,25 +17,20 @@ interface CuboidLayerProps {
   activeTool: string;
 }
 
-// Get color for label with fallback - preserve purple styling
-const getLabelColor = (label: string | any): string => {
-  const labelStr = typeof label === 'object'
-    ? (label as any).name || (label as any).label || ''
-    : String(label ?? '');
-  return '#94a3b8';
-};
-
 export const CuboidLayer: React.FC<CuboidLayerProps> = ({
   annotation,
   isSelected,
   scale,
-  imageToScreen,
+  imageToScreen: _imageToScreen,
   onSelect,
   activeTool,
 }) => {
-  const color = getLabelColor(annotation.label);
+  const color = resolveAnnotationLabelColor(annotation.label);
   const { x, y, width, height, dx = 0, dy = 0 } = annotation;
-  
+  const labelText = annotationLabelToString(annotation.label).trim();
+  const badgeLayout = labelText ? getAnnotationLabelBadgeLayout(labelText, scale) : null;
+  const hr = screenConstantRadius(scale, 3);
+
   return (
     <g style={{ pointerEvents: 'none' }}>
       {/* Front face */}
@@ -43,13 +45,11 @@ export const CuboidLayer: React.FC<CuboidLayerProps> = ({
         style={{
           vectorEffect: 'non-scaling-stroke',
           pointerEvents: 'auto',
-          cursor: activeTool === 'select' ? 'move' : 'default',
+          cursor: activeTool === 'pan' || activeTool === 'select' ? 'pointer' : 'default',
         }}
         onClick={(e) => {
           e.stopPropagation();
-          if (activeTool !== 'pan') {
-            onSelect(annotation.id);
-          }
+          onSelect(annotation.id);
         }}
       />
       
@@ -107,30 +107,34 @@ export const CuboidLayer: React.FC<CuboidLayerProps> = ({
         style={{ vectorEffect: 'non-scaling-stroke' }} 
       />
       
-      {/* Label text near front face */}
-      {(() => {
-        const labelText =
-          typeof annotation.label === 'object'
-            ? (annotation.label as any).name ||
-              (annotation.label as any).label ||
-              ''
-            : String(annotation.label ?? '');
-        
-        return labelText.trim() ? (
-          <text
-            x={x}
-            y={y - 4}
-            fill="#FFFFFF"
-            fontSize={12 / scale}
-            fontWeight="bold"
-            style={{
-              pointerEvents: 'none',
-            }}
-          >
-            {labelText}
-          </text>
-        ) : null;
-      })()}
+      {badgeLayout && (
+        <AnnotationLabelBadge
+          labelText={labelText}
+          color={color}
+          scale={scale}
+          anchorX={x}
+          topY={y - 4 - badgeLayout.h}
+          fontWeight="700"
+        />
+      )}
+
+      {isSelected && (
+        <>
+          <circle cx={x} cy={y} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }} />
+          <circle cx={x + width} cy={y} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }} />
+          <circle cx={x + width} cy={y + height} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }} />
+          <circle cx={x} cy={y + height} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }} />
+          <circle cx={x + width / 2} cy={y} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }} />
+          <circle cx={x + width} cy={y + height / 2} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }} />
+          <circle cx={x + width / 2} cy={y + height} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }} />
+          <circle cx={x} cy={y + height / 2} r={hr} fill={color} stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }} />
+          {/* Arka yüz köşeleri: dx/dy ile küp derinliği */}
+          <circle cx={x + dx} cy={y + dy} r={hr} fill="#ffffff" stroke={color} strokeWidth={1.5} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }} />
+          <circle cx={x + dx + width} cy={y + dy} r={hr} fill="#ffffff" stroke={color} strokeWidth={1.5} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }} />
+          <circle cx={x + dx + width} cy={y + dy + height} r={hr} fill="#ffffff" stroke={color} strokeWidth={1.5} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }} />
+          <circle cx={x + dx} cy={y + dy + height} r={hr} fill="#ffffff" stroke={color} strokeWidth={1.5} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }} />
+        </>
+      )}
     </g>
   );
 };

@@ -68,6 +68,8 @@ function VideoTaskCard({
 }
 
 export default function VideoTasksScreen() {
+  console.log('=== VIDEO COMPONENT RENDER EDILDI ===');
+  
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
@@ -81,6 +83,8 @@ export default function VideoTasksScreen() {
   const userId = user?.id ?? session?.user?.id ?? null;
   const navigatorReady = rootNavigationState?.key != null;
 
+  console.log('=== VIDEO USER INFO ===', { user: !!user, session: !!session, userId, navigatorReady: !!navigatorReady });
+
   // Render protection
   if (!user || !session) return <View><Text>Loading...</Text></View>;
 
@@ -89,38 +93,37 @@ export default function VideoTasksScreen() {
     if (showLoading) setLoading(true);
     
     try {
-      const cols = 'id, title, status, price, language, category, type, video_url, image_url, transcription, is_pool_task, assigned_to';
-      
-      // My Tasks - assigned to current user (video only)
-      const { data: assignedData, error: assignedErr } = await supabase
+      // DEBUG: Tüm video görevlerini getir - filtreleri kald\u0131r
+      const { data: allData, error: allErr } = await supabase
         .from('tasks')
-        .select(cols)
-        .eq('assigned_to', userId)
-        .eq('status', 'pending')
-        .or('category.eq.video,type.eq.video,video_url.not.is.null')
+        .select('*')
+        .eq('category', 'video')
         .order('created_at', { ascending: false });
       
-      if (assignedErr) console.error('[video-tasks] assignedData sorgu hatasi:', assignedErr);
-      const assigned = assignedData ?? [];
-
-      // Pool Tasks - available for claiming (video only)
-      const { data: poolData, error: poolErr } = await supabase
-        .from('tasks')
-        .select(cols)
-        .is('assigned_to', null)
-        .eq('status', 'pending')
-        .or('category.eq.video,type.eq.video,video_url.not.is.null')
-        .order('created_at', { ascending: false });
+      console.log('[VIDEO-DEBUG] Tüm video görevleri:', allData);
+      console.log('[VIDEO-DEBUG] Hata:', allErr);
       
-      if (poolErr) console.error('[video-tasks] poolData sorgu hatasi:', poolErr);
-      const pool = poolData ?? [];
-
-      const allVideoTasks = [...pool, ...assigned];
+      // Geçici olarak tüm video görevlerini ata
+      const assignedData = allData?.filter(task => task.assigned_user_id === userId) || [];
+      const poolData = allData?.filter(task => !task.assigned_user_id) || [];
       
-      // GEÇICI OLARAK TÜM GÖREVLERI GÖSTER
-      const filteredTasks = allVideoTasks;
+      console.log('[VIDEO-DEBUG] Filtered assigned:', assignedData);
+      console.log('[VIDEO-DEBUG] Filtered pool:', poolData);
       
-      setVideoTasks(filteredTasks);
+      console.log('[VIDEO-TASKS-DEBUG] assignedData:', assignedData);
+      console.log('[VIDEO-TASKS-DEBUG] assignedErr:', assignedErr);
+      console.log('[VIDEO-TASKS-DEBUG] poolData:', poolData);
+      console.log('[VIDEO-TASKS-DEBUG] poolErr:', poolErr);
+      console.log('[VIDEO-TASKS-DEBUG] userId:', userId);
+      
+      if (assignedErr || poolErr) {
+        console.error('[VIDEO-TASKS-DEBUG] Sorgu hatasi:', assignedErr || poolErr);
+        setVideoTasks([]);
+        return;
+      }
+      
+      const allVideoTasks = [...(poolData || []), ...(assignedData || [])];
+      setVideoTasks(allVideoTasks);
     } finally {
       setLoading(false);
     }
@@ -167,7 +170,11 @@ export default function VideoTasksScreen() {
     setRefreshing(false);
   }, [fetchVideoTasks]);
 
-  return (
+  // return (...) sat\u0131r\u0131ndan hemen önce:
+console.log("--- EKRANA BASILAN VER\u0130: ---", videoTasks);
+console.log("--- Y\u00dcKLEN\u0130YOR MU? ---", loading);
+
+return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
       
@@ -181,30 +188,44 @@ export default function VideoTasksScreen() {
       <Text style={styles.pageTitle}>{t('tasks.pageTitleVideo')}</Text>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 40 }} />
+        <ActivityIndicator size="large" color="#ffffff" style={{ flex: 1 }} />
       ) : videoTasks.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <View style={styles.emptyIconContainer}>
-            <Ionicons name="videocam-outline" size={80} color="#3b82f6" />
-          </View>
-          <Text style={styles.emptyTitle}>No Video Tasks Available</Text>
-          <Text style={styles.emptyDescription}>There are currently no video tasks waiting in the pool.</Text>
-          <TouchableOpacity style={styles.refreshButton} onPress={() => fetchVideoTasks(true)}>
-            <Ionicons name="refresh" size={16} color="#ffffff" />
-            <Text style={styles.refreshButtonText}>Refresh</Text>
+        /* GÜVENLİ VE GÖRÜNÜR EMPTY STATE */
+        <View style={{ 
+          flex: 1, 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          padding: 20, 
+          backgroundColor: '#0f172a' // Arka planıyla uyumlu
+        }}>
+          <Ionicons name="alert-circle-outline" size={64} color="#64748b" />
+          <Text style={{ color: '#fff', fontSize: 18, marginTop: 10 }}>Görev Bulunamadı</Text>
+          
+          <TouchableOpacity 
+            style={{
+              marginTop: 20,
+              backgroundColor: '#8b5cf6', // Video için mor
+              paddingVertical: 12,
+              paddingHorizontal: 24,
+              borderRadius: 8,
+            }}
+            onPress={() => fetchVideoTasks(true)} // Buradaki fonksiyon ismine dikkat et!
+          >
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Görevleri Yenile</Text>
           </TouchableOpacity>
         </View>
       ) : (
+        // VERİ VARSA LİSTELE
         <FlatList
           data={videoTasks}
-          renderItem={({ item }) => <VideoTaskCard item={item} onPress={handleTaskPress} t={t} />}
           keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <VideoTaskCard item={item} onPress={handleTaskPress} t={t} />}
           numColumns={numColumns}
           contentContainerStyle={styles.listContainer}
           columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3b82f6" />
           }
         />
       )}
@@ -278,41 +299,28 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyIconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
   },
   emptyTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 8,
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#f8fafc',
+    marginTop: 20,
+    textAlign: 'center',
   },
   emptyDescription: {
     fontSize: 16,
     color: '#94a3b8',
+    marginTop: 8,
     textAlign: 'center',
-    marginBottom: 24,
-    paddingHorizontal: 40,
   },
   refreshButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 20,
+    backgroundColor: '#8b5cf6',
+    paddingHorizontal: 30,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 12,
     marginTop: 24,
-    gap: 8,
   },
   refreshButtonText: {
     color: '#ffffff',

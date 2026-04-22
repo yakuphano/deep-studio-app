@@ -1,5 +1,12 @@
 import React from 'react';
 import { PolylineAnnotation } from '@/types/annotations';
+import { screenConstantRadius } from '@/utils/canvasHelpers';
+import { resolveAnnotationLabelColor } from '@/constants/annotationLabels';
+import {
+  AnnotationLabelBadge,
+  annotationLabelToString,
+  getAnnotationLabelBadgeLayout,
+} from './AnnotationLabelBadge';
 
 interface PolylineLayerProps {
   annotation: PolylineAnnotation;
@@ -10,24 +17,22 @@ interface PolylineLayerProps {
   activeTool: string;
 }
 
-// Get color for label with fallback - preserve purple styling
-const getLabelColor = (label: string | any): string => {
-  const labelStr = typeof label === 'object'
-    ? (label as any).name || (label as any).label || ''
-    : String(label ?? '');
-  return '#94a3b8';
-};
-
 export const PolylineLayer: React.FC<PolylineLayerProps> = ({
   annotation,
   isSelected,
   scale,
-  imageToScreen,
+  imageToScreen: _imageToScreen,
   onSelect,
   activeTool,
 }) => {
-  const color = getLabelColor(annotation.label);
-  
+  const color = resolveAnnotationLabelColor(annotation.label);
+  const pr = screenConstantRadius(scale, 3);
+  const labelText = annotationLabelToString(annotation.label).trim();
+  const badgeLayout =
+    labelText && annotation.points.length > 0
+      ? getAnnotationLabelBadgeLayout(labelText, scale)
+      : null;
+
   return (
     <g style={{ pointerEvents: 'none' }}>
       {/* Draw lines between points */}
@@ -42,7 +47,8 @@ export const PolylineLayer: React.FC<PolylineLayerProps> = ({
             x2={point.x}
             y2={point.y}
             stroke={color}
-            strokeWidth={3}
+            strokeWidth={1}
+            strokeLinecap="round"
             style={{
               vectorEffect: 'non-scaling-stroke',
             }}
@@ -56,10 +62,10 @@ export const PolylineLayer: React.FC<PolylineLayerProps> = ({
           key={`polyline-point-${index}`}
           cx={point.x}
           cy={point.y}
-          r={11}
+          r={pr}
           fill={color}
           stroke="#FFFFFF"
-          strokeWidth={2.5}
+          strokeWidth={1}
           vectorEffect="non-scaling-stroke"
           style={{
             filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.35))',
@@ -67,30 +73,16 @@ export const PolylineLayer: React.FC<PolylineLayerProps> = ({
         />
       ))}
       
-      {/* Label text near first point */}
-      {(() => {
-        const labelText =
-          typeof annotation.label === 'object'
-            ? (annotation.label as any).name ||
-              (annotation.label as any).label ||
-              ''
-            : String(annotation.label ?? '');
-        
-        return labelText.trim() ? (
-          <text
-            x={annotation.points[0].x + 12}
-            y={annotation.points[0].y - 4}
-            fill="#FFFFFF"
-            fontSize={12 / scale}
-            fontWeight="bold"
-            style={{
-              pointerEvents: 'none',
-            }}
-          >
-            {labelText}
-          </text>
-        ) : null;
-      })()}
+      {badgeLayout && (
+        <AnnotationLabelBadge
+          labelText={labelText}
+          color={color}
+          scale={scale}
+          anchorX={annotation.points[0].x + 10}
+          topY={annotation.points[0].y - 4 - badgeLayout.h}
+          fontWeight="700"
+        />
+      )}
     </g>
   );
 };

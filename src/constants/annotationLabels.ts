@@ -25,3 +25,20 @@ export const LABEL_COLORS: Record<string, string> = {
   'Light Post': '#64748b',           // dark gray
   'Traffic Sign': '#f59e0b',         // amber
 };
+
+/** Etiket metninden LABEL_COLORS anahtarına çözümler (ObjectList ile aynı palet) */
+export function resolveAnnotationLabelColor(label: unknown): string {
+  const labelStr =
+    typeof label === 'object' && label !== null
+      ? String((label as any).name ?? (label as any).label ?? '').trim()
+      : String(label ?? '').trim();
+  if (labelStr && LABEL_COLORS[labelStr]) return LABEL_COLORS[labelStr];
+  return LABEL_COLORS['Other'];
+}
+
+/** #rrggbb → rgba (SVG fill için) */
+export function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex.trim());
+  if (!m) return `rgba(148, 163, 184, ${alpha})`;
+  return `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${alpha})`;
+}

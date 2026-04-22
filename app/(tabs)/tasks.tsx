@@ -59,7 +59,7 @@ function TaskSelectionCards({
             activeOpacity={0.9}
           >
             <View style={styles.cardIcon}>
-              <Ionicons name="videocam" size={48} color="#10b981" />
+              <Ionicons name="videocam" size={48} color="#8b5cf6" />
             </View>
             <Text style={styles.cardLabel}>{t('tasks.cardVideoAnnotation')}</Text>
             <Text style={styles.cardHint}>Frame • Object • Tracking</Text>

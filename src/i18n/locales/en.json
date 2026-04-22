@@ -296,6 +296,10 @@
     "pageTitleTranscription": "Audio Transcription Tasks",
     "pageTitleImage": "Image Annotation Tasks",
     "pageTitleVideo": "Video Annotation Tasks",
+    "startTask": "Start task",
+    "taskListHeadingAudio": "Audio Task",
+    "taskListHeadingImage": "Image Task",
+    "taskListHeadingVideo": "Video Task",
     "free": "Free"
   },
   "annotation": {

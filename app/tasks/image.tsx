@@ -7,8 +7,6 @@ import {
   FlatList,
   ActivityIndicator,
   useWindowDimensions,
-  Image,
-  Platform,
 } from 'react-native';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -16,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { TaskListCard } from '@/components/tasks/TaskListCard';
 
 type Task = {
   id: string;
@@ -32,72 +31,16 @@ type Task = {
   assigned_to?: string | null;
 };
 
-function ImageTaskCard({
-  item,
-  onPress,
-  t,
-}: {
-  item: Task;
-  onPress: (id: string) => void;
-  t: (k: string) => string;
-}) {
-  const [isHovered, setIsHovered] = useState(false);
-  
-  const formatPrice = (price: number | null) => {
-    return price ? `₺${price}` : 'Free';
+function getLanguageLabel(code: string) {
+  const languages: { [key: string]: string } = {
+    tr: 'Türkçe',
+    en: 'İngilizce',
+    de: 'Almanca',
+    fr: 'Fransızca',
+    es: 'İspanyolca',
+    it: 'İtalyanca',
   };
-
-  const getLanguageLabel = (code: string) => {
-    const languages: { [key: string]: string } = {
-      'tr': 'Türkçe',
-      'en': 'İngilizce',
-      'de': 'Almanca',
-      'fr': 'Fransızca',
-      'es': 'İspanyolca',
-      'it': 'İtalyanca',
-    };
-    return languages[code] || code;
-  };
-
-  return (
-    <TouchableOpacity
-      style={[styles.card, isHovered && styles.cardHovered]}
-      onPressIn={() => setIsHovered(true)}
-      onPressOut={() => setIsHovered(false)}
-      onPress={() => onPress(item.id)}
-      activeOpacity={0.8}
-    >
-      {/* Image Header with Icon */}
-      <View style={styles.imageHeader}>
-        <View style={styles.imageIconContainer}>
-          <Ionicons name="image" size={44} color="#ec4899" />
-        </View>
-      </View>
-      
-      {/* Title */}
-      <View style={styles.titleContainer}>
-        <Text style={styles.titleText}>Image Task - {item.title}</Text>
-      </View>
-      
-      {/* Metadata Row */}
-      <View style={styles.metadataRow}>
-        <View style={styles.statusChip}>
-          <Ionicons name="time" size={14} color="#fbbf24" />
-          <Text style={styles.statusChipText}>Pending</Text>
-        </View>
-        <View style={styles.priceChip}>
-          <Text style={styles.priceChipText}>₺{item.price ?? 10}</Text>
-        </View>
-      </View>
-      
-      {/* Full Width Button */}
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity style={styles.fullWidthButton} onPress={() => onPress(item.id)}>
-          <Text style={styles.buttonText}>Start Task</Text>
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
-  );
+  return languages[code] || code;
 }
 
 export default function ImageTasksScreen() {
@@ -113,13 +56,12 @@ export default function ImageTasksScreen() {
   const userId = user?.id ?? session?.user?.id ?? null;
   const navigatorReady = rootNavigationState?.key != null;
 
-  // Render protection
   if (!user || !session) return <View><Text>Yükleniyor...</Text></View>;
 
   const fetchImageTasks = useCallback(async (showLoading = true) => {
     if (!userId) return;
     if (showLoading) setLoading(true);
-    
+
     try {
       const { data, error } = await supabase
         .from('tasks')
@@ -127,13 +69,12 @@ export default function ImageTasksScreen() {
         .eq('type', 'image')
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
-      
+
       if (error) {
         console.error('[image-tasks] Fetch error:', error);
         return;
       }
-      
-      console.log('[image-tasks] Fetched image tasks:', data?.length);
+
       setImageTasks(data || []);
     } finally {
       setLoading(false);
@@ -156,58 +97,46 @@ export default function ImageTasksScreen() {
   );
 
   const handleBack = useCallback(() => {
-    router.push('/tasks'); // HER ZAMAN ÇALIŞIR
+    router.push('/tasks');
   }, []);
 
   return (
     <View style={styles.container}>
-      {/* Header with Back Button Only */}
       <View style={styles.header}>
-        <TouchableOpacity 
-          style={{flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e293b', padding: 8, borderRadius: 8}}
-          onPress={handleBack}
-        >
+        <TouchableOpacity style={styles.backRow} onPress={handleBack}>
           <Ionicons name="arrow-back" size={20} color="#3b82f6" />
-          <Text style={{color: '#3b82f6', marginLeft: 5, fontWeight: 'bold'}}>Back</Text>
+          <Text style={styles.backLabel}>Back</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Content */}
       {loading ? (
         <ActivityIndicator size="large" color="#ffffff" style={{ flex: 1 }} />
       ) : imageTasks.length === 0 ? (
-        /* GÜVENL\u0130 VE GÖRÜNÜR EMPTY STATE */
-        <View style={{ 
-          flex: 1, 
-          justifyContent: 'center', 
-          alignItems: 'center', 
-          padding: 20, 
-          backgroundColor: '#0f172a' // Arka plan\u0131nla uyumlu
-        }}>
+        <View style={styles.emptyWrap}>
           <Ionicons name="alert-circle-outline" size={64} color="#64748b" />
-          <Text style={{ color: '#fff', fontSize: 18, marginTop: 10 }}>Görev Bulunamad\u0131</Text>
-          
-          <TouchableOpacity 
-            style={{
-              marginTop: 20,
-              backgroundColor: '#ec4899', // Image için pembe
-              paddingVertical: 12,
-              paddingHorizontal: 24,
-              borderRadius: 8,
-            }}
-            onPress={() => fetchImageTasks(true)} // Buradaki fonksiyon ismine dikkat et!
-          >
-            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Görevleri Yenile</Text>
+          <Text style={styles.emptyTitle}>Görev Bulunamadı</Text>
+
+          <TouchableOpacity style={styles.emptyRefresh} onPress={() => fetchImageTasks(true)}>
+            <Text style={styles.emptyRefreshText}>Görevleri Yenile</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        // VER\u0130 VARSA L\u0130STELE
         <View style={styles.gridContainer}>
           <FlatList
             data={imageTasks}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <ImageTaskCard key={item.id} item={item} onPress={(id) => router.push(`/tasks/image/${id}`)} t={t} />
+              <TaskListCard
+                title={`${t('tasks.taskListHeadingImage')} - ${item.title}`}
+                status={item.status}
+                price={item.price}
+                accent="#ec4899"
+                icon="image"
+                subtitle={getLanguageLabel(item.language)}
+                ctaLabel={t('tasks.startTask')}
+                style={styles.cardSlot}
+                onPress={() => router.push(`/tasks/image/${item.id}`)}
+              />
             )}
             numColumns={numColumns}
             key={numColumns}
@@ -225,7 +154,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
-    paddingTop: 0, // ✅ Sıfırlandı
+    paddingTop: 0,
   },
   header: {
     flexDirection: 'row',
@@ -235,30 +164,17 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginBottom: 4,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1a1d1e', // ✅ Koyu gri arka plan
-    justifyContent: 'center',
+  backRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 12,
+    backgroundColor: '#1e293b',
+    padding: 8,
+    borderRadius: 8,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#94a3b8',
-    marginTop: 16,
+  backLabel: {
+    color: '#3b82f6',
+    marginLeft: 5,
+    fontWeight: 'bold',
   },
   gridContainer: {
     maxWidth: 1200,
@@ -268,217 +184,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 5,
     paddingTop: 0,
-    marginTop: -20, // ✅ Daha fazla yukarı çek
+    marginTop: -20,
   },
   columnWrapper: {
-    justifyContent: 'flex-start', // ✅ Soldan başla
-    gap: 0, // ✅ Margin ile kontrol
+    justifyContent: 'flex-start',
+    gap: 0,
   },
-  card: {
+  cardSlot: {
     flex: 1,
-    maxWidth: 250,
-    minHeight: 280, // ✅ Sabit yükseklik
-    margin: 4,
-    marginRight: 16,
-    marginBottom: 16,
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
-    padding: 10,
-    paddingBottom: 20, // ✅ Artırıldı: 15 -> 20
-    borderWidth: 1,
-    borderColor: '#334155',
-    overflow: 'hidden',
+    maxWidth: 220,
+    margin: 2,
+    marginRight: 10,
+    marginBottom: 10,
   },
-  cardHovered: {
-    borderColor: '#f472b6',
-    transform: [{ scale: 1.02 }],
-  },
-  imageHeader: {
-    backgroundColor: '#1a1d1e', // ✅ Koyu gri arka plan
-    height: 120, // ✅ Header yüksekliği
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  imageIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#2d3748', // ✅ Daha açık iç arka plan
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  titleContainer: {
-    padding: 12,
-    paddingBottom: 8,
-  },
-  titleText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  metadataRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-  },
-  statusChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(251, 191, 36, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  statusChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#fbbf24',
-    marginLeft: 4,
-  },
-  priceChip: {
-    backgroundColor: 'rgba(34, 197, 94, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  priceChipText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#22c55e',
-  },
-  buttonContainer: {
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-  },
-  fullWidthButton: {
-    backgroundColor: '#ec4899', // ✅ Pembe tema
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  buttonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  taskImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'contain', // ✅ Kesilmemesi için
-  },
-  imageOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 12,
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-  },
-  cardHeader: {
-    padding: 8, // ✅ Azaltıldı: 10 -> 8
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-  },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 2, // ✅ Azaltıldı: 4 -> 2
-  },
-  priceBadge: {
-    backgroundColor: '#22c55e',
-    paddingHorizontal: 10, // ✅ Azaltıldı: 12 -> 10
-    paddingVertical: 4, // ✅ Azaltıldı: 6 -> 4
-    borderRadius: 10, // ✅ Azaltıldı: 12 -> 10
-    alignSelf: 'flex-start',
-  },
-  priceText: {
-    fontSize: 12, // ✅ Küçültüldü: 14 -> 12
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  cardBody: {
-    padding: 6, // ✅ Azaltıldı: 8 -> 6
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(251, 191, 36, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  priceBadgeInline: {
-    backgroundColor: '#ec4899', // ✅ Pembe tema
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  inlineActionButton: {
-    backgroundColor: '#ec4899', // ✅ Pembe tema
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 10, // ✅ Artırıldı: 8 -> 10
-    paddingVertical: 4,
-    borderRadius: 4,
-    height: 28, // ✅ Badge'ler ile aynı
-  },
-  inlineActionText: {
-    fontSize: 11, // ✅ Artırıldı: 10 -> 11
-    fontWeight: '600',
-    color: '#ffffff',
-    marginRight: 4,
-  },
-  emptyContainer: {
+  emptyWrap: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyIconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(236, 72, 153, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
+    padding: 20,
+    backgroundColor: '#0f172a',
   },
   emptyTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 8,
-  },
-  emptyDescription: {
-    fontSize: 16,
-    color: '#94a3b8',
-    textAlign: 'center',
-    marginBottom: 24,
-    paddingHorizontal: 40,
-  },
-  refreshButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ec4899',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  refreshButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  emptyText: {
+    color: '#fff',
     fontSize: 18,
-    color: '#94a3b8',
-    textAlign: 'center',
-    marginTop: 16,
+    marginTop: 10,
+  },
+  emptyRefresh: {
+    marginTop: 20,
+    backgroundColor: '#ec4899',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  emptyRefreshText: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
 });

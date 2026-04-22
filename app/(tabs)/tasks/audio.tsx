@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -7,17 +7,14 @@ import {
   FlatList,
   ActivityIndicator,
   SafeAreaView,
-  Dimensions,
-  Alert,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
-
-const { width } = Dimensions.get('window');
-const CARD_WIDTH = (width - 100) / 4; 
+import { TaskListCard } from '@/components/tasks/TaskListCard';
 
 type Task = {
   id: string;
@@ -32,36 +29,23 @@ type Task = {
   assigned_to?: string | null;
 };
 
-// --- YEŞİL KART BİLEŞENİ ---
-const AudioTaskCard = ({ item, onPress }: { item: Task; onPress: (id: string) => void }) => (
-  <TouchableOpacity onPress={() => onPress(item.id)} style={styles.card} activeOpacity={0.8}>
-    <View style={styles.cardTopImage}>
-      <View style={styles.iconPill}>
-        <Ionicons name="mic" size={24} color="#22c55e" />
-      </View>
-    </View>
-    <View style={styles.cardContent}>
-      <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
-      <View style={styles.badgeRow}>
-        <View style={styles.pendingBadge}>
-          <Ionicons name="time" size={10} color="#fbbf24" />
-          <Text style={styles.pendingText}>Pending</Text>
-        </View>
-        <View style={styles.priceBadge}>
-          <Text style={styles.priceText}>₺{item.price ?? 0}</Text>
-        </View>
-      </View>
-      <TouchableOpacity style={styles.startButton} onPress={() => onPress(item.id)}>
-        <Text style={styles.startButtonText}>Start Task</Text>
-        <Ionicons name="arrow-forward" size={14} color="#fff" />
-      </TouchableOpacity>
-    </View>
-  </TouchableOpacity>
-);
+function getLanguageLabel(code: string) {
+  const languages: { [key: string]: string } = {
+    tr: 'Türkçe',
+    en: 'İngilizce',
+    de: 'Almanca',
+    fr: 'Fransızca',
+    es: 'İspanyolca',
+    it: 'İtalyanca',
+  };
+  return languages[code] || code;
+}
 
 export default function AudioTasksScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const numColumns = width >= 1200 ? 4 : width >= 900 ? 3 : width >= 600 ? 2 : 1;
   
   const [audioTasks, setAudioTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -183,10 +167,23 @@ export default function AudioTasksScreen() {
         <FlatList
           data={audioTasks}
           keyExtractor={(item) => item.id}
-          numColumns={4}
-          columnWrapperStyle={styles.columnWrapper}
+          numColumns={numColumns}
+          key={numColumns}
+          columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
           contentContainerStyle={styles.listContainer}
-          renderItem={({ item }) => <AudioTaskCard item={item} onPress={handleClaim} />}
+          renderItem={({ item }) => (
+            <TaskListCard
+              title={`${t('tasks.taskListHeadingAudio')} - ${item.title}`}
+              status={item.status}
+              price={item.price}
+              accent="#22c55e"
+              icon="mic"
+              subtitle={getLanguageLabel(item.language)}
+              ctaLabel={t('tasks.startTask')}
+              style={styles.cardSlot}
+              onPress={() => handleClaim(item.id)}
+            />
+          )}
         />
       )}
     </SafeAreaView>
@@ -202,19 +199,8 @@ const styles = StyleSheet.create({
   pageHeader: { alignItems: 'center', marginTop: 10, marginBottom: 15 },
   pageTitle: { color: '#ffffff', fontSize: 24, fontWeight: 'bold', letterSpacing: 0.5 },
   listContainer: { paddingHorizontal: 20, paddingBottom: 20 },
-  columnWrapper: { justifyContent: 'flex-start', gap: 15, marginBottom: 15 },
-  card: { width: CARD_WIDTH, backgroundColor: '#161b22', borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#30363d' },
-  cardTopImage: { height: 80, backgroundColor: '#1e293b', justifyContent: 'center', alignItems: 'center' },
-  iconPill: { width: 50, height: 35, borderRadius: 20, backgroundColor: '#161b22', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#30363d' },
-  cardContent: { padding: 10 },
-  cardTitle: { color: '#e6edf3', fontSize: 12, fontWeight: '700', marginBottom: 8, height: 34 },
-  badgeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  pendingBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#422006', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, gap: 4 },
-  pendingText: { color: '#fbbf24', fontSize: 10, fontWeight: 'bold' },
-  priceBadge: { backgroundColor: '#064e3b', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  priceText: { color: '#10b981', fontSize: 10, fontWeight: 'bold' },
-  startButton: { backgroundColor: '#22c55e', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 8, borderRadius: 8, gap: 6 },
-  startButtonText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+  columnWrapper: { justifyContent: 'flex-start', gap: 10, marginBottom: 10 },
+  cardSlot: { flex: 1, maxWidth: 220, minWidth: 0 },
   emptyContainer: {
     flex: 1, // Ekranın tüm boş alanını kaplar
     justifyContent: 'center', // Dikeyde tam ortalar

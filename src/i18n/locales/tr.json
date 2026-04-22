@@ -295,6 +295,10 @@
     "pageTitleTranscription": "Ses Transkripsiyon Görevleri",
     "pageTitleImage": "Görsel Etiketleme Görevleri",
     "pageTitleVideo": "Video Etiketleme Görevleri",
+    "startTask": "Göreve başla",
+    "taskListHeadingAudio": "Ses görevi",
+    "taskListHeadingImage": "Görsel görevi",
+    "taskListHeadingVideo": "Video görevi",
     "free": "Ücretsiz"
   },
   "annotation": {

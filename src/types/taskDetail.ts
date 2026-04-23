@@ -56,4 +56,5 @@ export type Tool =
   | 'polyline'
   | 'semantic'
   | 'brush'
+  | 'eraser'
   | 'magic_wand';

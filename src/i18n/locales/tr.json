@@ -26,7 +26,10 @@
   "nav": {
     "roleAdmin": "Admin",
     "roleEmployee": "Çalışan",
-    "tasks": "Görevler",
+    "dashboard": "Kontrol paneli",
+    "breadcrumbAudio": "Ses",
+    "breadcrumbImage": "Görsel",
+    "breadcrumbVideo": "Video",
     "profile": "Profil",
     "earnings": "Kazançlar",
     "messages": "Mesajlar",

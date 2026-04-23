@@ -4,8 +4,6 @@ import { taskDetailStyles } from '@/theme/taskDetailStyles';
 import { useVideoAI } from '@/hooks/useVideoAI';
 import { colors } from '@/theme/colors';
 
-console.log('--- TASK EDITOR YUKLENDI ---');
-
 interface TaskEditorProps {
   transcription: string;
   onTranscriptionChange: (text: string) => void;

@@ -54,7 +54,7 @@ export const CanvasContextMenu = ({
     e.preventDefault();
     
     // Firing toolu engelle
-    if (activeTool === 'brush') return;
+    if (activeTool === 'brush' || activeTool === 'eraser') return;
     
     // Handle polyline completion
     if (activeTool === 'polyline' && isDrawingPolyline && polylinePoints.length >= 2) {

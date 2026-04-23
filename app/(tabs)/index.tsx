@@ -29,9 +29,9 @@ export default function TabsIndex() {
     );
   }
   
-  // Admin users go to dashboard
+  // Admin users go to assignments board
   if (isAdmin) {
-    return <Redirect href="/dashboard" />;
+    return <Redirect href="/assignments" />;
   }
   
   // Regular users get UserView with grid layout

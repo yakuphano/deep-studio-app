@@ -63,6 +63,11 @@ interface AnnotationCanvasProps {
   onUndo?: () => void;
   /** Sol sütunda tam araç çubuğu varsa üstteki mini toolbar (fırça/reset) gizlenir */
   hideFloatingToolbar?: boolean;
+  /** Sol rail ile senkron fırça rengi — ikisi de verilirse controlled */
+  brushColor?: string;
+  onBrushColorChange?: (color: string) => void;
+  brushPaletteOpen?: boolean;
+  onBrushPaletteOpenChange?: (open: boolean) => void;
 }
 
 const HANDLE_HIT_AREA = 20;
@@ -88,8 +93,17 @@ export default React.forwardRef(function AnnotationCanvas({
   onToolChange,
   onUndo,
   hideFloatingToolbar = false,
+  brushColor: brushColorProp,
+  onBrushColorChange: onBrushColorChangeProp,
+  brushPaletteOpen: brushPaletteOpenProp,
+  onBrushPaletteOpenChange: onBrushPaletteOpenChangeProp,
 }: AnnotationCanvasProps, ref) {
   const { t } = useTranslation();
+
+  const brushColorControlled =
+    brushColorProp !== undefined && typeof onBrushColorChangeProp === 'function';
+  const paletteControlled =
+    brushPaletteOpenProp !== undefined && typeof onBrushPaletteOpenChangeProp === 'function';
 
   // Drawing states
   const [drawStart, setDrawStart] = useState<any>(null);
@@ -103,8 +117,25 @@ export default React.forwardRef(function AnnotationCanvas({
   const [cuboidWireCorners, setCuboidWireCorners] = useState<{ x: number; y: number }[]>([]);
   const [isDrawingCuboidWire, setIsDrawingCuboidWire] = useState(false);
   const [brushPoints, setBrushPoints] = useState<any>([]);
-  const [brushColor, setBrushColor] = useState<any>(DEFAULT_BRUSH_COLOR);
-  const [isPaletteOpen, setIsPaletteOpen] = useState<any>(false);
+  const [brushColorInternal, setBrushColorInternal] = useState<any>(DEFAULT_BRUSH_COLOR);
+  const [isPaletteOpenInternal, setIsPaletteOpenInternal] = useState<any>(false);
+
+  const brushColor = brushColorControlled ? brushColorProp! : brushColorInternal;
+  const setBrushColor = useCallback(
+    (c: string) => {
+      if (brushColorControlled) onBrushColorChangeProp!(c);
+      else setBrushColorInternal(c);
+    },
+    [brushColorControlled, onBrushColorChangeProp]
+  );
+  const isPaletteOpen = paletteControlled ? brushPaletteOpenProp! : isPaletteOpenInternal;
+  const setIsPaletteOpen = useCallback(
+    (open: boolean) => {
+      if (paletteControlled) onBrushPaletteOpenChangeProp!(open);
+      else setIsPaletteOpenInternal(open);
+    },
+    [paletteControlled, onBrushPaletteOpenChangeProp]
+  );
   const [savedBrushes, setSavedBrushes] = useState<any>([]);
   const [history, setHistory] = useState<any>([]);
   const [isResizing, setIsResizing] = useState<any>(false);
@@ -265,6 +296,8 @@ export default React.forwardRef(function AnnotationCanvas({
     setOffset,
     viewOffset: offset,
     suppressObjectSelectUntilRef,
+    wandImageRef: imgRef,
+    wandImageSrc: imageSource?.uri || imageUrl || undefined,
   });
 
   useImperativeHandle(
@@ -344,10 +377,9 @@ export default React.forwardRef(function AnnotationCanvas({
       
       if (newScale !== scale) {
         const rect = container.getBoundingClientRect();
-        
-        // Cursor position relative to container
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+
+        const mouseX = e.clientX - rect.left + container.scrollLeft;
+        const mouseY = e.clientY - rect.top + container.scrollTop;
         
         // Image-space point under cursor before zoom
         const imageX = (mouseX - offset.x) / scale;
@@ -409,7 +441,11 @@ export default React.forwardRef(function AnnotationCanvas({
         
         {/* Image Layer - Bottom layer */}
         <img
+          key={String(imageSource?.uri || imageUrl || '')}
           ref={imgRef}
+          crossOrigin={
+            /^https?:\/\//i.test(String(imageSource?.uri || imageUrl || '')) ? 'anonymous' : undefined
+          }
           src={imageSource?.uri || imageUrl || ''}
           alt="annotation"
           draggable={false}
@@ -441,7 +477,10 @@ export default React.forwardRef(function AnnotationCanvas({
                   : 'grab'
                 : (activeTool as any) === 'bbox' ||
                     (activeTool as any) === 'points' ||
-                    (activeTool as any) === 'cuboid_wire'
+                    (activeTool as any) === 'polyline' ||
+                    (activeTool as any) === 'polygon' ||
+                    (activeTool as any) === 'cuboid_wire' ||
+                    (activeTool as any) === 'eraser'
                   ? 'crosshair'
                   : 'default',
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
@@ -576,7 +615,8 @@ export default React.forwardRef(function AnnotationCanvas({
                     imageToScreen={imageToScreen}
                     onSelect={() => selectShapeIfPan(annotation.id)}
                     bboxStyleResizeHandles={
-                      annotation.type === 'semantic' || annotation.type === 'magic_wand'
+                      annotation.type === 'semantic' ||
+                      (annotation.type === 'magic_wand' && pts.length === 4)
                     }
                   />
                 );
@@ -1005,15 +1045,16 @@ export default React.forwardRef(function AnnotationCanvas({
           )}
         </svg>
         
-        {/* Interaction Layer - Top transparent layer - ALWAYS ACTIVE */}
+        {/* Interaction Layer — görüntü/SVG ile aynı transform; aksi halde isabet kutusu görselle kayar (özellikle alt yarı) */}
         <div
           style={{
             position: 'absolute',
             left: 0,
             top: 0,
-            // Görüntü doğal boyutundan küçük kalırsa scroll alanında SVG’ye tıklama kaçmasın
             width: imageSize ? imageSize.w : '100%',
             height: imageSize ? imageSize.h : '100%',
+            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+            transformOrigin: '0 0',
             cursor:
               (activeTool as any) === 'pan'
                 ? isPanning
@@ -1021,7 +1062,10 @@ export default React.forwardRef(function AnnotationCanvas({
                   : 'grab'
                 : (activeTool as any) === 'bbox' ||
                     (activeTool as any) === 'points' ||
-                    (activeTool as any) === 'cuboid_wire'
+                    (activeTool as any) === 'polyline' ||
+                    (activeTool as any) === 'polygon' ||
+                    (activeTool as any) === 'cuboid_wire' ||
+                    (activeTool as any) === 'eraser'
                   ? 'crosshair'
                   : 'default',
             touchAction: 'none',

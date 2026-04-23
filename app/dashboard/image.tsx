@@ -97,55 +97,64 @@ export default function ImageTasksScreen() {
   );
 
   const handleBack = useCallback(() => {
-    router.push('/tasks');
+    router.push('/dashboard');
   }, []);
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backRow} onPress={handleBack}>
-          <Ionicons name="arrow-back" size={20} color="#3b82f6" />
-          <Text style={styles.backLabel}>Back</Text>
+      <View style={styles.breadcrumbRow}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
+          <Ionicons name="arrow-back" size={16} color="#f9a8d4" />
+          <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
+        <Text style={styles.breadcrumbText}>
+          {`${t('nav.dashboard')} > ${t('nav.breadcrumbImage')}`}
+        </Text>
       </View>
 
-      {loading ? (
-        <ActivityIndicator size="large" color="#ffffff" style={{ flex: 1 }} />
-      ) : imageTasks.length === 0 ? (
-        <View style={styles.emptyWrap}>
-          <Ionicons name="alert-circle-outline" size={64} color="#64748b" />
-          <Text style={styles.emptyTitle}>Görev Bulunamadı</Text>
+      <View style={styles.pageHeader}>
+        <Text style={styles.pageTitle}>Image Annotation Tasks</Text>
+      </View>
 
-          <TouchableOpacity style={styles.emptyRefresh} onPress={() => fetchImageTasks(true)}>
-            <Text style={styles.emptyRefreshText}>Görevleri Yenile</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.gridContainer}>
-          <FlatList
-            data={imageTasks}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <TaskListCard
-                title={`${t('tasks.taskListHeadingImage')} - ${item.title}`}
-                status={item.status}
-                price={item.price}
-                accent="#ec4899"
-                icon="image"
-                subtitle={getLanguageLabel(item.language)}
-                ctaLabel={t('tasks.startTask')}
-                style={styles.cardSlot}
-                onPress={() => router.push(`/tasks/image/${item.id}`)}
-              />
-            )}
-            numColumns={numColumns}
-            key={numColumns}
-            contentContainerStyle={numColumns > 1 ? { paddingHorizontal: 4 } : {}}
-            columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
-            showsVerticalScrollIndicator={false}
-          />
-        </View>
-      )}
+      <View style={styles.body}>
+        {loading ? (
+          <ActivityIndicator size="large" color="#ffffff" style={styles.loader} />
+        ) : imageTasks.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Ionicons name="alert-circle-outline" size={64} color="#64748b" />
+            <Text style={styles.emptyTitle}>Görev Bulunamadı</Text>
+
+            <TouchableOpacity style={styles.emptyRefresh} onPress={() => fetchImageTasks(true)}>
+              <Text style={styles.emptyRefreshText}>Görevleri Yenile</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.gridContainer}>
+            <FlatList
+              data={imageTasks}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TaskListCard
+                  title={`${t('tasks.taskListHeadingImage')} - ${item.title}`}
+                  status={item.status}
+                  price={item.price}
+                  accent="#ec4899"
+                  icon="image"
+                  subtitle={getLanguageLabel(item.language)}
+                  ctaLabel={t('tasks.startTask')}
+                  style={styles.cardSlot}
+                  onPress={() => router.push(`/dashboard/image/${item.id}`)}
+                />
+              )}
+              numColumns={numColumns}
+              key={numColumns}
+              contentContainerStyle={numColumns > 1 ? { paddingHorizontal: 4 } : {}}
+              columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
+              showsVerticalScrollIndicator={false}
+            />
+          </View>
+        )}
+      </View>
     </View>
   );
 }
@@ -156,25 +165,51 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
     paddingTop: 0,
   },
-  header: {
+  body: {
+    flex: 1,
+    minHeight: 0,
+  },
+  loader: {
+    flexGrow: 1,
+    marginTop: 40,
+  },
+  breadcrumbRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'flex-start',
     paddingHorizontal: 20,
     paddingVertical: 12,
-    marginBottom: 4,
+    flexShrink: 0,
   },
-  backRow: {
+  backBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
-    padding: 8,
-    borderRadius: 8,
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(236, 72, 153, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(236, 72, 153, 0.35)',
   },
-  backLabel: {
-    color: '#3b82f6',
-    marginLeft: 5,
-    fontWeight: 'bold',
+  backText: { color: '#f9a8d4', fontSize: 14, fontWeight: '600' },
+  breadcrumbText: { color: '#4b5563', fontSize: 12 },
+  pageHeader: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+    flexShrink: 0,
+    zIndex: 2,
+  },
+  pageTitle: {
+    color: '#f8fafc',
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+    width: '100%',
   },
   gridContainer: {
     maxWidth: 1200,
@@ -184,7 +219,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 5,
     paddingTop: 0,
-    marginTop: -20,
+    marginTop: 0,
   },
   columnWrapper: {
     justifyContent: 'flex-start',

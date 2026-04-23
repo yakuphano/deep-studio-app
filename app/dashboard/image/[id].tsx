@@ -8,9 +8,9 @@ import { supabase } from '@/lib/supabase';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
 import AnnotationCanvas, { type Annotation, type Tool } from '@/components/AnnotationCanvas';
-import { DEFAULT_BRUSH_COLOR } from '@/types/annotations';
 import WorkbenchImageToolRail from '@/components/workbench/WorkbenchImageToolRail';
 import { ANNOTATION_LABELS, LABEL_COLORS } from '@/constants/annotationLabels';
+import { DEFAULT_BRUSH_COLOR } from '@/types/annotations';
 import AudioPlayer from "../../../components/AudioPlayer";
 
 interface TaskData {
@@ -38,10 +38,10 @@ export default function ImageTaskDetailScreen() {
       if (typeof router.canGoBack === 'function' && router.canGoBack()) {
         router.back();
       } else {
-        router.replace('/dashboard');
+        router.replace('/dashboard/image');
       }
     } catch {
-      router.replace('/dashboard');
+      router.replace('/dashboard/image');
     }
   }, [router]);
   const { t, i18n } = useTranslation();
@@ -265,7 +265,7 @@ export default function ImageTaskDetailScreen() {
         
         if (claimError) {
           if (claimError.code === 'PGRST116') {
-            router.replace('/tasks');
+            router.replace('/dashboard');
             return;
           } else {
             throw claimError;
@@ -275,7 +275,7 @@ export default function ImageTaskDetailScreen() {
         if (claimedTask) {
           router.replace(`/task/${claimedTask.id}`);
         } else {
-          router.replace('/tasks');
+          router.replace('/dashboard');
         }
       }
     } catch (err) {

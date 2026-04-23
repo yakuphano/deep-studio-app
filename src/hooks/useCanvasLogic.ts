@@ -50,11 +50,14 @@ export const useCanvasLogic = (props?: UseCanvasLogicProps) => {
   const screenToImage = useCallback(
     (clientX: number, clientY: number) => {
       if (!imageSize || !containerRef.current) return { x: 0, y: 0 };
-      
-      const rect = containerRef.current.getBoundingClientRect();
-      const imageX = (clientX - rect.left - offset.x) / scale;
-      const imageY = (clientY - rect.top - offset.y) / scale;
-      
+
+      const el = containerRef.current;
+      const rect = el.getBoundingClientRect();
+      const mx = clientX - rect.left + el.scrollLeft;
+      const my = clientY - rect.top + el.scrollTop;
+      const imageX = (mx - offset.x) / scale;
+      const imageY = (my - offset.y) / scale;
+
       return { x: imageX, y: imageY };
     },
     [imageSize, scale, offset]
@@ -78,9 +81,10 @@ export const useCanvasLogic = (props?: UseCanvasLogicProps) => {
     
     if (!containerRef.current) return;
     
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    const el = containerRef.current;
+    const rect = el.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left + el.scrollLeft;
+    const mouseY = e.clientY - rect.top + el.scrollTop;
     
     const imagePoint = screenToImage(e.clientX, e.clientY);
     

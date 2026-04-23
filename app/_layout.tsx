@@ -15,6 +15,7 @@ function RootLayoutNav() {
         <Stack.Screen name="index" />
         <Stack.Screen name="login" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="dashboard" options={{ headerShown: false }} />
         <Stack.Screen name="admin" />
       </Stack>
     </View>

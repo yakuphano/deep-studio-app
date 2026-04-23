@@ -17,7 +17,7 @@ import { useUnreadMessagesCount } from '@/hooks/useUnreadMessagesCount';
 import { supabase } from '@/lib/supabase';
 
 const NAV_ITEMS = [
-  { href: '/tasks', labelKey: 'nav.tasks' },
+  { href: '/dashboard', labelKey: 'nav.dashboard' },
   { href: '/earnings/daily', labelKey: 'nav.earnings' },
   { href: '/messages', labelKey: 'nav.messages' },
   { href: '/faq', labelKey: 'nav.faq' },
@@ -102,7 +102,7 @@ export default function TopNavbar() {
   const goHome = () => {
     if (session) {
       try {
-        navigate(isAdmin ? '/admin' : '/tasks');
+        navigate(isAdmin ? '/admin' : '/dashboard');
       } catch (_) {}
     }
   };
@@ -144,7 +144,8 @@ export default function TopNavbar() {
               const isActive =
                 pathname === item.href ||
                 pathname?.startsWith(item.href + '/') ||
-                (item.href === '/earnings/total' && pathname?.includes('earnings/total'));
+                (item.href === '/earnings/total' && pathname?.includes('earnings/total')) ||
+                (item.href === '/dashboard' && Boolean(pathname?.includes('video-tasks')));
               const isAdminLink = (item as any).isAdminLink;
               return (
                 <TouchableOpacity
@@ -202,7 +203,8 @@ export default function TopNavbar() {
             const isActive =
               pathname === item.href ||
               pathname?.startsWith(item.href + '/') ||
-              (item.href === '/earnings/daily' && pathname?.includes('earnings'));
+              (item.href === '/earnings/daily' && pathname?.includes('earnings')) ||
+              (item.href === '/dashboard' && Boolean(pathname?.includes('video-tasks')));
             const isAdminLink = (item as any).isAdminLink;
             return (
               <TouchableOpacity

@@ -119,7 +119,7 @@ export default function VideoTasksScreen() {
     if (Platform.OS === 'web') {
       router.back();
     } else {
-      router.replace('/tasks');
+      router.replace('/dashboard');
     }
   }, []);
 
@@ -158,14 +158,21 @@ export default function VideoTasksScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.headerContainer}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-          <Ionicons name="chevron-back" size={20} color="#a78bfa" />
-          <Text style={styles.backLabel}>Back</Text>
+      <View style={styles.breadcrumbRow}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
+          <Ionicons name="arrow-back" size={16} color="#a78bfa" />
+          <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
+        <Text style={styles.breadcrumbText}>
+          {`${t('nav.dashboard')} > ${t('nav.breadcrumbVideo')}`}
+        </Text>
       </View>
 
-      <Text style={styles.pageTitle}>{t('tasks.pageTitleVideo')}</Text>
+      <View style={styles.pageHeader}>
+        <Text style={styles.pageTitle}>
+          {t('tasks.pageTitleVideo') || 'Video Annotation Tasks'}
+        </Text>
+      </View>
 
       {loading ? (
         <ActivityIndicator size="large" color="#8b5cf6" style={{ flex: 1 }} />
@@ -214,33 +221,33 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0f172a',
   },
-  headerContainer: {
+  breadcrumbRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingVertical: 12,
   },
-  backButton: {
+  backBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    padding: 10,
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
     backgroundColor: 'rgba(139, 92, 246, 0.12)',
     borderWidth: 1,
     borderColor: 'rgba(139, 92, 246, 0.35)',
-    borderRadius: 10,
-    alignSelf: 'flex-start',
   },
-  backLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#c4b5fd',
-  },
+  backText: { color: '#c4b5fd', fontSize: 14, fontWeight: '600' },
+  breadcrumbText: { color: '#4b5563', fontSize: 12 },
+  pageHeader: { alignItems: 'center', marginTop: 10, marginBottom: 15 },
   pageTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#f8fafc',
-    marginBottom: 24,
-    paddingHorizontal: 20,
-    marginTop: 12,
+    color: '#ffffff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+    textAlign: 'center',
   },
   listContainer: {
     gap: 0,

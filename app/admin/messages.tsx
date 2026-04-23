@@ -50,7 +50,7 @@ export default function AdminMessagesScreen() {
   );
 
   useEffect(() => {
-    if (user && !isAdmin) router.replace('/tasks');
+    if (user && !isAdmin) router.replace('/dashboard');
   }, [user, isAdmin]);
 
   useEffect(() => {

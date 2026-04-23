@@ -29,6 +29,10 @@ interface AnnotationCanvasProps {
   onToolChange?: (tool: Tool) => void;
   onUndo?: () => void;
   hideFloatingToolbar?: boolean;
+  brushColor?: string;
+  onBrushColorChange?: (color: string) => void;
+  brushPaletteOpen?: boolean;
+  onBrushPaletteOpenChange?: (open: boolean) => void;
 }
 
 const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCanvasProps>(

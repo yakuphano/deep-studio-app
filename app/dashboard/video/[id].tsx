@@ -190,7 +190,7 @@ export default function VideoTaskDetailScreen() {
         
         if (claimError) {
           if (claimError.code === 'PGRST116') {
-            router.replace('/tasks');
+            router.replace('/dashboard');
             return;
           } else {
             throw claimError;
@@ -200,7 +200,7 @@ export default function VideoTaskDetailScreen() {
         if (claimedTask) {
           router.replace(`/task/${claimedTask.id}`);
         } else {
-          router.replace('/tasks');
+          router.replace('/dashboard');
         }
       }
     } catch (err) {

@@ -26,7 +26,10 @@
   "nav": {
     "roleAdmin": "Admin",
     "roleEmployee": "Employee",
-    "tasks": "Tasks",
+    "dashboard": "Dashboard",
+    "breadcrumbAudio": "Audio",
+    "breadcrumbImage": "Image",
+    "breadcrumbVideo": "Video",
     "profile": "Profile",
     "earnings": "Earnings",
     "messages": "Messages",

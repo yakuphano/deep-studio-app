@@ -454,7 +454,7 @@ export default function AdminPanelScreen() {
         </View>
 
         {/* Header */}
-        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/tasks')}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/dashboard')}>
           <Ionicons name="arrow-back" size={22} color="#f8fafc" />
           <Text style={styles.backButtonText}>Back to Tasks</Text>
         </TouchableOpacity>

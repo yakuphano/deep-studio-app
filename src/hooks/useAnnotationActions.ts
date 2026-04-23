@@ -1,5 +1,13 @@
-import { useCallback, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import {
+  useCallback,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type RefObject,
+  type SetStateAction,
+} from 'react';
 import { Annotation, Tool, MIN_BOX_SIZE } from '@/types/annotations';
+import { magicWandPolygonFromImageOrUrl } from '@/lib/magicWandFill';
 import {
   resizeBbox,
   computeBboxResizeDeltas,
@@ -110,6 +118,125 @@ function findTopAnnotationAtImagePoint(
   return undefined;
 }
 
+type Pt = { x: number; y: number };
+
+/** Görüntü uzayında silgi “tüpü” — fırça genişliğine yakın. */
+function eraserRadius(scale: number): number {
+  return Math.max(18 / Math.max(scale, 0.08), 10);
+}
+
+function newBrushSplitId(): string {
+  return `brush-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function ptNearPolyline(p: Pt, poly: Pt[], r: number): boolean {
+  if (poly.length === 0) return false;
+  if (poly.length === 1) return distance(p, poly[0]) <= r;
+  for (let i = 0; i < poly.length - 1; i++) {
+    if (isPointNearLine(p, poly[i], poly[i + 1], r)) return true;
+  }
+  return false;
+}
+
+/** Uzun segmentlerin ortası da silgiye yakın sayılsın diye nokta ekler. */
+function densifyPolyline(brushPts: Pt[], maxStep: number): Pt[] {
+  if (brushPts.length < 2) return [...brushPts];
+  const out: Pt[] = [brushPts[0]];
+  for (let i = 0; i < brushPts.length - 1; i++) {
+    const a = brushPts[i];
+    const b = brushPts[i + 1];
+    const len = distance(a, b);
+    const steps = Math.max(1, Math.ceil(len / Math.max(maxStep, 0.5)));
+    for (let k = 1; k < steps; k++) {
+      const t = k / steps;
+      out.push({ x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) });
+    }
+    out.push(b);
+  }
+  return out;
+}
+
+function brushTouchesEraserPolyline(brushPts: Pt[], eraserPath: Pt[], r: number): boolean {
+  for (const p of brushPts) {
+    if (ptNearPolyline(p, eraserPath, r)) return true;
+  }
+  for (let i = 0; i < brushPts.length - 1; i++) {
+    const a = brushPts[i];
+    const b = brushPts[i + 1];
+    const steps = Math.max(1, Math.ceil(distance(a, b) / 5));
+    for (let k = 0; k <= steps; k++) {
+      const t = k / steps;
+      const q = { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
+      if (ptNearPolyline(q, eraserPath, r)) return true;
+    }
+  }
+  return false;
+}
+
+/** Silgi poliline çok yakın noktaları at; kalan ardışık parçalar ayrı fırça zincirleri. */
+function trimBrushVerticesNearEraserPolyline(brushPts: Pt[], eraserPath: Pt[], r: number): Pt[][] {
+  if (brushPts.length < 2 || eraserPath.length < 1) return brushPts.length >= 2 ? [brushPts] : [];
+  const step = Math.max(3, r * 0.4);
+  const dense = densifyPolyline(brushPts, step);
+  const kept = dense.map((p) => !ptNearPolyline(p, eraserPath, r));
+  const out: Pt[][] = [];
+  let run: Pt[] = [];
+  for (let i = 0; i < dense.length; i++) {
+    if (kept[i]) {
+      run.push(dense[i]);
+    } else {
+      if (run.length >= 2) out.push(run);
+      run = [];
+    }
+  }
+  if (run.length >= 2) out.push(run);
+  return out.filter((c) => c.length >= 2);
+}
+
+/**
+ * Bu hareketten biriken silgi yoluna göre tüm fırça vuruşlarını günceller (fırça boyar gibi, tüm vuruşlar).
+ */
+function applyEraserAlongPath(
+  eraserPath: Pt[],
+  scale: number,
+  onAnnotationsChange: (fn: (prev: Annotation[]) => Annotation[]) => void,
+  setSavedBrushes: Dispatch<SetStateAction<any[]>>
+): void {
+  if (eraserPath.length < 1) return;
+  const radius = eraserRadius(scale);
+
+  setSavedBrushes((prev) => {
+    const arr = Array.isArray(prev) ? prev : [];
+    const out: any[] = [];
+    for (const b of arr) {
+      if (!b?.points || b.points.length < 2) {
+        out.push(b);
+        continue;
+      }
+      if (!brushTouchesEraserPolyline(b.points, eraserPath, radius)) {
+        out.push(b);
+        continue;
+      }
+      const pieces = trimBrushVerticesNearEraserPolyline(b.points, eraserPath, radius);
+      if (pieces.length === 0) continue;
+      for (const pts of pieces) {
+        out.push({ ...b, id: newBrushSplitId(), type: 'brush', points: pts });
+      }
+    }
+    return out;
+  });
+
+  onAnnotationsChange((prev) =>
+    prev.flatMap((a) => {
+      if (a.type !== 'brush' || !a.points?.length || a.points.length < 2) return [a];
+      if (!brushTouchesEraserPolyline(a.points, eraserPath, radius)) return [a];
+      const pieces = trimBrushVerticesNearEraserPolyline(a.points, eraserPath, radius);
+      if (pieces.length === 0) return [];
+      return pieces.map((pts) => ({ ...a, id: newBrushSplitId(), points: pts }));
+    })
+  );
+}
+
 function dragOffsetForAnnotation(ann: Annotation, image: { x: number; y: number }): { x: number; y: number } {
   if (ann.type === 'polygon' || ann.type === 'polyline') {
     const fp = ann.points[0];
@@ -214,6 +341,10 @@ interface UseAnnotationActionsProps {
   viewOffset: { x: number; y: number };
   /** Yeni şekil eklendikten sonra kısa süre tuval/SVG seçimini yoksay */
   suppressObjectSelectUntilRef: MutableRefObject<number>;
+  /** Web: sihirli değnek için piksel örneklemesi (canvas CORS ile uyumlu olmalı) */
+  wandImageRef?: RefObject<HTMLImageElement | null>;
+  /** Tainted canvas olursa fetch+CORS ile ikinci deneme */
+  wandImageSrc?: string | null;
 }
 
 export const useAnnotationActions = ({
@@ -277,13 +408,17 @@ export const useAnnotationActions = ({
   panStartOffset,
   setPanStartOffset,
   setOffset,
-  viewOffset,
-  suppressObjectSelectUntilRef,
+    viewOffset,
+    suppressObjectSelectUntilRef,
+    wandImageRef,
+    wandImageSrc,
 }: UseAnnotationActionsProps) => {
   /** Points: bbox gibi anotasyonu pointerup’ta yaz; aynı tıklamada oluşan seçim vuruşlarından kaçınılır */
   const pendingPointPlacementRef = useRef<{ x: number; y: number } | null>(null);
   /** Pan + Shift: son görüntü koordinatı (toplu taşıma için artımlı delta) */
   const groupPanLastImageRef = useRef<{ x: number; y: number } | null>(null);
+  /** Silgi: tek sürüklemeye ait biriken yol (fırçanın tersi — tüm vuruşlara uygulanır). */
+  const eraserPathRef = useRef<Pt[]>([]);
 
   /** Polyline: sağ tık ile çizimi bitir (en az 2 nokta). Sol tık + Undo ile nokta geri alınır. */
   const finalizePolylineDraft = useCallback(() => {
@@ -376,9 +511,15 @@ export const useAnnotationActions = ({
       const image = screenToImage(e.clientX, e.clientY);
 
       // Resize kontrolü — points aracıyla tıklama her zaman yeni nokta eklemeli (bbox-tutamaç mantığı noktada yanlış pozitif verebilir)
-      if (selectedId && activeTool !== 'points') {
+      if (selectedId && activeTool !== 'points' && activeTool !== 'eraser') {
         const selectedAnnotation = annotations.find((ann) => ann.id === selectedId);
+        /** Sihirli değnek aktifken başka tür seçiliyse tutamaçları yok say (tıklama yeni seçim için) */
+        const skipResizeForMagicWand =
+          activeTool === 'magic_wand' &&
+          selectedAnnotation &&
+          selectedAnnotation.type !== 'magic_wand';
         if (
+          !skipResizeForMagicWand &&
           selectedAnnotation &&
           (selectedAnnotation.type === 'bbox' ||
             selectedAnnotation.type === 'cuboid' ||
@@ -467,29 +608,28 @@ export const useAnnotationActions = ({
 
         case 'magic_wand': {
           if (!imageSize) break;
-          const half = 18;
-          const cx = image.x;
-          const cy = image.y;
-          const x1 = Math.max(0, cx - half);
-          const y1 = Math.max(0, cy - half);
-          const x2 = Math.min(imageSize.w, cx + half);
-          const y2 = Math.min(imageSize.h, cy + half);
-          if (x2 - x1 < MIN_BOX_SIZE || y2 - y1 < MIN_BOX_SIZE) break;
-          const pts = [
-            { x: x1, y: y1 },
-            { x: x2, y: y1 },
-            { x: x2, y: y2 },
-            { x: x1, y: y2 },
-          ];
-          const wand = {
-            id: `magic_wand-${Date.now()}`,
-            type: 'magic_wand' as const,
-            points: pts,
-            label: selectedLabel ?? '',
-          };
-          onAnnotationsChange((prev) => [...prev, wand as Annotation]);
-          armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
-          onSelect?.(wand.id);
+          const ix = image.x;
+          const iy = image.y;
+          void (async () => {
+            const pts = await magicWandPolygonFromImageOrUrl(
+              wandImageRef?.current ?? null,
+              wandImageSrc ?? undefined,
+              imageSize.w,
+              imageSize.h,
+              ix,
+              iy
+            );
+            if (!pts || pts.length < 3) return;
+            const wand = {
+              id: `magic_wand-${Date.now()}`,
+              type: 'magic_wand' as const,
+              points: pts,
+              label: selectedLabel ?? '',
+            };
+            onAnnotationsChange((prev) => [...prev, wand as Annotation]);
+            armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
+            onSelect?.(wand.id);
+          })();
           break;
         }
 
@@ -606,6 +746,13 @@ export const useAnnotationActions = ({
           }
           break;
 
+        case 'eraser': {
+          eraserPathRef.current = [image];
+          applyEraserAlongPath(eraserPathRef.current, scale, onAnnotationsChange, setSavedBrushes);
+          onSelect?.(null);
+          break;
+        }
+
         case 'select': {
           const clickedDefaultAnnotation = findTopAnnotationAtImagePoint(annotations, image, scale);
           if (clickedDefaultAnnotation) {
@@ -687,11 +834,24 @@ export const useAnnotationActions = ({
       setPolylinePreviewPoint,
       suppressObjectSelectUntilRef,
       finalizePolylineDraft,
+      wandImageRef,
+      wandImageSrc,
     ]
   );
 
   // Handle pointer move
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (activeTool === 'eraser' && (e.buttons & 1) === 1) {
+      const image = screenToImage(e.clientX, e.clientY);
+      const acc = eraserPathRef.current;
+      const last = acc[acc.length - 1];
+      if (!last || distance(last, image) >= 0.5) {
+        acc.push(image);
+      }
+      applyEraserAlongPath(acc, scale, onAnnotationsChange, setSavedBrushes);
+      return;
+    }
+
     // Handle resizing
     if (isResizing && resizeHandle && resizeStartBox) {
       const image = screenToImage(e.clientX, e.clientY);
@@ -953,6 +1113,8 @@ export const useAnnotationActions = ({
     resizeStartBox,
     screenToImage,
     onAnnotationsChange,
+    setSavedBrushes,
+    scale,
     isPanning,
     panStart,
     panStartOffset,
@@ -973,6 +1135,8 @@ export const useAnnotationActions = ({
 
   // Handle pointer up
   const handlePointerUp = useCallback(() => {
+    eraserPathRef.current = [];
+
     if (activeTool !== 'points') {
       pendingPointPlacementRef.current = null;
     }

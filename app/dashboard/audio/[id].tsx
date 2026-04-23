@@ -191,7 +191,7 @@ export default function AudioTaskDetailScreen() {
         
         if (claimError) {
           if (claimError.code === 'PGRST116') {
-            router.replace('/tasks');
+            router.replace('/dashboard');
             return;
           } else {
             throw claimError;
@@ -201,7 +201,7 @@ export default function AudioTaskDetailScreen() {
         if (claimedTask) {
           router.replace(`/task/${claimedTask.id}`);
         } else {
-          router.replace('/tasks');
+          router.replace('/dashboard');
         }
       }
     } catch (err) {

@@ -14,6 +14,7 @@ export type Tool =
   | 'polyline'
   | 'semantic'
   | 'brush'
+  | 'eraser'
   | 'magic_wand';
 export type BboxHandle = 'tl' | 'tr' | 'br' | 'bl' | 't' | 'r' | 'b' | 'l';
 

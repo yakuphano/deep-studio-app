@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useUnreadMessagesCount } from '@/hooks/useUnreadMessagesCount';
 
 const navItems = [
-  { href: '/tasks', labelKey: 'nav.tasks' },
+  { href: '/dashboard', labelKey: 'nav.dashboard' },
   { href: '/earnings/daily', labelKey: 'nav.earnings' },
   { href: '/messages', labelKey: 'nav.messages' },
   { href: '/faq', labelKey: 'nav.faq' },
@@ -32,7 +32,8 @@ export default function NavBar() {
         const isActive =
           pathname === item.href ||
           pathname?.startsWith(item.href + '/') ||
-          (item.href === '/earnings/daily' && pathname?.includes('earnings'));
+          (item.href === '/earnings/daily' && pathname?.includes('earnings')) ||
+          (item.href === '/dashboard' && Boolean(pathname?.includes('video-tasks')));
         return (
           <TouchableOpacity
             key={item.href}

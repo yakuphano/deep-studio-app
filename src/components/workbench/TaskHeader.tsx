@@ -1,6 +1,5 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 
@@ -12,8 +11,6 @@ interface TaskHeaderProps {
 }
 
 export default function TaskHeader({ title, price, taskTypeLabel, onBack }: TaskHeaderProps) {
-  const router = useRouter();
-
   return (
     <View style={styles.container}>
       {/* Header with Back Button */}

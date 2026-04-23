@@ -6,7 +6,7 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,7 +23,7 @@ function TaskSelectionCards({
   return (
     <View style={styles.dashboard}>
       <Text style={styles.dashboardTitle}>{t('tasks.selectTaskType')}</Text>
-      <ScrollView 
+      <ScrollView
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -38,7 +38,9 @@ function TaskSelectionCards({
               <Ionicons name="mic" size={48} color="#3b82f6" />
             </View>
             <Text style={styles.cardLabel}>{t('tasks.cardAudioTranscription')}</Text>
-            <Text style={styles.cardHint}>{t('tasks.listenToAudio')} • {t('tasks.transcribeHere')}</Text>
+            <Text style={styles.cardHint}>
+              {t('tasks.listenToAudio')} • {t('tasks.transcribeHere')}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.selectionCard}
@@ -51,8 +53,7 @@ function TaskSelectionCards({
             <Text style={styles.cardLabel}>{t('tasks.cardImageAnnotation')}</Text>
             <Text style={styles.cardHint}>BBox • Polygon • Segmentation</Text>
           </TouchableOpacity>
-          
-          {/* Video Annotation Card */}
+
           <TouchableOpacity
             style={styles.selectionCard}
             onPress={() => onSelect('video')}
@@ -70,23 +71,18 @@ function TaskSelectionCards({
   );
 }
 
-export default function TasksScreen() {
+export default function DashboardHubScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const params = useLocalSearchParams<{ type?: string }>();
   const { user, session } = useAuth();
 
-  // Debug log
-  console.log('Rendering tasks selection:', { user, session, params });
-
-  // Render protection
   if (!user || !session) return <View><Text>Yükleniyor...</Text></View>;
 
   const setTypeAndNavigate = (type: TaskType) => {
     if (type === 'transcription') {
-      router.push('/tasks/audio');
+      router.push('/dashboard/audio');
     } else if (type === 'image') {
-      router.push('/tasks/image');
+      router.push('/dashboard/image');
     } else if (type === 'video') {
       router.push('/(tabs)/video-tasks');
     }
@@ -100,19 +96,19 @@ export default function TasksScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
+  container: {
+    flex: 1,
     backgroundColor: '#0f172a',
   },
-  dashboard: { 
-    flex: 1, 
+  dashboard: {
+    flex: 1,
     padding: 40,
     paddingTop: 40,
   },
-  dashboardTitle: { 
-    fontSize: 28, 
-    fontWeight: '700', 
-    color: '#f8fafc', 
+  dashboardTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#f8fafc',
     marginBottom: 32,
     textAlign: 'left',
   },
@@ -156,15 +152,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 16,
   },
-  cardLabel: { 
-    fontSize: 18, 
-    fontWeight: '700', 
-    color: '#f1f5f9', 
+  cardLabel: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#f1f5f9',
     marginBottom: 6,
     textAlign: 'center',
   },
-  cardHint: { 
-    fontSize: 13, 
+  cardHint: {
+    fontSize: 13,
     color: '#94a3b8',
     textAlign: 'center',
     fontWeight: '500',

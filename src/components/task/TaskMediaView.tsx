@@ -29,6 +29,11 @@ interface TaskMediaViewProps {
   /** Sol sütunda araçlar varken canvas üstündeki mini toolbar */
   hideCanvasToolbar?: boolean;
   selectedLabel?: string | null;
+  /** Sol rail ile fırça rengi / palet senkronu */
+  brushColor?: string;
+  onBrushColorChange?: (color: string) => void;
+  brushPaletteOpen?: boolean;
+  onBrushPaletteOpenChange?: (open: boolean) => void;
 }
 
 export const TaskMediaView = forwardRef<TaskMediaViewCanvasHandle | null, TaskMediaViewProps>(
@@ -47,6 +52,10 @@ export const TaskMediaView = forwardRef<TaskMediaViewCanvasHandle | null, TaskMe
       finalAudioUrl,
       hideCanvasToolbar = false,
       selectedLabel = null,
+      brushColor,
+      onBrushColorChange,
+      brushPaletteOpen,
+      onBrushPaletteOpenChange,
     },
     ref
   ) {
@@ -111,6 +120,10 @@ export const TaskMediaView = forwardRef<TaskMediaViewCanvasHandle | null, TaskMe
                 onToolChange={onToolChange as any}
                 onAnnotationsChange={onAnnotationsChange}
                 hideFloatingToolbar={hideCanvasToolbar}
+                brushColor={brushColor}
+                onBrushColorChange={onBrushColorChange}
+                brushPaletteOpen={brushPaletteOpen}
+                onBrushPaletteOpenChange={onBrushPaletteOpenChange}
               />
             ) : (
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 }}>

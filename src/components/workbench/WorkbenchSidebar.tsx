@@ -71,6 +71,7 @@ export default function WorkbenchSidebar({
       hint: 'Dikdörtgen sınıf bölgesi; etiket soldan. Bbox gibi 8 tutamaçla yeniden boyutlandırma, Pan ile taşıma.',
     },
     { id: 'brush', icon: 'brush-outline', label: 'Brush', shortcut: '' },
+    { id: 'eraser', icon: 'remove-outline', label: 'Eraser', shortcut: '' },
     { id: 'magic_wand', icon: 'sparkles', label: 'Magic Wand', shortcut: '' },
   ];
 

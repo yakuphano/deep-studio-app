@@ -138,7 +138,9 @@ export default function VideoTasksScreen() {
           <Ionicons name="arrow-back" size={16} color="#a78bfa" />
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
-        <Text style={styles.breadcrumbText}>Tasks {'>'} Video</Text>
+        <Text style={styles.breadcrumbText}>
+          {`${t('nav.dashboard')} > ${t('nav.breadcrumbVideo')}`}
+        </Text>
       </View>
 
       <View style={styles.pageHeader}>

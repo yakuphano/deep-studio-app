@@ -329,13 +329,13 @@ export const useTaskWorkbench = (taskId: string | undefined, userId: string | un
           
         if (claimError) {
           if (claimError.code === 'PGRST116') {
-            router.replace('/tasks');
+            router.replace('/dashboard');
           }
         } else if (claimedTask) {
           router.replace(`/task/${claimedTask.id}`);
         }
       } else {
-        router.replace('/tasks');
+        router.replace('/dashboard');
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -358,9 +358,17 @@ export const useTaskWorkbench = (taskId: string | undefined, userId: string | un
     }
   }, [selectedAnnotationId]);
 
-  // Handle exit
+  // Handle exit — doğrudan URL ile açılınca stack boş olabilir; GO_BACK hatasını önle
   const handleExit = useCallback(() => {
-    router.replace('/tasks');
+    try {
+      if (typeof router.canGoBack === 'function' && router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/dashboard');
+      }
+    } catch {
+      router.replace('/dashboard');
+    }
   }, [router]);
 
   return {

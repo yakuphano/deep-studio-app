@@ -323,6 +323,8 @@
     "boundingBox": "Bounding Box",
     "polygonAnnotation": "Polygon Annotation",
     "imageAnnotation": "Image Annotation",
-    "annotation": "Annotation"
+    "annotation": "Annotation",
+    "customClassPlaceholder": "Class name…",
+    "customLabelsSection": "Custom classes"
   }
 }

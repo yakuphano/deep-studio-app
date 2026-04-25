@@ -206,9 +206,10 @@ export default function ImageTasksScreen() {
         <View style={styles.emptyContainer}>
           <Ionicons name="image-outline" size={80} color="#475569" style={styles.emptyIcon} />
           <Text style={styles.emptyTitle}>No Image Tasks</Text>
-          <Text style={styles.emptyDescription}>Kendi dilinizde görsel görev bulunamadı.</Text>
-          <TouchableOpacity style={styles.refreshButton} onPress={() => fetchImageTasks(true)}>
-            <Text style={styles.refreshButtonText}>Refresh</Text>
+          <Text style={styles.emptyDescription}>No image tasks found in your language.</Text>
+          <TouchableOpacity style={styles.coloredRefreshButton} onPress={() => fetchImageTasks(true)} activeOpacity={0.8}>
+            <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.buttonText}>Refresh Tasks</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -298,16 +299,24 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
-  refreshButton: {
-    backgroundColor: '#3b82f6',
+  coloredRefreshButton: {
+    marginTop: 25,
+    backgroundColor: '#ec4899',
+    paddingVertical: 14,
     paddingHorizontal: 30,
-    paddingVertical: 12,
     borderRadius: 12,
-    marginTop: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#ec4899',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 5,
   },
-  refreshButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
+  buttonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });

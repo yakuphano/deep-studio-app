@@ -14,6 +14,7 @@ interface EllipseLayerProps {
   imageToScreen: (x: number, y: number) => { x: number; y: number };
   onSelect: (id: string) => void;
   activeTool: string;
+  labelColorOverrides?: Record<string, string>;
 }
 
 export const EllipseLayer: React.FC<EllipseLayerProps> = ({
@@ -23,8 +24,9 @@ export const EllipseLayer: React.FC<EllipseLayerProps> = ({
   imageToScreen: _imageToScreen,
   onSelect,
   activeTool,
+  labelColorOverrides,
 }) => {
-  const color = resolveAnnotationLabelColor(annotation.label);
+  const color = resolveAnnotationLabelColor(annotation.label, labelColorOverrides);
   const labelText = annotationLabelToString(annotation.label).trim();
   const badgeLayout = labelText ? getAnnotationLabelBadgeLayout(labelText, scale) : null;
 

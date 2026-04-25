@@ -15,6 +15,7 @@ interface PointLayerProps {
   onSelect: (id: string) => void;
   /** false: çizim araçlarındayken SVG tıklaması seçim tetiklemesin (üstteki overlay ile yarışmasın) */
   allowPointerHit?: boolean;
+  labelColorOverrides?: Record<string, string>;
 }
 
 export const PointLayer: React.FC<PointLayerProps> = ({
@@ -24,8 +25,9 @@ export const PointLayer: React.FC<PointLayerProps> = ({
   imageToScreen: _imageToScreen,
   onSelect,
   allowPointerHit = true,
+  labelColorOverrides,
 }) => {
-  const color = resolveAnnotationLabelColor(annotation.label);
+  const color = resolveAnnotationLabelColor(annotation.label, labelColorOverrides);
   const r = screenConstantRadius(scale, isSelected ? 3.5 : 2.8);
   const ring = screenConstantRadius(scale, 5);
   const s = Math.max(scale, 0.08);

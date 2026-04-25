@@ -117,6 +117,12 @@ export default function VideoTasksScreen() {
     const uid = session?.user?.id;
     if (!uid) return;
 
+    const alreadyMine = videoTasks.some((x) => x.id === taskId && x.assigned_to === uid);
+    if (alreadyMine) {
+      router.push(`/task/${taskId}`);
+      return;
+    }
+
     const { data, error } = await supabase
       .from('tasks')
       .update({ assigned_to: uid })

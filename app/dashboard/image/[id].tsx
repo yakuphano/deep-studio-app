@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput, Pressable, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -8,8 +8,16 @@ import { supabase } from '@/lib/supabase';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
 import AnnotationCanvas, { type Annotation, type Tool } from '@/components/AnnotationCanvas';
+import { resolveTaskImageUrl } from '@/lib/audioUrl';
 import WorkbenchImageToolRail from '@/components/workbench/WorkbenchImageToolRail';
-import { ANNOTATION_LABELS, LABEL_COLORS } from '@/constants/annotationLabels';
+import {
+  ANNOTATION_LABELS,
+  mergeAnnotationChipLabels,
+  resolveAnnotationLabelColor,
+  customLabelDefinitionsToMap,
+  type CustomLabelDefinition,
+} from '@/constants/annotationLabels';
+import { WorkbenchObjectListChrome } from '@/components/workbench/WorkbenchObjectListChrome';
 import { DEFAULT_BRUSH_COLOR } from '@/types/annotations';
 import AudioPlayer from "../../../components/AudioPlayer";
 
@@ -56,6 +64,7 @@ export default function ImageTaskDetailScreen() {
   const [isBrushActive, setIsBrushActive] = useState(false);
   const [brushColor, setBrushColor] = useState(DEFAULT_BRUSH_COLOR);
   const [brushPaletteOpen, setBrushPaletteOpen] = useState(false);
+  const [extraLabelDefinitions, setExtraLabelDefinitions] = useState<CustomLabelDefinition[]>([]);
   const canvasRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
@@ -305,6 +314,52 @@ export default function ImageTaskDetailScreen() {
     setAnnotations(prev => prev.map(a => a.id === id ? { ...a, label } : a));
   }, []);
 
+  const builtInLabelSet = useMemo(
+    () => new Set<string>(ANNOTATION_LABELS as unknown as string[]),
+    []
+  );
+
+  const handleAddExtraLabelOption = useCallback(
+    (raw: string, color: string) => {
+      const label = raw.trim();
+      if (!label || builtInLabelSet.has(label)) return;
+      const c = String(color ?? '').trim();
+      setExtraLabelDefinitions((prev) => {
+        const i = prev.findIndex((d) => d.label === label);
+        if (i >= 0) {
+          const next = [...prev];
+          next[i] = { label, color: c };
+          return next;
+        }
+        return [...prev, { label, color: c }];
+      });
+    },
+    [builtInLabelSet]
+  );
+
+  const handleRemoveExtraLabelOption = useCallback((label: string) => {
+    setExtraLabelDefinitions((prev) => prev.filter((d) => d.label !== label));
+    setAnnotations((prev) =>
+      prev.map((a) => {
+        const cur =
+          typeof a.label === 'object' && a.label !== null
+            ? String((a.label as any).name ?? (a.label as any).label ?? '')
+            : String(a.label ?? '');
+        return cur === label ? { ...a, label: 'Other' } : a;
+      })
+    );
+  }, []);
+
+  const chipLabels = useMemo(
+    () => mergeAnnotationChipLabels(extraLabelDefinitions.map((d) => d.label)),
+    [extraLabelDefinitions]
+  );
+
+  const labelColorOverrides = useMemo(
+    () => customLabelDefinitionsToMap(extraLabelDefinitions),
+    [extraLabelDefinitions]
+  );
+
   const getObjectDisplayName = (a: Annotation, idx: number) => {
     const labelStr = typeof a.label === 'object' ? (a.label as any).name || (a.label as any).label : a.label;
     return labelStr || `${a.type} ${idx + 1}`;
@@ -432,7 +487,11 @@ export default function ImageTaskDetailScreen() {
               <AnnotationCanvas
                 ref={canvasRef}
                 hideFloatingToolbar
-                imageUrl={task.image_url ?? task.file_url ?? imageUrl ?? undefined}
+                imageUrl={
+                  resolveTaskImageUrl(
+                    String(task.image_url ?? task.file_url ?? imageUrl ?? '').trim()
+                  ) ?? undefined
+                }
                 initialAnnotations={task.annotation_data}
                 taskId={task.id}
                 annotations={annotations}
@@ -462,20 +521,27 @@ export default function ImageTaskDetailScreen() {
                 onBrushColorChange={setBrushColor}
                 brushPaletteOpen={brushPaletteOpen}
                 onBrushPaletteOpenChange={setBrushPaletteOpen}
+                labelColorOverrides={labelColorOverrides}
               />
             </View>
           </View>
           
           {/* Right Sidebar */}
           <View style={styles.rightSidebar}>
-            <Text style={styles.rightSidebarTitle}>OBJECT LIST</Text>
+            <WorkbenchObjectListChrome
+              extraLabelDefinitions={extraLabelDefinitions}
+              onAddExtraLabelOption={handleAddExtraLabelOption}
+              onRemoveExtraLabelOption={handleRemoveExtraLabelOption}
+            />
             <ScrollView style={styles.objectList} showsVerticalScrollIndicator={false}>
               {annotations.length === 0 ? (
                 <Text style={styles.objectListEmpty}>No objects yet</Text>
               ) : (
                 annotations.map((a, idx) => {
                   const labelStr = typeof a.label === 'object' ? (a.label as any).name || (a.label as any).label : a.label;
-                  const labelColor = labelStr ? LABEL_COLORS[labelStr] || LABEL_COLORS['Other'] : null;
+                  const labelColor = labelStr
+                    ? resolveAnnotationLabelColor(labelStr, labelColorOverrides)
+                    : null;
                   return (
                     <View key={a.id} style={styles.objectCardWrap}>
                       <View style={[styles.objectCard, labelColor && { borderLeftColor: labelColor, borderLeftWidth: 4 }]}>
@@ -490,9 +556,12 @@ export default function ImageTaskDetailScreen() {
                         </View>
                        
                           <View style={styles.labelOptionsGrid}>
-                            {(ANNOTATION_LABELS || []).map((label) => {
+                            {chipLabels.map((label) => {
                               const isSelected = a.label === label;
-                              const chipColor = LABEL_COLORS[label] ?? '#94a3b8';
+                              const chipColor = resolveAnnotationLabelColor(
+                                label,
+                                labelColorOverrides
+                              );
                               return (
                                 <TouchableOpacity
                                   key={label}

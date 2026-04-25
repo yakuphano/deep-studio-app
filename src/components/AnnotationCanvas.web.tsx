@@ -1,7 +1,14 @@
-﻿import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } from 'react';
+﻿import React, {
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useRef,
+  useCallback,
+  useImperativeHandle,
+  useMemo,
+} from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { LABEL_COLORS } from '@/constants/annotationLabels';
 import {
   resizeBbox,
   calculateInitialFit,
@@ -40,6 +47,8 @@ import { EllipseLayer } from '@/components/workbench/layers/EllipseLayer';
 import { PolylineLayer } from '@/components/workbench/layers/PolylineLayer';
 import { CanvasToolbar } from '@/components/workbench/CanvasToolbar';
 import { useAnnotationActions } from '@/hooks/useAnnotationActions';
+import { normalizeRemoteMediaUrl } from '@/lib/mediaUrl';
+import { buildWeservImageProxyUrl } from '@/lib/imageProxyUrl';
 
 const styles = StyleSheet.create({
   container: {
@@ -68,17 +77,11 @@ interface AnnotationCanvasProps {
   onBrushColorChange?: (color: string) => void;
   brushPaletteOpen?: boolean;
   onBrushPaletteOpenChange?: (open: boolean) => void;
+  /** İşe özel sınıf adı → hex (canvas çizgi rengi) */
+  labelColorOverrides?: Record<string, string>;
 }
 
 const HANDLE_HIT_AREA = 20;
-
-// Get color for label with fallback
-const getLabelColor = (label: string | any): string => {
-  const labelStr = typeof label === 'object'
-    ? (label as any).name || (label as any).label || ''
-    : String(label ?? '');
-  return LABEL_COLORS[labelStr] ?? '#94a3b8';
-};
 
 // Export with forwardRef to expose handleUndo
 export default React.forwardRef(function AnnotationCanvas({
@@ -97,8 +100,48 @@ export default React.forwardRef(function AnnotationCanvas({
   onBrushColorChange: onBrushColorChangeProp,
   brushPaletteOpen: brushPaletteOpenProp,
   onBrushPaletteOpenChange: onBrushPaletteOpenChangeProp,
+  labelColorOverrides,
 }: AnnotationCanvasProps, ref) {
   const { t } = useTranslation();
+
+  const resolvedImageUri = useMemo(() => {
+    const fromSource = imageSource?.uri?.trim();
+    const fromProp = typeof imageUrl === 'string' ? imageUrl.trim() : '';
+    const raw = fromSource || fromProp;
+    if (!raw) return '';
+    if (raw.startsWith('blob:')) return raw;
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      return normalizeRemoteMediaUrl(raw);
+    }
+    return raw;
+  }, [imageSource?.uri, imageUrl]);
+
+  /** fetch→blob yedeği; null ise resolvedImageUri kullanılır */
+  const [blobImgSrc, setBlobImgSrc] = useState<string | null>(null);
+  const displaySrc = blobImgSrc ?? resolvedImageUri;
+  const [imageLoadError, setImageLoadError] = useState<string | null>(null);
+  const blobFallbackRef = useRef<string | null>(null);
+  const fetchFallbackTriedRef = useRef<string | null>(null);
+  /** Aynı src için otomatik fit yalnızca bir kez (kullanıcı zoom’unu pencere resize’ta bozma) */
+  const autoFitAppliedForDisplaySrcRef = useRef<string | null>(null);
+
+  useLayoutEffect(() => {
+    autoFitAppliedForDisplaySrcRef.current = null;
+  }, [displaySrc]);
+
+  useLayoutEffect(() => {
+    setImageLoadError(null);
+    fetchFallbackTriedRef.current = null;
+    if (blobFallbackRef.current) {
+      try {
+        URL.revokeObjectURL(blobFallbackRef.current);
+      } catch {
+        /* ignore */
+      }
+      blobFallbackRef.current = null;
+    }
+    setBlobImgSrc(null);
+  }, [resolvedImageUri]);
 
   const brushColorControlled =
     brushColorProp !== undefined && typeof onBrushColorChangeProp === 'function';
@@ -297,7 +340,7 @@ export default React.forwardRef(function AnnotationCanvas({
     viewOffset: offset,
     suppressObjectSelectUntilRef,
     wandImageRef: imgRef,
-    wandImageSrc: imageSource?.uri || imageUrl || undefined,
+    wandImageSrc: displaySrc || undefined,
   });
 
   useImperativeHandle(
@@ -312,19 +355,24 @@ export default React.forwardRef(function AnnotationCanvas({
 
   const vertexR = screenConstantRadius(scale, 3);
 
-  // Görüntü yüklendiğinde boyut + konteynıra sığdır (önceden load dinleyicisi bağlanmıyordu)
+  // Görüntü yüklendiğinde boyut; konteyner henüz 0×0 ise fit ResizeObserver ile ertelenir
   useEffect(() => {
     const img = imgRef.current;
     const container = containerRef.current;
-    if (!img || !container || !(imageSource?.uri || imageUrl)) return;
+    if (!img || !container || !displaySrc) return;
 
-    const runFit = () => {
+    const fitIfReady = () => {
       const naturalWidth = img.naturalWidth;
       const naturalHeight = img.naturalHeight;
       if (!naturalWidth || !naturalHeight) return;
 
       setImageSize({ w: naturalWidth, h: naturalHeight });
       const containerRect = container.getBoundingClientRect();
+      if (containerRect.width < 1 || containerRect.height < 1) return;
+
+      if (autoFitAppliedForDisplaySrcRef.current === displaySrc) return;
+      autoFitAppliedForDisplaySrcRef.current = displaySrc;
+
       const { scale: initialScale, offset: nextOffset } = calculateInitialFit(
         naturalWidth,
         naturalHeight,
@@ -335,11 +383,23 @@ export default React.forwardRef(function AnnotationCanvas({
       setOffset(nextOffset);
     };
 
-    img.addEventListener('load', runFit);
-    if (img.complete && img.naturalWidth) runFit();
+    const onLoad = () => {
+      fitIfReady();
+    };
 
-    return () => img.removeEventListener('load', runFit);
-  }, [imageSource?.uri, imageUrl, setImageSize, setScale, setOffset]);
+    img.addEventListener('load', onLoad);
+    if (img.complete && img.naturalWidth) onLoad();
+
+    const ro = new ResizeObserver(() => {
+      fitIfReady();
+    });
+    ro.observe(container);
+
+    return () => {
+      img.removeEventListener('load', onLoad);
+      ro.disconnect();
+    };
+  }, [displaySrc, setImageSize, setScale, setOffset]);
 
   // Handle keyboard delete
   useEffect(() => {
@@ -389,12 +449,6 @@ export default React.forwardRef(function AnnotationCanvas({
         const newOffsetX = mouseX - imageX * newScale;
         const newOffsetY = mouseY - imageY * newScale;
         
-        console.log('[AnnotationCanvas] Zoom - scale:', scale, '->', newScale);
-        console.log('[AnnotationCanvas] Zoom - mouse:', { mouseX, mouseY });
-        console.log('[AnnotationCanvas] Zoom - image point:', { imageX, imageY });
-        console.log('[AnnotationCanvas] Zoom - old offset:', { x: offset.x, y: offset.y });
-        console.log('[AnnotationCanvas] Zoom - new offset:', { x: newOffsetX, y: newOffsetY });
-        
         setScale(newScale);
         setOffset({ x: newOffsetX, y: newOffsetY });
       }
@@ -409,6 +463,77 @@ export default React.forwardRef(function AnnotationCanvas({
     };
   }, [scale, offset]);
 
+  const handleImgError = useCallback(() => {
+    if (blobImgSrc) {
+      setImageLoadError('Görüntü önbelleği yüklenemedi.');
+      return;
+    }
+    const original = resolvedImageUri;
+    if (!original || !/^https?:\/\//i.test(original)) {
+      setImageLoadError('Görüntü yüklenemedi.');
+      return;
+    }
+    if (fetchFallbackTriedRef.current === original) {
+      setImageLoadError(
+        'Bu URL tarayıcıda görüntülenemiyor. Doğrudan .jpg/.png/.webp dosyası adresi kullanın veya dosyayı yükleyin.'
+      );
+      return;
+    }
+    fetchFallbackTriedRef.current = original;
+    void (async () => {
+      const applyBlob = (blob: Blob) => {
+        const u = URL.createObjectURL(blob);
+        if (blobFallbackRef.current) {
+          try {
+            URL.revokeObjectURL(blobFallbackRef.current);
+          } catch {
+            /* ignore */
+          }
+        }
+        blobFallbackRef.current = u;
+        setBlobImgSrc(u);
+        setImageLoadError(null);
+      };
+
+      const tryFetchAsImageBlob = async (url: string) => {
+        const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+        if (!res.ok) throw new Error(String(res.status));
+        const blob = await res.blob();
+        const ct = (res.headers.get('content-type') ?? '').toLowerCase();
+        let looksImage = blob.type.startsWith('image/') || ct.startsWith('image/');
+        if (!looksImage && typeof createImageBitmap === 'function') {
+          try {
+            await createImageBitmap(blob);
+            looksImage = true;
+          } catch {
+            looksImage = false;
+          }
+        }
+        if (!looksImage) throw new Error('not-image');
+        applyBlob(blob);
+      };
+
+      try {
+        await tryFetchAsImageBlob(original);
+      } catch {
+        const proxied = buildWeservImageProxyUrl(original);
+        if (!proxied) {
+          setImageLoadError(
+            'Görüntü indirilemedi (HTML sayfası, 403 veya CORS). Doğrudan görüntü dosyası linki veya dosya yüklemesi gerekir.'
+          );
+          return;
+        }
+        try {
+          await tryFetchAsImageBlob(proxied);
+        } catch {
+          setImageLoadError(
+            'Görüntü bu adresten açılamıyor (CORS / 403 / HTML yanıtı). Admin’den görüntüyü dosya olarak yükleyin veya herkese açık bir görüntü URL’si kullanın.'
+          );
+        }
+      }
+    })();
+  }, [blobImgSrc, resolvedImageUri]);
+
   return (
     <View style={styles.container}>
       <div
@@ -421,6 +546,26 @@ export default React.forwardRef(function AnnotationCanvas({
           touchAction: 'auto', // Touch ve wheel action'larÄ±nÄ± serbest bÄ±rak
         }}
       >
+        {imageLoadError ? (
+          <div
+            style={{
+              position: 'absolute',
+              top: 8,
+              left: 8,
+              right: 8,
+              zIndex: 6,
+              padding: '10px 12px',
+              borderRadius: 8,
+              backgroundColor: 'rgba(15, 23, 42, 0.92)',
+              color: '#fecaca',
+              fontSize: 12,
+              lineHeight: 1.45,
+              pointerEvents: 'none',
+            }}
+          >
+            {imageLoadError}
+          </div>
+        ) : null}
         {!hideFloatingToolbar ? (
           <CanvasToolbar
             activeTool={activeTool}
@@ -440,27 +585,30 @@ export default React.forwardRef(function AnnotationCanvas({
         ) : null}
         
         {/* Image Layer - Bottom layer */}
+        {displaySrc ? (
         <img
-          key={String(imageSource?.uri || imageUrl || '')}
+          key={String(displaySrc)}
           ref={imgRef}
-          crossOrigin={
-            /^https?:\/\//i.test(String(imageSource?.uri || imageUrl || '')) ? 'anonymous' : undefined
-          }
-          src={imageSource?.uri || imageUrl || ''}
+          src={displaySrc}
           alt="annotation"
+          decoding="async"
           draggable={false}
+          onError={handleImgError}
           style={{
             position: 'absolute',
             left: 0,
             top: 0,
-            width: imageSize?.w || '100%', // Use natural image width
-            height: imageSize?.h || '100%', // Use natural image height
-            objectFit: 'none', // Manual scale/offset management
+            width: imageSize ? imageSize.w : ('auto' as const),
+            height: imageSize ? imageSize.h : ('auto' as const),
+            maxWidth: imageSize ? undefined : ('100%' as const),
+            maxHeight: imageSize ? undefined : ('100%' as const),
+            objectFit: 'none',
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-            transformOrigin: '0 0', // Critical: top-left origin
+            transformOrigin: '0 0',
             pointerEvents: 'none',
           }}
         />
+        ) : null}
         
         {/* SVG Layer - Middle layer with same transform */}
         <svg
@@ -468,8 +616,8 @@ export default React.forwardRef(function AnnotationCanvas({
             position: 'absolute',
             left: 0,
             top: 0,
-            width: imageSize?.w || '100%',
-            height: imageSize?.h || '100%',
+            width: imageSize ? imageSize.w : '100%',
+            height: imageSize ? imageSize.h : '100%',
             cursor:
               (activeTool as any) === 'pan'
                 ? isPanning
@@ -505,6 +653,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     scale={scale}
                     imageToScreen={imageToScreen}
                     onSelect={() => selectShapeIfPan(annotation.id)}
+                    labelColorOverrides={labelColorOverrides}
                   />
                 );
               
@@ -517,6 +666,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     scale={scale}
                     imageToScreen={imageToScreen}
                     onSelect={() => selectShapeIfPan(annotation.id)}
+                    labelColorOverrides={labelColorOverrides}
                   />
                 );
               
@@ -530,6 +680,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     imageToScreen={imageToScreen}
                     onSelect={() => selectShapeIfPan(annotation.id)}
                     allowPointerHit={activeTool === 'pan' || activeTool === 'select'}
+                    labelColorOverrides={labelColorOverrides}
                   />
                 );
               
@@ -542,6 +693,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     scale={scale}
                     imageToScreen={imageToScreen}
                     onSelect={() => selectShapeIfPan(annotation.id)}
+                    labelColorOverrides={labelColorOverrides}
                   />
                 );
               
@@ -555,6 +707,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     imageToScreen={imageToScreen}
                     onSelect={() => selectShapeIfPan(annotation.id)}
                     activeTool={activeTool}
+                    labelColorOverrides={labelColorOverrides}
                   />
                 );
 
@@ -568,6 +721,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     imageToScreen={imageToScreen}
                     onSelect={() => selectShapeIfPan(annotation.id)}
                     activeTool={activeTool}
+                    labelColorOverrides={labelColorOverrides}
                   />
                 );
               
@@ -581,6 +735,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     imageToScreen={imageToScreen}
                     onSelect={() => selectShapeIfPan(annotation.id)}
                     activeTool={activeTool}
+                    labelColorOverrides={labelColorOverrides}
                   />
                 );
               
@@ -594,6 +749,7 @@ export default React.forwardRef(function AnnotationCanvas({
                     imageToScreen={imageToScreen}
                     onSelect={() => selectShapeIfPan(annotation.id)}
                     activeTool={activeTool}
+                    labelColorOverrides={labelColorOverrides}
                   />
                 );
 
@@ -618,6 +774,7 @@ export default React.forwardRef(function AnnotationCanvas({
                       annotation.type === 'semantic' ||
                       (annotation.type === 'magic_wand' && pts.length === 4)
                     }
+                    labelColorOverrides={labelColorOverrides}
                   />
                 );
               }

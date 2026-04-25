@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -43,6 +43,28 @@ function getLanguageLabel(code: string) {
   return languages[code] || code;
 }
 
+const IMAGE_GRID_OUTER_PAD = 40; // gridContainer paddingHorizontal 20×2
+const IMAGE_LIST_INNER_PAD = 8; // FlatList content paddingHorizontal 4×2 when numColumns > 1
+const IMAGE_COL_GAP = 10;
+
+/** ~min width per card column incl. gaps; caps at 5 columns for wide dashboards */
+function imageTaskGridColumnCount(windowWidth: number) {
+  const sidePadding = 56;
+  const minSlotWidth = 212;
+  const usable = Math.max(0, windowWidth - sidePadding);
+  const n = Math.floor(usable / minSlotWidth);
+  return Math.max(1, Math.min(5, n));
+}
+
+/** Fixed card width so the last row does not stretch a single item across the screen */
+function imageTaskCardSlotWidth(windowWidth: number, columns: number) {
+  const inner = columns > 1 ? IMAGE_LIST_INNER_PAD : 0;
+  const usable = Math.max(0, windowWidth - IMAGE_GRID_OUTER_PAD - inner);
+  if (columns <= 1) return usable;
+  const gaps = (columns - 1) * IMAGE_COL_GAP;
+  return Math.max(140, Math.floor((usable - gaps) / columns));
+}
+
 export default function ImageTasksScreen() {
   const { t } = useTranslation();
   const router = useRouter();
@@ -51,12 +73,14 @@ export default function ImageTasksScreen() {
   const [imageTasks, setImageTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const { width } = useWindowDimensions();
-  const numColumns = width > 1400 ? 4 : width > 1000 ? 3 : width > 600 ? 2 : 1;
+  const numColumns = imageTaskGridColumnCount(width);
+  const cardSlotWidth = useMemo(
+    () => imageTaskCardSlotWidth(width, numColumns),
+    [width, numColumns]
+  );
 
   const userId = user?.id ?? session?.user?.id ?? null;
   const navigatorReady = rootNavigationState?.key != null;
-
-  if (!user || !session) return <View><Text>Yükleniyor...</Text></View>;
 
   const fetchImageTasks = useCallback(async (showLoading = true) => {
     if (!userId) return;
@@ -98,7 +122,16 @@ export default function ImageTasksScreen() {
 
   const handleBack = useCallback(() => {
     router.push('/dashboard');
-  }, []);
+  }, [router]);
+
+  if (!user || !session) {
+    return (
+      <View style={styles.authLoading}>
+        <ActivityIndicator size="large" color="#ec4899" />
+        <Text style={styles.authLoadingText}>Yükleniyor...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -121,11 +154,12 @@ export default function ImageTasksScreen() {
           <ActivityIndicator size="large" color="#ffffff" style={styles.loader} />
         ) : imageTasks.length === 0 ? (
           <View style={styles.emptyWrap}>
-            <Ionicons name="alert-circle-outline" size={64} color="#64748b" />
-            <Text style={styles.emptyTitle}>Görev Bulunamadı</Text>
-
-            <TouchableOpacity style={styles.emptyRefresh} onPress={() => fetchImageTasks(true)}>
-              <Text style={styles.emptyRefreshText}>Görevleri Yenile</Text>
+            <Ionicons name="image-outline" size={64} color="#ec4899" />
+            <Text style={styles.emptyTitle}>No Image Tasks</Text>
+            <Text style={styles.emptyDescription}>No image tasks found in your language.</Text>
+            <TouchableOpacity style={styles.emptyRefresh} onPress={() => fetchImageTasks(true)} activeOpacity={0.8}>
+              <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.emptyRefreshText}>Refresh Tasks</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -142,7 +176,7 @@ export default function ImageTasksScreen() {
                   icon="image"
                   subtitle={getLanguageLabel(item.language)}
                   ctaLabel={t('tasks.startTask')}
-                  style={styles.cardSlot}
+                  style={[styles.cardSlot, { width: cardSlotWidth }]}
                   onPress={() => router.push(`/dashboard/image/${item.id}`)}
                 />
               )}
@@ -160,6 +194,17 @@ export default function ImageTasksScreen() {
 }
 
 const styles = StyleSheet.create({
+  authLoading: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  authLoadingText: {
+    color: '#f8fafc',
+    fontSize: 15,
+  },
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
@@ -212,10 +257,10 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   gridContainer: {
-    maxWidth: 1200,
-    alignSelf: 'center',
+    flex: 1,
+    alignSelf: 'stretch',
     width: '100%',
-    paddingLeft: 20,
+    maxWidth: '100%',
     paddingHorizontal: 20,
     paddingVertical: 5,
     paddingTop: 0,
@@ -223,14 +268,13 @@ const styles = StyleSheet.create({
   },
   columnWrapper: {
     justifyContent: 'flex-start',
-    gap: 0,
+    gap: 10,
   },
   cardSlot: {
-    flex: 1,
-    maxWidth: 220,
-    margin: 2,
-    marginRight: 10,
     marginBottom: 10,
+    minWidth: 0,
+    flexGrow: 0,
+    flexShrink: 0,
   },
   emptyWrap: {
     flex: 1,
@@ -240,19 +284,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
   },
   emptyTitle: {
-    color: '#fff',
-    fontSize: 18,
-    marginTop: 10,
+    color: '#f8fafc',
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  emptyDescription: {
+    fontSize: 16,
+    color: '#94a3b8',
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 24,
   },
   emptyRefresh: {
-    marginTop: 20,
+    marginTop: 24,
     backgroundColor: '#ec4899',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyRefreshText: {
     color: '#fff',
-    fontWeight: 'bold',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });

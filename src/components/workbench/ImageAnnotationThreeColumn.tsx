@@ -1,9 +1,13 @@
-import React, { useState, useEffect, cloneElement, isValidElement } from 'react';
+import React, { useState, useEffect, useMemo, cloneElement, isValidElement } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import ObjectList from '@/components/ImageAnnotation/ObjectList';
 import WorkbenchImageToolRail from '@/components/workbench/WorkbenchImageToolRail';
 import type { WorkbenchDrawingToolId } from '@/constants/workbenchImageTools';
 import { DEFAULT_BRUSH_COLOR } from '@/types/annotations';
+import {
+  customLabelDefinitionsToMap,
+  type CustomLabelDefinition,
+} from '@/constants/annotationLabels';
 
 export type ToolId = WorkbenchDrawingToolId;
 
@@ -17,6 +21,10 @@ export interface ImageAnnotationThreeColumnProps {
   onSelectAnnotation: (id: string | null) => void;
   onUpdateAnnotationLabel: (annotationId: string, label: string) => void;
   onDeleteAnnotation: (id: string) => void;
+  /** İşe özel etiket + renk (chip ve tuval) */
+  extraLabelDefinitions?: CustomLabelDefinition[];
+  onAddExtraLabelOption?: (label: string, color: string) => void;
+  onRemoveExtraLabelOption?: (label: string) => void;
   children: React.ReactNode;
 }
 
@@ -30,10 +38,18 @@ export default function ImageAnnotationThreeColumn({
   onSelectAnnotation,
   onUpdateAnnotationLabel,
   onDeleteAnnotation,
+  extraLabelDefinitions = [],
+  onAddExtraLabelOption,
+  onRemoveExtraLabelOption,
   children,
 }: ImageAnnotationThreeColumnProps) {
   const [brushColor, setBrushColor] = useState(DEFAULT_BRUSH_COLOR);
   const [brushPaletteOpen, setBrushPaletteOpen] = useState(false);
+
+  const labelColorOverrides = useMemo(
+    () => customLabelDefinitionsToMap(extraLabelDefinitions),
+    [extraLabelDefinitions]
+  );
 
   useEffect(() => {
     if (activeTool !== 'brush') setBrushPaletteOpen(false);
@@ -45,6 +61,7 @@ export default function ImageAnnotationThreeColumn({
         onBrushColorChange: setBrushColor,
         brushPaletteOpen,
         onBrushPaletteOpenChange: setBrushPaletteOpen,
+        labelColorOverrides,
       })
     : children;
 
@@ -81,6 +98,9 @@ export default function ImageAnnotationThreeColumn({
           onSelectAnnotation={onSelectAnnotation}
           onUpdateAnnotationLabel={onUpdateAnnotationLabel}
           onDeleteAnnotation={onDeleteAnnotation}
+          extraLabelDefinitions={extraLabelDefinitions}
+          onAddExtraLabelOption={onAddExtraLabelOption}
+          onRemoveExtraLabelOption={onRemoveExtraLabelOption}
         />
       </View>
     </View>

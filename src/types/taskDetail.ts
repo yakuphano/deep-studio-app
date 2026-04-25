@@ -5,6 +5,10 @@ export interface TaskData {
   price: number;
   type: 'audio' | 'image' | 'video' | 'transcription' | string;
   category: string | null;
+  /** Örn. zip_import — toplu ZIP veri seti */
+  import_source?: string | null;
+  /** task-assets içi nesne yolu; task-media proxy ile imzalı erişim */
+  media_storage_path?: string | null;
   audio_url: string | null;
   /** Bazı görevlerde ses yolu burada tutulur */
   content_url?: string | null;

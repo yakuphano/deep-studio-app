@@ -7,8 +7,6 @@ import { Tool } from '@/types/annotations';
 interface VideoSidebarProps {
   activeTool: string;
   setActiveTool: (tool: string) => void;
-  isBrushActive: boolean;
-  setIsBrushActive: (active: boolean) => void;
   selectedAnnotationId: string | null;
   handleDeleteAnnotation: (id: string) => void;
   canvasRef: any;
@@ -17,24 +15,20 @@ interface VideoSidebarProps {
 export const VideoSidebar: React.FC<VideoSidebarProps> = ({
   activeTool,
   setActiveTool,
-  isBrushActive,
-  setIsBrushActive,
   selectedAnnotationId,
   handleDeleteAnnotation,
   canvasRef,
 }) => {
   const tools = [
     { id: 'pan', name: 'Pan', icon: 'hand-right-outline' },
+    { id: 'select', name: 'Select', icon: 'locate-outline' },
     { id: 'undo', name: 'Undo', icon: 'arrow-undo-outline' },
     { id: 'bbox', name: 'BBox', icon: 'square-outline' },
     { id: 'polygon', name: 'Polygon', icon: 'git-merge-outline' },
-    { id: 'polyline', name: 'Polyline', icon: 'create-outline' },
-    { id: 'brush', name: 'Brush', icon: 'brush-outline' },
   ];
 
   const handleToolPress = (toolId: string) => {
     setActiveTool(toolId);
-    setIsBrushActive(toolId === 'brush');
   };
 
   const handleUndo = () => {
@@ -50,7 +44,7 @@ export const VideoSidebar: React.FC<VideoSidebarProps> = ({
           key={tool.id}
           style={[
             videoWorkbenchStyles.toolBtnLarge,
-            activeTool === tool.id && !isBrushActive && videoWorkbenchStyles.toolBtnActivePurple
+            activeTool === tool.id && videoWorkbenchStyles.toolBtnActivePurple
           ]}
           onPress={() => 
             tool.id === 'undo' ? handleUndo() : handleToolPress(tool.id)

@@ -322,6 +322,8 @@
     "boundingBox": "Sınırlayıcı Kutu",
     "polygonAnnotation": "Çokgen Etiketleme",
     "imageAnnotation": "Görsel Etiketleme",
-    "annotation": "Etiketleme"
+    "annotation": "Etiketleme",
+    "customClassPlaceholder": "Sınıf adı…",
+    "customLabelsSection": "Ek sınıflar"
   }
 }

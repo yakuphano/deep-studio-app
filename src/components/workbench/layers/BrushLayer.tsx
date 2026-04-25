@@ -13,6 +13,7 @@ interface BrushLayerProps {
   scale: number;
   imageToScreen: (x: number, y: number) => { x: number; y: number };
   onSelect: (id: string) => void;
+  labelColorOverrides?: Record<string, string>;
 }
 
 export const BrushLayer: React.FC<BrushLayerProps> = ({
@@ -20,6 +21,7 @@ export const BrushLayer: React.FC<BrushLayerProps> = ({
   isSelected,
   scale,
   onSelect,
+  labelColorOverrides,
 }) => {
   if (annotation.points.length === 0) return null;
 
@@ -32,7 +34,7 @@ export const BrushLayer: React.FC<BrushLayerProps> = ({
   const strokeWidth = Math.max(1, (annotation.width || 3) / Math.max(scale, 0.08));
   const labelText = annotationLabelToString(annotation.label).trim();
   const badgeLayout = labelText ? getAnnotationLabelBadgeLayout(labelText, scale) : null;
-  const labelColor = resolveAnnotationLabelColor(annotation.label);
+  const labelColor = resolveAnnotationLabelColor(annotation.label, labelColorOverrides);
   const s = Math.max(scale, 0.08);
 
   return (

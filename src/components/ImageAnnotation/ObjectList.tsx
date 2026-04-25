@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,14 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import { ANNOTATION_LABELS, LABEL_COLORS } from '@/constants/annotationLabels';
+import {
+  mergeAnnotationChipLabels,
+  resolveAnnotationLabelColor,
+  customLabelDefinitionsToMap,
+  type CustomLabelDefinition,
+} from '@/constants/annotationLabels';
 import type { Annotation } from '@/types/annotations';
+import { WorkbenchObjectListChrome } from '@/components/workbench/WorkbenchObjectListChrome';
 
 interface ObjectListProps {
   annotations: Annotation[];
@@ -18,6 +24,9 @@ interface ObjectListProps {
   onSelectAnnotation: (id: string | null) => void;
   onUpdateAnnotationLabel: (annotationId: string, label: string) => void;
   onDeleteAnnotation: (annotationId: string) => void;
+  extraLabelDefinitions?: CustomLabelDefinition[];
+  onAddExtraLabelOption?: (label: string, color: string) => void;
+  onRemoveExtraLabelOption?: (label: string) => void;
 }
 
 const getObjectDisplayName = (a: Annotation, idx: number) => {
@@ -35,28 +44,52 @@ const getObjectDisplayName = (a: Annotation, idx: number) => {
   return `Object #${n}`;
 };
 
-export default function ObjectList({ 
-  annotations, 
-  selectedAnnotationId, 
-  onSelectAnnotation, 
-  onUpdateAnnotationLabel, 
-  onDeleteAnnotation 
+export default function ObjectList({
+  annotations,
+  selectedAnnotationId,
+  onSelectAnnotation,
+  onUpdateAnnotationLabel,
+  onDeleteAnnotation,
+  extraLabelDefinitions = [],
+  onAddExtraLabelOption,
+  onRemoveExtraLabelOption,
 }: ObjectListProps) {
   const { t } = useTranslation();
+
+  const labelColorOverrides = useMemo(
+    () => customLabelDefinitionsToMap(extraLabelDefinitions),
+    [extraLabelDefinitions]
+  );
+
+  const chipLabels = useMemo(
+    () => mergeAnnotationChipLabels(extraLabelDefinitions.map((d) => d.label)),
+    [extraLabelDefinitions]
+  );
+
   return (
     <View style={styles.objectListSidebar}>
-      <Text style={styles.objectListTitle}>{t('annotation.objects').toUpperCase()}</Text>
+      {onAddExtraLabelOption && onRemoveExtraLabelOption ? (
+        <View style={styles.chromeWrap}>
+          <WorkbenchObjectListChrome
+            extraLabelDefinitions={extraLabelDefinitions}
+            onAddExtraLabelOption={onAddExtraLabelOption}
+            onRemoveExtraLabelOption={onRemoveExtraLabelOption}
+          />
+        </View>
+      ) : null}
+
       <ScrollView style={styles.objectListScroll} showsVerticalScrollIndicator={false}>
         {annotations.length === 0 ? (
           <Text style={styles.objectListEmpty}>{t('annotation.noObjects')}</Text>
         ) : (
           annotations.map((annotation, idx) => {
-            const labelStr = typeof annotation.label === 'object' 
-              ? (annotation.label as any).name || (annotation.label as any).label 
-              : annotation.label;
-            const labelColor = labelStr ? LABEL_COLORS[labelStr] || LABEL_COLORS['Other'] : '#3b82f6';
+            const labelStr =
+              typeof annotation.label === 'object'
+                ? (annotation.label as any).name || (annotation.label as any).label
+                : annotation.label;
+            const labelColor = resolveAnnotationLabelColor(labelStr, labelColorOverrides);
             const isSelected = selectedAnnotationId === annotation.id;
-            
+
             return (
               <View
                 key={annotation.id}
@@ -70,7 +103,8 @@ export default function ObjectList({
                       accessibilityLabel={getObjectDisplayName(annotation, idx)}
                     >
                       <Text style={[styles.objectListItemTitle, { color: labelColor }]}>
-                        {(annotation as any).type === 'bbox' && `BBox #${idx + 1} - ${labelStr || 'Other'}`}
+                        {(annotation as any).type === 'bbox' &&
+                          `BBox #${idx + 1} - ${labelStr || 'Other'}`}
                         {(annotation as any).type === 'polygon' && `Polygon #${idx + 1}`}
                         {(annotation as any).type === 'point' && `Point #${idx + 1}`}
                         {(annotation as any).type === 'semantic' &&
@@ -82,27 +116,38 @@ export default function ObjectList({
                           getObjectDisplayName(annotation, idx)}
                       </Text>
                     </Pressable>
-                    {/* Label Selection Chips */}
                     <View style={styles.labelChipsContainer}>
-                      {ANNOTATION_LABELS.map((labelItem) => (
-                        <TouchableOpacity
-                          key={labelItem}
-                          style={[
-                            styles.labelChip,
-                            labelStr === labelItem && styles.labelChipSelected,
-                            { backgroundColor: labelStr === labelItem ? LABEL_COLORS[labelItem] : '#374151' }
-                          ]}
-                          onPress={() => onUpdateAnnotationLabel(annotation.id, labelItem)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={[
-                            styles.labelChipText,
-                            { color: labelStr === labelItem ? 'white' : '#9ca3af' }
-                          ]}>
-                            {labelItem}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
+                      {chipLabels.map((labelItem) => {
+                        const chipColor = resolveAnnotationLabelColor(
+                          labelItem,
+                          labelColorOverrides
+                        );
+                        const isChipOn = labelStr === labelItem;
+                        return (
+                          <TouchableOpacity
+                            key={labelItem}
+                            style={[
+                              styles.labelChip,
+                              isChipOn && styles.labelChipSelected,
+                              {
+                                backgroundColor: isChipOn ? chipColor : '#374151',
+                                borderColor: isChipOn ? chipColor : '#374151',
+                              },
+                            ]}
+                            onPress={() => onUpdateAnnotationLabel(annotation.id, labelItem)}
+                            activeOpacity={0.8}
+                          >
+                            <Text
+                              style={[
+                                styles.labelChipText,
+                                { color: isChipOn ? 'white' : '#9ca3af' },
+                              ]}
+                            >
+                              {labelItem}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
                   </View>
                   <View style={styles.objectListItemActions}>
@@ -131,6 +176,12 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     backgroundColor: '#1e293b',
   },
+  chromeWrap: {
+    paddingHorizontal: 8,
+    paddingTop: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
   objectListItemActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -138,15 +189,6 @@ const styles = StyleSheet.create({
   },
   deleteIconBtn: {
     padding: 4,
-  },
-  objectListTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#f1f5f9',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
   },
   objectListScroll: {
     flex: 1,
@@ -198,7 +240,6 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: '#374151',
   },
   labelChipSelected: {
     borderWidth: 0,

@@ -22,20 +22,23 @@ import { useAuth } from '@/contexts/AuthContext';
 import AnnotationCanvas, { type Annotation, type Tool } from '@/components/AnnotationCanvas';
 import { ANNOTATION_LABELS, LABEL_COLORS } from '@/constants/annotationLabels';
 import { videoWorkbenchStyles } from '@/theme/videoWorkbenchStyles';
-import { 
-  type TaskData, 
-  type VideoAnnotation, 
-  type WebVideoPlayerProps, 
-  type VideoPlayerState, 
-  type TranscriptionState, 
-  type AnnotationTool, 
-  type TimeRange, 
-  type FrameData 
+import {
+  type TaskData,
+  type VideoAnnotation,
+  type WebVideoPlayerProps,
+  type VideoPlayerState,
+  type TranscriptionState,
+  type AnnotationTool,
+  type TimeRange,
+  type FrameData,
 } from '@/types/video';
 import { useVideoWorkbench } from '@/hooks/useVideoWorkbench';
 import { VideoSidebar } from '@/components/video/VideoSidebar';
 import { TranscriptionEditor } from '@/components/video/TranscriptionEditor';
 import { VideoHeader } from '@/components/video/VideoHeader';
+
+/** Ana layout stilleri `videoWorkbenchStyles` ile birleşik */
+const styles = videoWorkbenchStyles;
 
 const PLAYBACK_SPEED_STORAGE_KEY = 'deepstudio_playback_speed';
 const MIN_SPEED = 0.1;
@@ -147,20 +150,29 @@ function WebVideoPlayer({
     style: { 
       position: 'relative', 
       width: '100%', 
-      backgroundColor: '#1e293b',
+      minHeight: 280,
+      backgroundColor: '#000',
       borderRadius: 8,
       overflow: 'hidden',
-      border: '1px solid #334155'
+      border: '1px solid #334155',
+      display: 'flex',
+      flexDirection: 'column',
     } as React.CSSProperties 
   }, [
     React.createElement('video', {
       key: 'video',
       ref: (el: HTMLVideoElement | null) => { videoRef.current = el; },
       src,
+      crossOrigin: 'anonymous',
+      playsInline: true,
+      preload: 'metadata',
       style: {
         width: '100%',
-        height: 'auto',
-        backgroundColor: '#1e293b',
+        flex: 1,
+        minHeight: 220,
+        maxHeight: 'min(50vh, 520px)',
+        objectFit: 'contain' as const,
+        backgroundColor: '#000',
         outline: 'none',
       } as React.CSSProperties,
     }),
@@ -269,7 +281,7 @@ function WebVideoPlayer({
               alignItems: 'center',
               justifyContent: 'center',
             } as React.CSSProperties
-          }, isPlaying ? 'â¸' : 'â–¶'),
+          }, isPlaying ? '\u23F8' : '\u25B6'),
           React.createElement('button', {
             key: 'prev-frame',
             onClick: () => skipFrame(-1),
@@ -283,7 +295,7 @@ function WebVideoPlayer({
               cursor: 'pointer',
               fontSize: '12px',
             } as React.CSSProperties
-          }, 'â—€'),
+          }, '\u25C0'),
           React.createElement('button', {
             key: 'next-frame',
             onClick: () => skipFrame(1),
@@ -297,7 +309,7 @@ function WebVideoPlayer({
               cursor: 'pointer',
               fontSize: '12px',
             } as React.CSSProperties
-          }, 'â–¶')
+          }, '\u25B8')
         ]),
         
         // Right Controls
@@ -353,10 +365,10 @@ export default function VideoAnnotationScreen() {
   const router = useRouter();
   const { t, i18n } = useTranslation();
   const { user, session, signOut, isAdmin } = useAuth();
-  const [activeTool, setActiveTool] = useState<'pan' | 'select' | 'bbox' | 'polygon' | 'points' | 'ellipse' | 'cuboid' | 'polyline' | 'semantic' | 'brush' | 'magic_wand'>('points');
+  const [activeTool, setActiveTool] = useState<'pan' | 'select' | 'bbox' | 'polygon' | 'points' | 'ellipse' | 'cuboid' | 'polyline' | 'semantic' | 'brush' | 'magic_wand'>('pan');
   const canvasTool: Tool = activeTool as Tool;
   const [selectedLabel, setSelectedLabel] = useState<string>('');
-  const [isBrushActive, setIsBrushActive] = useState(false);
+  const [optionalNotesOpen, setOptionalNotesOpen] = useState(false);
   const canvasRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
 
@@ -433,9 +445,22 @@ export default function VideoAnnotationScreen() {
         {/* Left Toolbar */}
         <VideoSidebar
           activeTool={activeTool}
-          setActiveTool={setActiveTool}
-          isBrushActive={isBrushActive}
-          setIsBrushActive={setIsBrushActive}
+          setActiveTool={(tool) =>
+            setActiveTool(
+              tool as
+                | 'pan'
+                | 'select'
+                | 'bbox'
+                | 'polygon'
+                | 'points'
+                | 'ellipse'
+                | 'cuboid'
+                | 'polyline'
+                | 'semantic'
+                | 'brush'
+                | 'magic_wand'
+            )
+          }
           selectedAnnotationId={selectedAnnotationId}
           handleDeleteAnnotation={handleDeleteAnnotation}
           canvasRef={canvasRef}
@@ -443,18 +468,31 @@ export default function VideoAnnotationScreen() {
         
         {/* Center - Video Canvas */}
         <View style={styles.annotationMain}>
-          {/* Video Player */}
-          {Platform.OS === 'web' && videoUrl ? (
-            <WebVideoPlayer 
-              src={videoUrl} 
-              onFrameCapture={handleFrameCapture}
-              onTimeUpdate={handleTimeUpdate}
-              onLoadedMetadata={handleLoadedMetadata}
-            />
+          {Platform.OS === 'web' ? (
+            videoUrl ? (
+              <View style={styles.videoStage}>
+                <WebVideoPlayer
+                  src={videoUrl}
+                  onFrameCapture={handleFrameCapture}
+                  onTimeUpdate={handleTimeUpdate}
+                  onLoadedMetadata={handleLoadedMetadata}
+                />
+              </View>
+            ) : (
+              <View style={[styles.videoStage, styles.videoMissingBox]}>
+                <Ionicons name="cloud-offline-outline" size={40} color="#64748b" />
+                <Text style={styles.videoMissingTitle}>Video yüklenemedi</Text>
+                <Text style={styles.videoMissingHint}>
+                  {task?.video_url
+                    ? 'Oturum veya depo erişimi doğrulanamadı. Sayfayı yenileyin; sorun sürerse görevdeki video bağlantısını kontrol edin.'
+                    : 'Bu görevde video_url tanımlı değil.'}
+                </Text>
+              </View>
+            )
           ) : (
             <View style={styles.videoPlaceholder}>
               <Ionicons name="videocam-outline" size={48} color="#64748b" />
-              <Text style={styles.videoPlaceholderText}>Video player not available on mobile</Text>
+              <Text style={styles.videoPlaceholderText}>Video bu platformda yalnızca web’de oynatılır.</Text>
             </View>
           )}
           
@@ -472,7 +510,7 @@ export default function VideoAnnotationScreen() {
                 selectedId={selectedAnnotationId}
                 onSelect={setSelectedAnnotationId}
                 selectedLabel={selectedLabel}
-                isBrushActive={isBrushActive}
+                isBrushActive={false}
                 onUndo={() => {
                   if (canvasRef.current?.handleUndo) {
                     canvasRef.current.handleUndo();
@@ -538,27 +576,36 @@ export default function VideoAnnotationScreen() {
                           );
                         })}
                       </View>
-                      
-                      {/* Time Range Info */}
-                      <View style={styles.timeRangeInfo}>
-                        <Text style={styles.timeRangeLabel}>Frame: {currentFrameNumber}</Text>
-                        <Text style={styles.timeRangeLabel}>Time: {Math.floor(currentTimestamp)}s</Text>
-                      </View>
-                      <TranscriptionEditor
-                        transcription={transcription}
-                        setTranscription={setTranscription}
-                        isTranscribing={isTranscribing}
-                        handleAITranscription={handleAITranscription}
-                        currentFrame={currentFrame}
-                        currentFrameNumber={currentFrameNumber}
-                        currentTimestamp={currentTimestamp}
-                      />
                     </View>
                   </View>
                 );
               })
             )}
           </ScrollView>
+          {currentFrame ? (
+            <View style={styles.optionalNotesBlock}>
+              <TouchableOpacity
+                style={styles.optionalNotesToggle}
+                onPress={() => setOptionalNotesOpen((o) => !o)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.optionalNotesToggleText}>
+                  {optionalNotesOpen ? '▼ Notlar / AI' : '▶ Notlar / AI (isteğe bağlı)'}
+                </Text>
+              </TouchableOpacity>
+              {optionalNotesOpen ? (
+                <TranscriptionEditor
+                  transcription={transcription}
+                  setTranscription={setTranscription}
+                  isTranscribing={isTranscribing}
+                  handleAITranscription={handleAITranscription}
+                  currentFrame={currentFrame}
+                  currentFrameNumber={currentFrameNumber}
+                  currentTimestamp={currentTimestamp}
+                />
+              ) : null}
+            </View>
+          ) : null}
         </View>
       </View>
       

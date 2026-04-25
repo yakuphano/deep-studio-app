@@ -10,6 +10,7 @@ interface CuboidWireLayerProps {
   imageToScreen: (x: number, y: number) => { x: number; y: number };
   onSelect: (id: string) => void;
   activeTool: string;
+  labelColorOverrides?: Record<string, string>;
 }
 
 const EDGE_PAIRS: [number, number][] = [
@@ -34,8 +35,9 @@ export const CuboidWireLayer: React.FC<CuboidWireLayerProps> = ({
   imageToScreen: _imageToScreen,
   onSelect,
   activeTool,
+  labelColorOverrides,
 }) => {
-  const color = resolveAnnotationLabelColor(annotation.label);
+  const color = resolveAnnotationLabelColor(annotation.label, labelColorOverrides);
   const c = annotation.corners;
   if (!c || c.length !== 8) return null;
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput, Pressable, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -8,7 +8,14 @@ import { supabase } from '@/lib/supabase';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
 import AnnotationCanvas, { type Annotation, type Tool } from '@/components/AnnotationCanvas';
-import { ANNOTATION_LABELS, LABEL_COLORS } from '@/constants/annotationLabels';
+import {
+  ANNOTATION_LABELS,
+  mergeAnnotationChipLabels,
+  resolveAnnotationLabelColor,
+  customLabelDefinitionsToMap,
+  type CustomLabelDefinition,
+} from '@/constants/annotationLabels';
+import { WorkbenchObjectListChrome } from '@/components/workbench/WorkbenchObjectListChrome';
 
 interface TaskData {
   id: string;
@@ -41,6 +48,7 @@ export default function VideoTaskDetailScreen() {
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>('');
   const [isBrushActive, setIsBrushActive] = useState(false);
+  const [extraLabelDefinitions, setExtraLabelDefinitions] = useState<CustomLabelDefinition[]>([]);
   const canvasRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
@@ -125,6 +133,11 @@ export default function VideoTaskDetailScreen() {
     };
     fetchTask();
   }, [id]);
+
+  useEffect(() => {
+    if (!isWeb || loading || !task?.id || !isVideoTask) return;
+    router.replace(`/(tabs)/video-annotation?id=${encodeURIComponent(String(task.id))}` as any);
+  }, [isWeb, loading, task?.id, isVideoTask, router, task]);
 
   const handleSaveDraft = useCallback(async () => {
     if (!id || !user?.id) return;
@@ -232,6 +245,52 @@ export default function VideoTaskDetailScreen() {
     setAnnotations(prev => prev.map(a => a.id === id ? { ...a, label } : a));
   }, []);
 
+  const builtInLabelSet = useMemo(
+    () => new Set<string>(ANNOTATION_LABELS as unknown as string[]),
+    []
+  );
+
+  const handleAddExtraLabelOption = useCallback(
+    (raw: string, color: string) => {
+      const label = raw.trim();
+      if (!label || builtInLabelSet.has(label)) return;
+      const c = String(color ?? '').trim();
+      setExtraLabelDefinitions((prev) => {
+        const i = prev.findIndex((d) => d.label === label);
+        if (i >= 0) {
+          const next = [...prev];
+          next[i] = { label, color: c };
+          return next;
+        }
+        return [...prev, { label, color: c }];
+      });
+    },
+    [builtInLabelSet]
+  );
+
+  const handleRemoveExtraLabelOption = useCallback((label: string) => {
+    setExtraLabelDefinitions((prev) => prev.filter((d) => d.label !== label));
+    setAnnotations((prev) =>
+      prev.map((a) => {
+        const cur =
+          typeof a.label === 'object' && a.label !== null
+            ? String((a.label as any).name ?? (a.label as any).label ?? '')
+            : String(a.label ?? '');
+        return cur === label ? { ...a, label: 'Other' } : a;
+      })
+    );
+  }, []);
+
+  const chipLabels = useMemo(
+    () => mergeAnnotationChipLabels(extraLabelDefinitions.map((d) => d.label)),
+    [extraLabelDefinitions]
+  );
+
+  const labelColorOverrides = useMemo(
+    () => customLabelDefinitionsToMap(extraLabelDefinitions),
+    [extraLabelDefinitions]
+  );
+
   const getObjectDisplayName = (a: Annotation, idx: number) => {
     const labelStr = typeof a.label === 'object' ? (a.label as any).name || (a.label as any).label : a.label;
     return labelStr || `${a.type} ${idx + 1}`;
@@ -265,6 +324,15 @@ export default function VideoTaskDetailScreen() {
       <View style={styles.container}>
         <ActivityIndicator size="large" color="#3b82f6" />
         <Text style={styles.loadingText}>Görev yükleniyor...</Text>
+      </View>
+    );
+  }
+
+  if (isWeb && isVideoTask) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
+        <ActivityIndicator size="large" color="#8b5cf6" />
+        <Text style={styles.loadingText}>Video annotation açılıyor…</Text>
       </View>
     );
   }
@@ -485,20 +553,27 @@ export default function VideoTaskDetailScreen() {
                     }
                   }
                 }}
+                labelColorOverrides={labelColorOverrides}
               />
             </View>
           </View>
           
           {/* Right Sidebar */}
           <View style={styles.rightSidebar}>
-            <Text style={styles.rightSidebarTitle}>OBJECT LIST</Text>
+            <WorkbenchObjectListChrome
+              extraLabelDefinitions={extraLabelDefinitions}
+              onAddExtraLabelOption={handleAddExtraLabelOption}
+              onRemoveExtraLabelOption={handleRemoveExtraLabelOption}
+            />
             <ScrollView style={styles.objectList} showsVerticalScrollIndicator={false}>
               {annotations.length === 0 ? (
                 <Text style={styles.objectListEmpty}>No objects yet</Text>
               ) : (
                 annotations.map((a, idx) => {
                   const labelStr = typeof a.label === 'object' ? (a.label as any).name || (a.label as any).label : a.label;
-                  const labelColor = labelStr ? LABEL_COLORS[labelStr] || LABEL_COLORS['Other'] : null;
+                  const labelColor = labelStr
+                    ? resolveAnnotationLabelColor(labelStr, labelColorOverrides)
+                    : null;
                   return (
                     <View key={a.id} style={styles.objectCardWrap}>
                       <View style={[styles.objectCard, labelColor && { borderLeftColor: labelColor, borderLeftWidth: 4 }]}>
@@ -513,9 +588,12 @@ export default function VideoTaskDetailScreen() {
                         </View>
                        
                           <View style={styles.labelOptionsGrid}>
-                            {ANNOTATION_LABELS.map((label) => {
+                            {chipLabels.map((label) => {
                               const isSelected = a.label === label;
-                              const chipColor = LABEL_COLORS[label] ?? '#94a3b8';
+                              const chipColor = resolveAnnotationLabelColor(
+                                label,
+                                labelColorOverrides
+                              );
                               return (
                                 <TouchableOpacity
                                   key={label}

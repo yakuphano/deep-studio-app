@@ -236,9 +236,10 @@ export default function AudioTasksScreen() {
         <View style={styles.emptyContainer}>
           <Ionicons name="mic-outline" size={80} color="#475569" style={styles.emptyIcon} />
           <Text style={styles.emptyTitle}>No Audio Tasks</Text>
-          <Text style={styles.emptyDescription}>Kendi dilinizde sesli görev bulunamadı.</Text>
-          <TouchableOpacity style={styles.refreshButton} onPress={() => fetchAudioTasks(true)}>
-            <Text style={styles.refreshButtonText}>Refresh</Text>
+          <Text style={styles.emptyDescription}>No audio tasks found in your language.</Text>
+          <TouchableOpacity style={styles.coloredRefreshButton} onPress={() => fetchAudioTasks(true)} activeOpacity={0.8}>
+            <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.buttonText}>Refresh Tasks</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -330,16 +331,24 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
-  refreshButton: {
-    backgroundColor: '#3b82f6',
+  coloredRefreshButton: {
+    marginTop: 25,
+    backgroundColor: '#22c55e',
+    paddingVertical: 14,
     paddingHorizontal: 30,
-    paddingVertical: 12,
     borderRadius: 12,
-    marginTop: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#22c55e',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 5,
   },
-  refreshButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
+  buttonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });

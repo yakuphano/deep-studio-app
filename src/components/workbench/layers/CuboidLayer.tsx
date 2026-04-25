@@ -15,6 +15,7 @@ interface CuboidLayerProps {
   imageToScreen: (x: number, y: number) => { x: number; y: number };
   onSelect: (id: string) => void;
   activeTool: string;
+  labelColorOverrides?: Record<string, string>;
 }
 
 export const CuboidLayer: React.FC<CuboidLayerProps> = ({
@@ -24,8 +25,9 @@ export const CuboidLayer: React.FC<CuboidLayerProps> = ({
   imageToScreen: _imageToScreen,
   onSelect,
   activeTool,
+  labelColorOverrides,
 }) => {
-  const color = resolveAnnotationLabelColor(annotation.label);
+  const color = resolveAnnotationLabelColor(annotation.label, labelColorOverrides);
   const { x, y, width, height, dx = 0, dy = 0 } = annotation;
   const labelText = annotationLabelToString(annotation.label).trim();
   const badgeLayout = labelText ? getAnnotationLabelBadgeLayout(labelText, scale) : null;

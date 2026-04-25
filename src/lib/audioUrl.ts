@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { normalizeRemoteMediaUrl } from '@/lib/mediaUrl';
 
 /**
  * Görevlerde saklanan audio_url değerini tarayıcı / expo-av için oynatılabilir URL'ye çevirir.
@@ -7,11 +8,13 @@ import { supabase } from '@/lib/supabase';
  */
 export function resolvePlaybackAudioUrl(raw: string | null | undefined): string | null {
   if (raw == null || typeof raw !== 'string') return null;
-  const u = raw.trim();
-  if (!u) return null;
-  if (u.startsWith('http://') || u.startsWith('https://') || u.startsWith('blob:')) {
-    return u;
+  const u0 = raw.trim();
+  if (!u0) return null;
+  if (u0.startsWith('blob:')) return u0;
+  if (u0.startsWith('http://') || u0.startsWith('https://')) {
+    return normalizeRemoteMediaUrl(u0);
   }
+  const u = u0;
   if (u.startsWith('file:') || u.startsWith('zip://')) {
     return null;
   }

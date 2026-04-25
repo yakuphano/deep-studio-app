@@ -15,6 +15,7 @@ interface PolylineLayerProps {
   imageToScreen: (x: number, y: number) => { x: number; y: number };
   onSelect: (id: string) => void;
   activeTool: string;
+  labelColorOverrides?: Record<string, string>;
 }
 
 export const PolylineLayer: React.FC<PolylineLayerProps> = ({
@@ -24,8 +25,9 @@ export const PolylineLayer: React.FC<PolylineLayerProps> = ({
   imageToScreen: _imageToScreen,
   onSelect,
   activeTool,
+  labelColorOverrides,
 }) => {
-  const color = resolveAnnotationLabelColor(annotation.label);
+  const color = resolveAnnotationLabelColor(annotation.label, labelColorOverrides);
   const pr = screenConstantRadius(scale, 3);
   const labelText = annotationLabelToString(annotation.label).trim();
   const badgeLayout =

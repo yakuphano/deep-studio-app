@@ -16,6 +16,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '@/lib/supabase';
+import { splitRemoteMediaUrlsFromInput } from '@/lib/mediaUrl';
+import {
+  importRemoteMediaViaEdge,
+  logImportFailures,
+  isZipDatasetUrl,
+  isZipDatasetResponse,
+} from '@/lib/importRemoteMedia';
 import JSZip from 'jszip';
 
 const WEB_FILE_ACCEPT =
@@ -257,6 +264,7 @@ export default function CreateAudioTaskScreen() {
 
     try {
       let tasksToCreate: Record<string, unknown>[] = [];
+      let remoteImportSkipped = 0;
 
       if (sourceType === 'local' && selectedFile) {
         const isZip =
@@ -314,25 +322,89 @@ export default function CreateAudioTaskScreen() {
           ];
         }
       } else if (sourceType === 'remote') {
-        const url = remoteUrl.trim();
-        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-          notify('Uzak adres https:// ile başlamalı.');
+        const urls = splitRemoteMediaUrlsFromInput(remoteUrl);
+        if (urls.length === 0) {
+          notify(
+            'Geçerli en az bir http(s) adresi girin. Birden fazla URL: boşluk, virgül, ;, | veya yeni satır ile ayırın.'
+          );
           setIsCreating(false);
           return;
         }
-        tasksToCreate = [
-          {
-            title: taskData.title,
-            company_name: taskData.company_name,
-            description: taskData.description,
-            language: taskData.language,
-            price: taskData.price,
-            audio_url: url,
-            type: 'audio',
-            category: 'audio',
-            is_pool_task: true,
-          },
-        ];
+        if (urls.length > 1 && urls.some((u) => isZipDatasetUrl(u))) {
+          notify('.zip adresi yalnızca tek başına yapıştırılabilir.');
+          setIsCreating(false);
+          return;
+        }
+        setIsUploading(true);
+        setUploadProgress(15);
+
+        if (urls.length === 1 && isZipDatasetUrl(urls[0])) {
+          setUploadProgress(30);
+          const zipPayload = await importRemoteMediaViaEdge(remoteUrl, 'audio', {
+            zipTaskTemplate: {
+              company_name: taskData.company_name,
+              title_prefix: taskData.title,
+              description: taskData.description || '',
+              price: Number(taskData.price) || 0,
+              language: taskData.language,
+            },
+          });
+          setIsUploading(false);
+          if (!isZipDatasetResponse(zipPayload)) {
+            notify('ZIP yanıtı alınamadı.');
+            setIsCreating(false);
+            return;
+          }
+          if (zipPayload.created === 0) {
+            notify('ZIP içinden görev oluşturulamadı. Konsolu kontrol edin.');
+            setIsCreating(false);
+            return;
+          }
+          setUploadProgress(100);
+          zipPayload.errors?.forEach((e) => console.warn('[ZIP import]', e));
+          const skipPart = zipPayload.skipped > 0 ? `\nAtlanan: ${zipPayload.skipped}` : '';
+          const msg = `ZIP veri seti içe aktarıldı.\nOluşturulan görev: ${zipPayload.created}${skipPart}`;
+          if (Platform.OS === 'web') window.alert(msg);
+          else Alert.alert('ZIP içe aktarma', msg);
+          router.push('/admin');
+          return;
+        }
+
+        const payload = await importRemoteMediaViaEdge(remoteUrl, 'audio');
+        if (!('results' in payload) || !Array.isArray(payload.results)) {
+          notify('Sunucu yanıtı geçersiz.');
+          setIsCreating(false);
+          setIsUploading(false);
+          return;
+        }
+        logImportFailures(payload.results, 'CreateAudioTask');
+        const ok = payload.results.filter((r) => r.publicUrl);
+        if (ok.length === 0) {
+          notify(
+            'Hiçbir ses içe aktarılamadı. import-remote-media Edge Function ve SUPABASE_SERVICE_ROLE_KEY secret’ını kontrol edin; ayrıntılar konsolda.'
+          );
+          setIsCreating(false);
+          setIsUploading(false);
+          return;
+        }
+        const modeNote =
+          payload.manifestMode && payload.manifestMode !== 'single'
+            ? `\n\nManifest: ${payload.manifestMode} (${payload.expandedCount ?? ok.length} adres)`
+            : '';
+        tasksToCreate = ok.map((r, index) => ({
+          title: ok.length > 1 ? `${taskData.title} - ${index + 1}` : taskData.title,
+          company_name: taskData.company_name,
+          description: `${taskData.description}${modeNote}\n\nKaynak: ${r.sourceUrl}`.trim(),
+          language: taskData.language,
+          price: taskData.price,
+          audio_url: r.publicUrl!,
+          type: 'audio',
+          category: 'audio',
+          is_pool_task: true,
+        }));
+        remoteImportSkipped = payload.results.length - ok.length;
+        setUploadProgress(100);
+        setIsUploading(false);
       } else if (sourceType === 'record') {
         if (!recordedBlob) {
           notify('Önce kayıt yapın.');
@@ -369,8 +441,12 @@ export default function CreateAudioTaskScreen() {
       }
 
       const n = data?.length ?? tasksToCreate.length;
-      if (Platform.OS === 'web') window.alert(`Success: ${n} task(s) created successfully!`);
-      else Alert.alert('Success', `${n} task(s) created successfully!`);
+      const skipNote =
+        sourceType === 'remote' && remoteImportSkipped > 0
+          ? ` (${remoteImportSkipped} URL atlandı — konsol)`
+          : '';
+      if (Platform.OS === 'web') window.alert(`Tamam: ${n} görev oluşturuldu${skipNote}.`);
+      else Alert.alert('Success', `${n} task(s) created!${skipNote}`);
       router.push('/admin');
     } catch (err: unknown) {
       console.error('KRITIK HATA', err);
@@ -541,7 +617,7 @@ export default function CreateAudioTaskScreen() {
                     style={[styles.input, styles.urlInput, focusedInput === 'url' && styles.inputFocused]}
                     value={remoteUrl}
                     onChangeText={setRemoteUrl}
-                    placeholder="https://... ile doğrudan erişilebilir ses adresi"
+                    placeholder=".mp3 / .wav | .txt | .json | .zip veri seti"
                     placeholderTextColor="#9ca3af"
                     onFocus={() => setFocusedInput('url')}
                     onBlur={() => setFocusedInput(null)}

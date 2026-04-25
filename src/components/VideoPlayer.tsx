@@ -1,40 +1,122 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useRef, useState, useCallback } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Video } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/theme/colors';
 
-interface VideoPlayerProps {
+/** Tam kontrollü kullanım (parent state) veya yalnızca `videoUrl` ile basit oynatma */
+export type VideoPlayerProps = {
   videoUrl: string | null;
-  isPlaying: boolean;
-  position: number;
-  duration: number | null;
-  playbackSpeed: number;
-  onTogglePlayPause: () => void;
-  onSeek: (e: any) => void;
-  onSpeedUp: () => void;
-  onSpeedDown: () => void;
-  onResetSpeed: () => void;
-  onPlaybackStatusUpdate: (status: any) => void;
-  videoRef: React.RefObject<any>;
-  progressBarWidth: React.RefObject<number>;
-}
+  /** TaskMediaView uyumluluğu — şu an kullanılmıyor */
+  annotations?: unknown[];
+  onAnnotationsChange?: (annotations: unknown[]) => void;
+  isPlaying?: boolean;
+  position?: number;
+  duration?: number | null;
+  playbackSpeed?: number;
+  onTogglePlayPause?: () => void;
+  onSeek?: (e: { nativeEvent: { locationX: number } }) => void;
+  onSpeedUp?: () => void;
+  onSpeedDown?: () => void;
+  onResetSpeed?: () => void;
+  onPlaybackStatusUpdate?: (status: Record<string, unknown>) => void;
+  videoRef?: React.RefObject<Video | null>;
+  progressBarWidth?: React.MutableRefObject<number>;
+};
 
-export default function VideoPlayer({
-  videoUrl,
-  isPlaying,
-  position,
-  duration,
-  playbackSpeed,
-  onTogglePlayPause,
-  onSeek,
-  onSpeedUp,
-  onSpeedDown,
-  onResetSpeed,
-  onPlaybackStatusUpdate,
-  videoRef,
-  progressBarWidth
-}: VideoPlayerProps) {
+export default function VideoPlayer(props: VideoPlayerProps) {
+  const {
+    videoUrl,
+    isPlaying: isPlayingProp,
+    position: positionProp,
+    duration: durationProp,
+    playbackSpeed: speedProp,
+    onTogglePlayPause,
+    onSeek,
+    onSpeedUp,
+    onSpeedDown,
+    onResetSpeed,
+    onPlaybackStatusUpdate: onPlaybackProp,
+    videoRef: videoRefProp,
+    progressBarWidth: progressBarWidthProp,
+  } = props;
+
+  const simpleMode = onTogglePlayPause == null;
+
+  const fallbackVideoRef = useRef<Video | null>(null);
+  const videoRef = videoRefProp ?? fallbackVideoRef;
+
+  const fallbackProgressW = useRef(300);
+  const progressBarWidth = progressBarWidthProp ?? fallbackProgressW;
+
+  const [playInternal, setPlayInternal] = useState(false);
+  const [posInternal, setPosInternal] = useState(0);
+  const [durInternal, setDurInternal] = useState<number | null>(null);
+  const [speedInternal, setSpeedInternal] = useState(1);
+
+  const isPlaying = simpleMode ? playInternal : Boolean(isPlayingProp);
+  const position = simpleMode ? posInternal : Number(positionProp ?? 0);
+  const duration = simpleMode ? durInternal : durationProp ?? null;
+  const playbackSpeed = simpleMode ? speedInternal : Number(speedProp ?? 1);
+
+  const handleStatus = useCallback(
+    (status: Record<string, unknown>) => {
+      if (onPlaybackProp) {
+        onPlaybackProp(status);
+        return;
+      }
+      if (!status?.isLoaded) return;
+      const pm = status.positionMillis;
+      const dm = status.durationMillis;
+      if (typeof pm === 'number') setPosInternal(pm / 1000);
+      if (typeof dm === 'number' && dm > 0) setDurInternal(dm / 1000);
+    },
+    [onPlaybackProp]
+  );
+
+  const togglePlay = useCallback(() => {
+    if (onTogglePlayPause) {
+      onTogglePlayPause();
+      return;
+    }
+    setPlayInternal((p) => !p);
+  }, [onTogglePlayPause]);
+
+  const seek = useCallback(
+    async (e: { nativeEvent: { locationX: number } }) => {
+      if (onSeek) {
+        onSeek(e);
+        return;
+      }
+      const w = progressBarWidth.current || 300;
+      const pct = Math.max(0, Math.min(1, e.nativeEvent.locationX / w));
+      const d = duration ?? 0;
+      if (d <= 0) return;
+      const ms = pct * d * 1000;
+      try {
+        await videoRef.current?.setPositionAsync?.(ms);
+      } catch {
+        /* ignore */
+      }
+      setPosInternal(pct * d);
+    },
+    [onSeek, duration, progressBarWidth, videoRef]
+  );
+
+  const speedUp = useCallback(() => {
+    if (onSpeedUp) return onSpeedUp();
+    setSpeedInternal((s) => Math.min(2, s + 0.25));
+  }, [onSpeedUp]);
+
+  const speedDown = useCallback(() => {
+    if (onSpeedDown) return onSpeedDown();
+    setSpeedInternal((s) => Math.max(0.5, s - 0.25));
+  }, [onSpeedDown]);
+
+  const resetSpeed = useCallback(() => {
+    if (onResetSpeed) return onResetSpeed();
+    setSpeedInternal(1);
+  }, [onResetSpeed]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -52,52 +134,38 @@ export default function VideoPlayer({
 
   return (
     <View style={styles.container}>
-      {/* Video Player */}
       <View style={styles.videoContainer}>
         <Video
-          ref={videoRef}
+          ref={videoRef as React.RefObject<Video>}
           source={{ uri: videoUrl }}
           style={styles.video}
           useNativeControls={false}
           resizeMode="contain"
           shouldPlay={isPlaying}
-          onPlaybackStatusUpdate={onPlaybackStatusUpdate}
+          rate={playbackSpeed}
+          onPlaybackStatusUpdate={handleStatus as (s: unknown) => void}
         />
       </View>
 
-      {/* Video Controls */}
       <View style={styles.controlsContainer}>
-        {/* Play/Pause Button */}
-        <TouchableOpacity
-          style={styles.playButton}
-          onPress={onTogglePlayPause}
-        >
-          <Ionicons 
-            name={isPlaying ? 'pause' : 'play'} 
-            size={24} 
-            color={colors.text} 
-          />
+        <TouchableOpacity style={styles.playButton} onPress={togglePlay}>
+          <Ionicons name={isPlaying ? 'pause' : 'play'} size={24} color={colors.text} />
         </TouchableOpacity>
 
-        {/* Progress Bar */}
         <View style={styles.progressContainer}>
           <TouchableOpacity
             style={styles.progressBar}
             onLayout={(e) => {
-              if (progressBarWidth.current !== undefined) {
-                progressBarWidth.current = e.nativeEvent.layout.width;
-              }
+              progressBarWidth.current = e.nativeEvent.layout.width;
             }}
-            onPress={onSeek}
+            onPress={seek}
           >
             <View style={styles.progressBackground}>
-              <View 
+              <View
                 style={[
-                  styles.progressFill, 
-                  { 
-                    width: duration ? `${(position / duration) * 100}%` : '0%' 
-                  }
-                ]} 
+                  styles.progressFill,
+                  { width: duration ? `${(position / (duration || 1)) * 100}%` : '0%' },
+                ]}
               />
             </View>
           </TouchableOpacity>
@@ -106,25 +174,15 @@ export default function VideoPlayer({
           </Text>
         </View>
 
-        {/* Speed Controls */}
         <View style={styles.speedContainer}>
-          <TouchableOpacity
-            style={styles.speedButton}
-            onPress={onSpeedDown}
-          >
+          <TouchableOpacity style={styles.speedButton} onPress={speedDown}>
             <Ionicons name="remove" size={16} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.speedText}>{playbackSpeed}x</Text>
-          <TouchableOpacity
-            style={styles.speedButton}
-            onPress={onSpeedUp}
-          >
+          <TouchableOpacity style={styles.speedButton} onPress={speedUp}>
             <Ionicons name="add" size={16} color={colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.resetButton}
-            onPress={onResetSpeed}
-          >
+          <TouchableOpacity style={styles.resetButton} onPress={resetSpeed}>
             <Text style={styles.resetButtonText}>1x</Text>
           </TouchableOpacity>
         </View>
@@ -148,6 +206,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   controlsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.surfaceElevated,
     padding: 16,
     borderTopWidth: 1,

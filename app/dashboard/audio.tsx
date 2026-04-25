@@ -58,8 +58,6 @@ export default function AudioTasksScreen() {
   const userId = user?.id ?? session?.user?.id ?? null;
   const navigatorReady = rootNavigationState?.key != null;
 
-  if (!user || !session) return <View><Text>Yükleniyor...</Text></View>;
-
   const fetchAudioTasks = useCallback(async (showLoading = true) => {
     if (!userId) return;
     if (showLoading) setLoading(true);
@@ -105,7 +103,16 @@ export default function AudioTasksScreen() {
     } else {
       router.replace('/dashboard');
     }
-  }, []);
+  }, [router]);
+
+  if (!user || !session) {
+    return (
+      <View style={styles.authLoading}>
+        <ActivityIndicator size="large" color="#22c55e" />
+        <Text style={styles.authLoadingText}>Yükleniyor...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -128,11 +135,12 @@ export default function AudioTasksScreen() {
           <ActivityIndicator size="large" color="#ffffff" style={styles.loader} />
         ) : audioTasks.length === 0 ? (
           <View style={styles.emptyWrap}>
-            <Ionicons name="alert-circle-outline" size={64} color="#64748b" />
-            <Text style={styles.emptyTitle}>Görev Bulunamadı</Text>
-
-            <TouchableOpacity style={styles.emptyRefresh} onPress={() => fetchAudioTasks(true)}>
-              <Text style={styles.emptyRefreshText}>Görevleri Yenile</Text>
+            <Ionicons name="mic-outline" size={64} color="#22c55e" />
+            <Text style={styles.emptyTitle}>No Audio Tasks</Text>
+            <Text style={styles.emptyDescription}>No audio tasks found in your language.</Text>
+            <TouchableOpacity style={styles.emptyRefresh} onPress={() => fetchAudioTasks(true)} activeOpacity={0.8}>
+              <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.emptyRefreshText}>Refresh Tasks</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -167,6 +175,17 @@ export default function AudioTasksScreen() {
 }
 
 const styles = StyleSheet.create({
+  authLoading: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  authLoadingText: {
+    color: '#f8fafc',
+    fontSize: 15,
+  },
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
@@ -247,19 +266,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
   },
   emptyTitle: {
-    color: '#fff',
-    fontSize: 18,
-    marginTop: 10,
+    color: '#f8fafc',
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  emptyDescription: {
+    fontSize: 16,
+    color: '#94a3b8',
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 24,
   },
   emptyRefresh: {
-    marginTop: 20,
-    backgroundColor: '#3b82f6',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+    marginTop: 24,
+    backgroundColor: '#22c55e',
+    paddingVertical: 14,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyRefreshText: {
     color: '#fff',
-    fontWeight: 'bold',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });

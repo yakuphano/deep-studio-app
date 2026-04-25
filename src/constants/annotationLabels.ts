@@ -5,6 +5,46 @@ export const ANNOTATION_LABELS = [
   'Light Post', 'Traffic Sign'
 ] as const;
 
+export type CustomLabelDefinition = { label: string; color: string };
+
+function normalizeHexColor(c: string): string | null {
+  const x = c.trim();
+  if (/^#[0-9a-f]{6}$/i.test(x)) return x.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(x)) {
+    const r = x[1],
+      g = x[2],
+      b = x[3];
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  return null;
+}
+
+export function customLabelDefinitionsToMap(
+  defs: CustomLabelDefinition[]
+): Record<string, string> {
+  const m: Record<string, string> = {};
+  for (const d of defs) {
+    const k = String(d.label ?? '').trim();
+    if (!k) continue;
+    const c = String(d.color ?? '').trim();
+    m[k] = normalizeHexColor(c) ?? LABEL_COLORS['Other'];
+  }
+  return m;
+}
+
+/** Varsayılan etiketler + kullanıcı ekleri (chip listesi, tekilleştirilmiş) */
+export function mergeAnnotationChipLabels(extraLabels: string[]): string[] {
+  const out = [...(ANNOTATION_LABELS as unknown as string[])];
+  const seen = new Set(out);
+  for (const raw of extraLabels) {
+    const s = String(raw ?? '').trim();
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
 export const LABEL_COLORS: Record<string, string> = {
   'Car': '#ef4444',         // red
   'Person': '#6b7280',      // gray
@@ -26,12 +66,16 @@ export const LABEL_COLORS: Record<string, string> = {
   'Traffic Sign': '#f59e0b',         // amber
 };
 
-/** Etiket metninden LABEL_COLORS anahtarına çözümler (ObjectList ile aynı palet) */
-export function resolveAnnotationLabelColor(label: unknown): string {
+/** Etiket metninden renk; `overrides` işe özel sınıf renkleri (canvas + liste) */
+export function resolveAnnotationLabelColor(
+  label: unknown,
+  overrides?: Record<string, string>
+): string {
   const labelStr =
     typeof label === 'object' && label !== null
       ? String((label as any).name ?? (label as any).label ?? '').trim()
       : String(label ?? '').trim();
+  if (labelStr && overrides?.[labelStr]) return overrides[labelStr];
   if (labelStr && LABEL_COLORS[labelStr]) return LABEL_COLORS[labelStr];
   return LABEL_COLORS['Other'];
 }

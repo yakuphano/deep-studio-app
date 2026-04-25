@@ -1,5 +1,5 @@
-import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { View, ScrollView, TouchableOpacity, Text, TextInput } from 'react-native';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { View, ScrollView, TouchableOpacity, Text, TextInput, Platform, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTaskWorkbench } from '@/hooks/useTaskWorkbench';
@@ -7,9 +7,8 @@ import { taskDetailStyles } from '@/theme/taskDetailStyles';
 import TaskHeader from '@/components/workbench/TaskHeader';
 import { TaskMediaView, type TaskMediaViewCanvasHandle } from '@/components/task/TaskMediaView';
 import { TaskEditor } from '@/components/task/TaskEditor';
-import VideoPlayer from '../../components/VideoPlayer';
 import ImageAnnotationThreeColumn from '@/components/workbench/ImageAnnotationThreeColumn';
-import { ANNOTATION_LABELS } from '@/constants/annotationLabels';
+import { ANNOTATION_LABELS, type CustomLabelDefinition } from '@/constants/annotationLabels';
 
 export default function TaskDetailScreen() {
   const params = useLocalSearchParams<{ id: string | string[] }>();
@@ -48,17 +47,69 @@ export default function TaskDetailScreen() {
   const [selectedLabel, setSelectedLabel] = useState<string>(
     String(ANNOTATION_LABELS[0] ?? 'Other')
   );
+  const [extraLabelDefinitions, setExtraLabelDefinitions] = useState<CustomLabelDefinition[]>([]);
   const imageCanvasRef = useRef<TaskMediaViewCanvasHandle | null>(null);
   const activeToolRef = useRef(activeTool);
   useLayoutEffect(() => {
     activeToolRef.current = activeTool;
   }, [activeTool]);
 
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    if (loading || !task) return;
+    const tl = String(task.type ?? '').toLowerCase();
+    const cat = String(task.category ?? '').toLowerCase();
+    const hasVideoUrl = String(task.video_url ?? '').trim().length > 0;
+    const isVideo =
+      tl === 'video' || cat.includes('video') || (hasVideoUrl && tl !== 'image' && tl !== 'audio');
+    if (!isVideo) return;
+    router.replace(`/(tabs)/video-annotation?id=${encodeURIComponent(String(id))}` as any);
+  }, [loading, task, id, router]);
+
   const handleUpdateAnnotationLabel = useCallback(
     (annotationId: string, label: string) => {
       setSelectedLabel(label);
       setAnnotations((prev: any[]) =>
         prev.map((a) => (a.id === annotationId ? { ...a, label } : a))
+      );
+    },
+    [setAnnotations]
+  );
+
+  const builtInLabelSet = useMemo(
+    () => new Set<string>(ANNOTATION_LABELS as unknown as string[]),
+    []
+  );
+
+  const handleAddExtraLabelOption = useCallback(
+    (raw: string, color: string) => {
+      const label = raw.trim();
+      if (!label || builtInLabelSet.has(label)) return;
+      const c = String(color ?? '').trim();
+      setExtraLabelDefinitions((prev) => {
+        const i = prev.findIndex((d) => d.label === label);
+        if (i >= 0) {
+          const next = [...prev];
+          next[i] = { label, color: c };
+          return next;
+        }
+        return [...prev, { label, color: c }];
+      });
+    },
+    [builtInLabelSet]
+  );
+
+  const handleRemoveExtraLabelOption = useCallback(
+    (label: string) => {
+      setExtraLabelDefinitions((prev) => prev.filter((d) => d.label !== label));
+      setAnnotations((prev: any[]) =>
+        prev.map((a) => {
+          const cur =
+            typeof a.label === 'object' && a.label !== null
+              ? String((a.label as any).name ?? (a.label as any).label ?? '')
+              : String(a.label ?? '');
+          return cur === label ? { ...a, label: 'Other' } : a;
+        })
       );
     },
     [setAnnotations]
@@ -105,8 +156,9 @@ export default function TaskDetailScreen() {
     );
   }
 
-  // Check if task type is undefined
-  if (!task?.type) {
+  const hasVideoUrl = String(task?.video_url ?? '').trim().length > 0;
+  const hasTypeField = task?.type != null && String(task.type).trim() !== '';
+  if (!hasTypeField && !hasVideoUrl) {
     return (
       <View style={taskDetailStyles.container}>
         <Text style={taskDetailStyles.loadingText}>Loading task type...</Text>
@@ -117,6 +169,12 @@ export default function TaskDetailScreen() {
   const typeLc = (task?.type ?? '').toString().toLowerCase();
   const catLc = (task?.category ?? '').toString().toLowerCase();
   const hasImageUrl = String(task?.image_url ?? '').trim().length > 0;
+  const isVideoTaskRoute =
+    typeLc === 'video' ||
+    catLc === 'video' ||
+    catLc.includes('video') ||
+    (hasVideoUrl && !hasImageUrl);
+
   /** Görsel görev: tip veya (video olmayan) image_url — ses arayüzüne düşmesini engeller */
   const isImageTask =
     typeLc === 'image' ||
@@ -128,6 +186,55 @@ export default function TaskDetailScreen() {
       typeLc === 'transcription' ||
       catLc.includes('transcription') ||
       catLc.includes('audio'));
+
+  if (isVideoTaskRoute) {
+    if (Platform.OS === 'web') {
+      return (
+        <View style={[taskDetailStyles.container, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
+          <ActivityIndicator size="large" color="#8b5cf6" />
+          <Text style={{ color: '#94a3b8', marginTop: 16, textAlign: 'center' }}>
+            Video annotation açılıyor…
+          </Text>
+        </View>
+      );
+    }
+    return (
+      <View style={taskDetailStyles.container}>
+        <TaskHeader title={task?.title || ''} price={task?.price} taskTypeLabel={taskTypeLabel} onBack={handleExit} />
+        <ScrollView style={taskDetailStyles.scroll} contentContainerStyle={taskDetailStyles.scrollContent}>
+          <TaskMediaView
+            ref={imageCanvasRef}
+            task={task}
+            taskType="video"
+            annotations={annotations}
+            activeTool={activeTool}
+            selectedAnnotationId={selectedAnnotationId}
+            onToolChange={setActiveTool}
+            onAnnotationSelect={handleCanvasAnnotationSelect}
+            onAnnotationDelete={handleAnnotationDelete}
+            onAnnotationsChange={setAnnotations}
+            selectedLabel={selectedLabel}
+            labelColorOverrides={Object.fromEntries(
+              extraLabelDefinitions.map((d) => [d.label, d.color] as const)
+            )}
+          />
+        </ScrollView>
+        <View style={taskDetailStyles.bottomButtonBar}>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity style={taskDetailStyles.exitButton} onPress={handleExit}>
+              <Text style={taskDetailStyles.exitButtonText}>Exit</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={taskDetailStyles.submitExitButton} onPress={() => handleSubmit(false)}>
+              <Text style={taskDetailStyles.submitExitButtonText}>Submit & Exit</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity style={taskDetailStyles.submitButtonGreen} onPress={() => handleSubmit(true)}>
+            <Text style={taskDetailStyles.submitButtonGreenText}>Submit Next</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   // Görüntü etiketleme — ses düzeninden önce
   if (isImageTask) {
@@ -146,6 +253,9 @@ export default function TaskDetailScreen() {
             onSelectAnnotation={setSelectedAnnotationId}
             onUpdateAnnotationLabel={handleUpdateAnnotationLabel}
             onDeleteAnnotation={handleAnnotationDelete}
+            extraLabelDefinitions={extraLabelDefinitions}
+            onAddExtraLabelOption={handleAddExtraLabelOption}
+            onRemoveExtraLabelOption={handleRemoveExtraLabelOption}
           >
             <TaskMediaView
               ref={imageCanvasRef}
@@ -220,145 +330,6 @@ export default function TaskDetailScreen() {
             onAIFix={handleAIFix}
             taskType={taskType}
           />
-        </ScrollView>
-        
-        <View style={taskDetailStyles.bottomButtonBar}>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <TouchableOpacity style={taskDetailStyles.exitButton} onPress={handleExit}>
-              <Text style={taskDetailStyles.exitButtonText}>Exit</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={taskDetailStyles.submitExitButton} onPress={() => handleSubmit(false)}>
-              <Text style={taskDetailStyles.submitExitButtonText}>Submit & Exit</Text>
-            </TouchableOpacity>
-          </View>
-          
-          <TouchableOpacity style={taskDetailStyles.submitButtonGreen} onPress={() => handleSubmit(true)}>
-            <Text style={taskDetailStyles.submitButtonGreenText}>Submit Next</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  // Video Task
-  if (task?.type?.toLowerCase() === 'video') {
-    const videoUrl = task?.video_url;
-    
-    return (
-      <View style={taskDetailStyles.container}>
-        <TaskHeader title={task?.title || ''} price={task?.price} taskTypeLabel={taskTypeLabel} onBack={handleExit} />
-        
-        <ScrollView style={taskDetailStyles.scroll} contentContainerStyle={taskDetailStyles.scrollContent}>
-          {/* VideoPlayer - En Üstte */}
-          <View style={{ marginBottom: 16 }}>
-            {videoUrl ? (
-              <View style={{
-                height: 200,
-                backgroundColor: '#000',
-                borderRadius: 8,
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderWidth: 1,
-                borderColor: '#e2e8f0'
-              }}>
-                <Text style={{ color: '#fff', fontSize: 14 }}>Video Player</Text>
-                <Text style={{ color: '#64748b', fontSize: 12, marginTop: 8 }}>
-                  {videoUrl}
-                </Text>
-              </View>
-            ) : (
-              <View style={{ 
-                height: 200, 
-                backgroundColor: '#f1f5f9', 
-                justifyContent: 'center', 
-                alignItems: 'center',
-                borderRadius: 8,
-                borderWidth: 1,
-                borderColor: '#e2e8f0'
-              }}>
-                <Text style={{ color: '#64748b', fontSize: 16 }}>No video available</Text>
-              </View>
-            )}
-          </View>
-          
-          {/* TRANSCRIPTION Başlığı ve Butonlar */}
-          <View style={{ paddingHorizontal: 16 }}>
-            {/* TRANSCRIPTION Header */}
-            <Text style={{
-              fontSize: 14,
-              fontWeight: '600',
-              color: '#64748b',
-              marginBottom: 12,
-              textTransform: 'uppercase',
-            }}>
-              TRANSCRIPTION
-            </Text>
-
-            {/* Small Purple Buttons - Side by Side */}
-            <View style={{
-              flexDirection: 'row',
-              alignSelf: 'flex-start',
-              gap: 8,
-              marginBottom: 16,
-            }}>
-              <TouchableOpacity
-                style={{
-                  backgroundColor: '#8b5cf6',
-                  paddingVertical: 6,
-                  paddingHorizontal: 12,
-                  borderRadius: 4,
-                }}
-                onPress={handleAITranscription}
-              >
-                <Text style={{
-                  color: '#fff',
-                  fontSize: 12,
-                  fontWeight: '500',
-                }}>
-                  AI Yazıya Dök
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={{
-                  backgroundColor: '#8b5cf6',
-                  paddingVertical: 6,
-                  paddingHorizontal: 12,
-                  borderRadius: 4,
-                }}
-                onPress={handleAIFix}
-              >
-                <Text style={{
-                  color: '#fff',
-                  fontSize: 12,
-                  fontWeight: '500',
-                }}>
-                  Yazım Kurallarını Düzelt
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Large White TextInput */}
-            <TextInput
-              style={{
-                backgroundColor: '#fff',
-                borderRadius: 8,
-                padding: 16,
-                fontSize: 16,
-                color: '#000',
-                minHeight: 120,
-                textAlignVertical: 'top',
-                borderWidth: 1,
-                borderColor: '#e2e8f0',
-              }}
-              value={transcription}
-              onChangeText={setTranscription}
-              placeholder="Enter transcription here..."
-              placeholderTextColor="#64748b"
-              multiline
-            />
-          </View>
         </ScrollView>
         
         <View style={taskDetailStyles.bottomButtonBar}>

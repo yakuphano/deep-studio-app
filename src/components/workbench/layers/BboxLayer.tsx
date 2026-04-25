@@ -13,6 +13,7 @@ interface BboxLayerProps {
   scale: number;
   imageToScreen: (x: number, y: number) => { x: number; y: number };
   onSelect: (id: string) => void;
+  labelColorOverrides?: Record<string, string>;
 }
 
 /**
@@ -24,8 +25,9 @@ export const BboxLayer: React.FC<BboxLayerProps> = ({
   isSelected,
   scale,
   onSelect,
+  labelColorOverrides,
 }) => {
-  const color = resolveAnnotationLabelColor(annotation.label);
+  const color = resolveAnnotationLabelColor(annotation.label, labelColorOverrides);
   const { x, y, width, height } = annotation;
   const labelText = String(annotation.label ?? '').trim();
   const badgeLayout = labelText ? getAnnotationLabelBadgeLayout(labelText, scale) : null;

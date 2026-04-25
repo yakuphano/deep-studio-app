@@ -34,6 +34,7 @@ interface TaskMediaViewProps {
   onBrushColorChange?: (color: string) => void;
   brushPaletteOpen?: boolean;
   onBrushPaletteOpenChange?: (open: boolean) => void;
+  labelColorOverrides?: Record<string, string>;
 }
 
 export const TaskMediaView = forwardRef<TaskMediaViewCanvasHandle | null, TaskMediaViewProps>(
@@ -56,6 +57,7 @@ export const TaskMediaView = forwardRef<TaskMediaViewCanvasHandle | null, TaskMe
       onBrushColorChange,
       brushPaletteOpen,
       onBrushPaletteOpenChange,
+      labelColorOverrides,
     },
     ref
   ) {
@@ -124,6 +126,7 @@ export const TaskMediaView = forwardRef<TaskMediaViewCanvasHandle | null, TaskMe
                 onBrushColorChange={onBrushColorChange}
                 brushPaletteOpen={brushPaletteOpen}
                 onBrushPaletteOpenChange={onBrushPaletteOpenChange}
+                labelColorOverrides={labelColorOverrides}
               />
             ) : (
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 }}>

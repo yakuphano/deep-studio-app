@@ -15,6 +15,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '@/lib/supabase';
+import { splitRemoteMediaUrlsFromInput } from '@/lib/mediaUrl';
+import {
+  importRemoteMediaViaEdge,
+  logImportFailures,
+  isZipDatasetUrl,
+  isZipDatasetResponse,
+} from '@/lib/importRemoteMedia';
 
 /** Web file dialog + DocumentPicker: zip ve video */
 const WEB_FILE_ACCEPT =
@@ -405,6 +412,7 @@ export default function CreateVideoTaskScreen() {
 
   const handleCreateTask = async () => {
     setIsCreating(true);
+    let remoteImportSkipped = 0;
     try {
       if (!taskData.title) {
         notifyUser('Eksik Bilgi', 'Lütfen Başlığı doldurun!');
@@ -416,7 +424,7 @@ export default function CreateVideoTaskScreen() {
         return;
       }
 
-      let videoUrl = '';
+      const rowsToInsert: Record<string, unknown>[] = [];
 
       if (sourceType === 'local') {
         if (!selectedFile) {
@@ -432,26 +440,143 @@ export default function CreateVideoTaskScreen() {
           url = await uploadToStorage(selectedFile, { trigger: 'auto' });
           if (!url) return;
         }
-        videoUrl = url;
+
+        if (isZipFile(selectedFile.name, selectedFile.mimeType)) {
+          const companyName = (taskData.company_name || taskData.title || 'import').trim();
+          if (!companyName) {
+            notifyUser('Eksik Bilgi', 'ZIP içe aktarma için Şirket Adı veya Başlık gerekir.');
+            return;
+          }
+          if (!taskData.title?.trim()) {
+            notifyUser('Eksik Bilgi', 'ZIP görev başlığı şablonu (title) gerekir.');
+            return;
+          }
+          setFileStatusMessage('ZIP veri seti sunucuda işleniyor (içindeki her video ayrı görev olur)…');
+          setUploadProgress(30);
+          const zipPayload = await importRemoteMediaViaEdge(url, 'video', {
+            zipTaskTemplate: {
+              company_name: companyName,
+              title_prefix: taskData.title.trim(),
+              description: taskData.description || '',
+              price: Number(taskData.price),
+            },
+          });
+          setFileStatusMessage(null);
+          if (!isZipDatasetResponse(zipPayload)) {
+            notifyUser('ZIP', 'Beklenmeyen yanıt. import-remote-media Edge sürümünü kontrol edin.');
+            return;
+          }
+          if (zipPayload.created === 0) {
+            notifyUser(
+              'ZIP',
+              'ZIP içinden video görevi oluşturulamadı. İçerikte .mp4/.webm/.mov/.m4v dosyaları olduğundan ve Edge loglarından emin olun.'
+            );
+            return;
+          }
+          setUploadProgress(100);
+          zipPayload.errors?.forEach((e) => console.warn('[ZIP import]', e));
+          const skipPart = zipPayload.skipped > 0 ? ` Atlanan: ${zipPayload.skipped}.` : '';
+          notifyUser(
+            'ZIP veri seti',
+            `ZIP içe aktarma tamamlandı.\nOluşturulan görev: ${zipPayload.created}.${skipPart}`
+          );
+          router.push('/admin');
+          return;
+        }
+
+        rowsToInsert.push({
+          title: taskData.title,
+          description: taskData.description || '',
+          type: 'video',
+          video_url: url,
+          price: Number(taskData.price),
+        });
       } else if (remoteUrl.trim()) {
-        videoUrl = remoteUrl.trim();
+        const urls = splitRemoteMediaUrlsFromInput(remoteUrl);
+        if (urls.length === 0) {
+          notifyUser(
+            'Eksik Bilgi',
+            'Geçerli en az bir http(s) adresi girin. Birden fazla URL: boşluk, virgül, ;, | veya yeni satır ile ayırın.'
+          );
+          return;
+        }
+        if (urls.length > 1 && urls.some((u) => isZipDatasetUrl(u))) {
+          notifyUser('Eksik Bilgi', '.zip adresi yalnızca tek başına yapıştırılabilir.');
+          return;
+        }
+        setUploadProgress(15);
+
+        if (urls.length === 1 && isZipDatasetUrl(urls[0])) {
+          setFileStatusMessage('ZIP veri seti indiriliyor ve işleniyor (birkaç dakika sürebilir)…');
+          setUploadProgress(25);
+          const zipPayload = await importRemoteMediaViaEdge(remoteUrl, 'video', {
+            zipTaskTemplate: {
+              company_name: (taskData.company_name || taskData.title || 'import').trim(),
+              title_prefix: taskData.title,
+              description: taskData.description || '',
+              price: Number(taskData.price),
+            },
+          });
+          setFileStatusMessage(null);
+          if (!isZipDatasetResponse(zipPayload)) {
+            notifyUser('ZIP', 'Beklenmeyen yanıt.');
+            return;
+          }
+          if (zipPayload.created === 0) {
+            notifyUser('ZIP', 'Görev oluşturulamadı. ZIP içeriği ve Edge loglarını kontrol edin.');
+            return;
+          }
+          setUploadProgress(100);
+          zipPayload.errors?.forEach((e) => console.warn('[ZIP import]', e));
+          const skipPart = zipPayload.skipped > 0 ? ` Atlanan: ${zipPayload.skipped}.` : '';
+          notifyUser(
+            'ZIP veri seti',
+            `ZIP dataset imported successfully.\nCreated ${zipPayload.created} tasks.${skipPart}`
+          );
+          router.push('/admin');
+          return;
+        }
+
+        setFileStatusMessage('Uzak medya sunucuda indiriliyor (Edge Function)…');
+        const payload = await importRemoteMediaViaEdge(remoteUrl, 'video');
+        if (!('results' in payload) || !Array.isArray(payload.results)) {
+          notifyUser('Hata', 'Sunucu yanıtı geçersiz.');
+          setFileStatusMessage(null);
+          return;
+        }
+        logImportFailures(payload.results, 'CreateVideoTask');
+        const ok = payload.results.filter((r) => r.publicUrl);
+        if (ok.length === 0) {
+          notifyUser(
+            'İçe aktarma başarısız',
+            'Hiçbir video yüklenemedi. import-remote-media Edge Function ve SUPABASE_SERVICE_ROLE_KEY secret’ını kontrol edin; ayrıntılar konsolda.'
+          );
+          setFileStatusMessage(null);
+          return;
+        }
+        const modeNote =
+          payload.manifestMode && payload.manifestMode !== 'single'
+            ? `\n\nManifest: ${payload.manifestMode} (${payload.expandedCount ?? ok.length} adres)`
+            : '';
+        for (let i = 0; i < ok.length; i++) {
+          const r = ok[i];
+          rowsToInsert.push({
+            title: ok.length > 1 ? `${taskData.title} - ${i + 1}` : taskData.title,
+            description: `${taskData.description || ''}${modeNote}\n\nKaynak: ${r.sourceUrl}`.trim(),
+            type: 'video',
+            video_url: r.publicUrl,
+            price: Number(taskData.price),
+          });
+        }
+        remoteImportSkipped = payload.results.length - ok.length;
+        setUploadProgress(100);
+        setFileStatusMessage(null);
       } else {
         notifyUser('Eksik Bilgi', 'Lütfen uzak URL girin veya yerel dosya seçin.');
         return;
       }
 
-      const { data, error } = await supabase
-        .from('tasks')
-        .insert([
-          {
-            title: taskData.title,
-            description: taskData.description || '',
-            type: 'video',
-            video_url: videoUrl || null,
-            price: Number(taskData.price),
-          },
-        ])
-        .select();
+      const { data, error } = await supabase.from('tasks').insert(rowsToInsert).select();
 
       if (error) {
         console.error('DB Hatası:', error);
@@ -460,10 +585,12 @@ export default function CreateVideoTaskScreen() {
       }
 
       console.log('Başarılı:', data);
+      const n = data?.length ?? rowsToInsert.length;
+      const skipNote = remoteImportSkipped > 0 ? ` (${remoteImportSkipped} URL atlandı — konsol)` : '';
       if (Platform.OS === 'web') {
-        window.alert('Success: Task created successfully!');
+        window.alert(`Tamam: ${n} görev oluşturuldu${skipNote}.`);
       } else {
-        Alert.alert('Success', 'Task created successfully!');
+        Alert.alert('Success', `${n} task(s) created!${skipNote}`);
       }
 
       router.push('/admin');
@@ -471,6 +598,7 @@ export default function CreateVideoTaskScreen() {
       console.error('Hata:', err);
       notifyUser('Hata', (err as Error).message || 'Something went wrong while creating the task');
     } finally {
+      setFileStatusMessage(null);
       setIsCreating(false);
     }
   };
@@ -638,7 +766,7 @@ export default function CreateVideoTaskScreen() {
                     style={[styles.input, styles.urlInput, focusedInput === 'url' && styles.inputFocused]}
                     value={remoteUrl}
                     onChangeText={setRemoteUrl}
-                    placeholder="Paste Video URL"
+                    placeholder=".mp4 / .webm / .mov | .txt | .json | .zip veri seti"
                     placeholderTextColor="#9ca3af"
                     onFocus={() => setFocusedInput('url')}
                     onBlur={() => setFocusedInput(null)}

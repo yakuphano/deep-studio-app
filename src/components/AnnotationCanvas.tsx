@@ -33,6 +33,7 @@ interface AnnotationCanvasProps {
   onBrushColorChange?: (color: string) => void;
   brushPaletteOpen?: boolean;
   onBrushPaletteOpenChange?: (open: boolean) => void;
+  labelColorOverrides?: Record<string, string>;
 }
 
 const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, AnnotationCanvasProps>(

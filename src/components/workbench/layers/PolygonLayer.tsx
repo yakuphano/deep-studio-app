@@ -15,6 +15,7 @@ interface PolygonLayerProps {
   onSelect: (id: string) => void;
   /** Dört köşe dikdörtgen: bbox ile aynı 8 tutamaç (görsel; isabet üst katmandan). */
   bboxStyleResizeHandles?: boolean;
+  labelColorOverrides?: Record<string, string>;
 }
 
 export const PolygonLayer: React.FC<PolygonLayerProps> = ({
@@ -23,8 +24,9 @@ export const PolygonLayer: React.FC<PolygonLayerProps> = ({
   scale,
   onSelect,
   bboxStyleResizeHandles = false,
+  labelColorOverrides,
 }) => {
-  const color = resolveAnnotationLabelColor(annotation.label);
+  const color = resolveAnnotationLabelColor(annotation.label, labelColorOverrides);
   const fillPoly = hexToRgba(color, isSelected ? 0.14 : 0.08);
   const labelText = String(annotation.label ?? '').trim();
   const badgeLayout =
@@ -32,7 +34,6 @@ export const PolygonLayer: React.FC<PolygonLayerProps> = ({
       ? getAnnotationLabelBadgeLayout(labelText, scale)
       : null;
   const pointsString = annotation.points.map((p) => `${p.x},${p.y}`).join(' ');
-  const vr = screenConstantRadius(scale, 2.6);
   const hr = screenConstantRadius(scale, 3);
   const showBboxHandles =
     Boolean(bboxStyleResizeHandles && isSelected && annotation.points.length === 4);
@@ -73,21 +74,6 @@ export const PolygonLayer: React.FC<PolygonLayerProps> = ({
           fontWeight={isSelected ? '600' : '500'}
         />
       )}
-
-      {!showBboxHandles &&
-        annotation.points.map((point, index) => (
-          <circle
-            key={`vertex-${index}`}
-            cx={point.x}
-            cy={point.y}
-            r={vr}
-            fill={color}
-            stroke="white"
-            strokeWidth={isSelected ? 1.5 : 1}
-            vectorEffect="non-scaling-stroke"
-            style={{ pointerEvents: 'none' }}
-          />
-        ))}
 
       {showBboxHandles && hw >= 1 && hh >= 1 && (
         <>

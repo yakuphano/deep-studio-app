@@ -1,0 +1,9 @@
+# Edge Functions: tarayıcıdan (localhost dahil) çağrıda OPTIONS öncesi JWT gelmez.
+# verify_jwt = false → gateway OPTIONS/POST’u reddetmez; kimlik doğrulama kod içinde yapılır.
+# https://supabase.com/docs/guides/functions/function-configuration
+
+[functions.import-remote-media]
+verify_jwt = false
+
+[functions.task-media]
+verify_jwt = false

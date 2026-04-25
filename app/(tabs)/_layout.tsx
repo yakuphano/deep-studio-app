@@ -17,6 +17,7 @@ export default function MainLayout() {
       <Stack.Screen name="faq" />
       <Stack.Screen name="profile" />
       <Stack.Screen name="task/[id]" />
+      <Stack.Screen name="video-annotation" options={{ headerShown: false }} />
     </Stack>
   );
 }

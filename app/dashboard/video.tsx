@@ -61,8 +61,6 @@ export default function VideoTasksScreen() {
   const userId = user?.id ?? session?.user?.id ?? null;
   const navigatorReady = rootNavigationState?.key != null;
 
-  if (!user || !session) return <View><Text>Loading...</Text></View>;
-
   const fetchVideoTasks = useCallback(
     async (showLoading = true) => {
       if (!userId) return;
@@ -156,6 +154,17 @@ export default function VideoTasksScreen() {
     setRefreshing(false);
   }, [fetchVideoTasks]);
 
+  if (!user || !session) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.authLoading}>
+          <ActivityIndicator size="large" color="#8b5cf6" />
+          <Text style={styles.authLoadingText}>Loading...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.breadcrumbRow}>
@@ -179,10 +188,11 @@ export default function VideoTasksScreen() {
       ) : videoTasks.length === 0 ? (
         <View style={styles.emptyWrap}>
           <Ionicons name="videocam-outline" size={64} color="#8b5cf6" />
-          <Text style={styles.emptyTitle}>Görev Bulunamadı</Text>
-
-          <TouchableOpacity style={styles.emptyRefresh} onPress={() => fetchVideoTasks(true)}>
-            <Text style={styles.emptyRefreshText}>Görevleri Yenile</Text>
+          <Text style={styles.emptyTitle}>No Video Tasks</Text>
+          <Text style={styles.emptyDescription}>No video tasks found in your language.</Text>
+          <TouchableOpacity style={styles.emptyRefresh} onPress={() => fetchVideoTasks(true)} activeOpacity={0.8}>
+            <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.emptyRefreshText}>Refresh Tasks</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -217,6 +227,16 @@ export default function VideoTasksScreen() {
 }
 
 const styles = StyleSheet.create({
+  authLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  authLoadingText: {
+    color: '#f8fafc',
+    fontSize: 15,
+  },
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
@@ -272,19 +292,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
   },
   emptyTitle: {
-    color: '#fff',
-    fontSize: 18,
-    marginTop: 10,
+    color: '#f8fafc',
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  emptyDescription: {
+    fontSize: 16,
+    color: '#94a3b8',
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 24,
   },
   emptyRefresh: {
-    marginTop: 20,
+    marginTop: 24,
     backgroundColor: '#8b5cf6',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyRefreshText: {
     color: '#fff',
-    fontWeight: 'bold',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });

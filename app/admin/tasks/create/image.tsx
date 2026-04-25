@@ -15,6 +15,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '@/lib/supabase';
+import { splitRemoteMediaUrlsFromInput } from '@/lib/mediaUrl';
+import {
+  importRemoteMediaViaEdge,
+  logImportFailures,
+  isZipDatasetUrl,
+  isZipDatasetResponse,
+} from '@/lib/importRemoteMedia';
 import JSZip from 'jszip';
 
 const WEB_FILE_ACCEPT =
@@ -201,6 +208,7 @@ export default function CreateImageTaskScreen() {
 
     try {
       let tasksToCreate: Record<string, unknown>[] = [];
+      let remoteImportSkipped = 0;
 
       if (sourceType === 'local' && selectedFile) {
         const isZip =
@@ -257,26 +265,87 @@ export default function CreateImageTaskScreen() {
           ];
         }
       } else if (sourceType === 'remote') {
-        const url = remoteUrl.trim();
-        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-          notify('Uzak adres https:// ile başlamalı.');
+        const urls = splitRemoteMediaUrlsFromInput(remoteUrl);
+        if (urls.length === 0) {
+          notify(
+            'Geçerli en az bir http(s) adresi girin. Birden fazla URL: boşluk, virgül, ;, | veya yeni satır ile ayırın.'
+          );
           setIsCreating(false);
           return;
         }
-        tasksToCreate = [
-          {
-            title: taskData.title,
-            company_name: taskData.company_name,
-            type: 'image',
-            annotation_type: taskData.annotationType,
-            status: 'pending',
-            assigned_to: null,
-            image_url: url,
-            description: taskData.description || '',
-            is_pool_task: true,
-            price: Number(taskData.price) || 0,
-          },
-        ];
+        if (urls.length > 1 && urls.some((u) => isZipDatasetUrl(u))) {
+          notify('.zip adresi yalnızca tek başına yapıştırılabilir; diğer URL’leri kaldırın.');
+          setIsCreating(false);
+          return;
+        }
+        setUploadProgress(15);
+
+        if (urls.length === 1 && isZipDatasetUrl(urls[0])) {
+          setUploadProgress(30);
+          const zipPayload = await importRemoteMediaViaEdge(remoteUrl, 'image', {
+            zipTaskTemplate: {
+              company_name: taskData.company_name,
+              title_prefix: taskData.title,
+              description: taskData.description || '',
+              price: Number(taskData.price) || 0,
+              annotation_type: taskData.annotationType,
+            },
+          });
+          if (!isZipDatasetResponse(zipPayload)) {
+            notify('ZIP yanıtı alınamadı.');
+            setIsCreating(false);
+            return;
+          }
+          if (zipPayload.created === 0) {
+            notify(
+              'ZIP içinden görev oluşturulamadı. İçerikte jpg/png/webp/wav/mp3/mp4/webm/mov dosyaları olduğundan ve Edge function dağıtımından emin olun.'
+            );
+            setIsCreating(false);
+            return;
+          }
+          setUploadProgress(100);
+          zipPayload.errors?.forEach((e) => console.warn('[ZIP import]', e));
+          const skipPart = zipPayload.skipped > 0 ? `\nAtlanan: ${zipPayload.skipped}` : '';
+          const msg = `ZIP veri seti içe aktarıldı.\nOluşturulan görev: ${zipPayload.created}${skipPart}`;
+          if (Platform.OS === 'web') window.alert(msg);
+          else Alert.alert('ZIP içe aktarma', msg);
+          router.push('/admin');
+          return;
+        }
+
+        const payload = await importRemoteMediaViaEdge(remoteUrl, 'image');
+        if (!('results' in payload) || !Array.isArray(payload.results)) {
+          notify('Sunucu yanıtı geçersiz.');
+          setIsCreating(false);
+          return;
+        }
+        logImportFailures(payload.results, 'CreateImageTask');
+        const ok = payload.results.filter((r) => r.publicUrl);
+        if (ok.length === 0) {
+          notify(
+            'Hiçbir görüntü içe aktarılamadı. Supabase’de import-remote-media Edge Function ve SUPABASE_SERVICE_ROLE_KEY secret’ını kontrol edin; ayrıntılar konsolda.'
+          );
+          setIsCreating(false);
+          return;
+        }
+        const modeNote =
+          payload.manifestMode && payload.manifestMode !== 'single'
+            ? `\n\nManifest: ${payload.manifestMode} (${payload.expandedCount ?? ok.length} adres)`
+            : '';
+        tasksToCreate = ok.map((r, index) => ({
+          title: ok.length > 1 ? `${taskData.title} - ${index + 1}` : taskData.title,
+          company_name: taskData.company_name,
+          type: 'image',
+          annotation_type: taskData.annotationType,
+          status: 'pending',
+          assigned_to: null,
+          image_url: r.publicUrl!,
+          description: `${taskData.description || ''}${modeNote}\n\nKaynak: ${r.sourceUrl}`.trim(),
+          is_pool_task: true,
+          price: Number(taskData.price) || 0,
+        }));
+        remoteImportSkipped = payload.results.length - ok.length;
+        setUploadProgress(100);
       }
 
       const { data, error } = await supabase.from('tasks').insert(tasksToCreate).select();
@@ -288,8 +357,12 @@ export default function CreateImageTaskScreen() {
       }
 
       const n = data?.length ?? tasksToCreate.length;
-      if (Platform.OS === 'web') window.alert(`Tamam: ${n} görev oluşturuldu.`);
-      else Alert.alert('Success', `${n} task(s) created!`);
+      const failExtra =
+        sourceType === 'remote' && remoteImportSkipped > 0
+          ? ` (${remoteImportSkipped} URL atlandı — konsola bakın)`
+          : '';
+      if (Platform.OS === 'web') window.alert(`Tamam: ${n} görev oluşturuldu${failExtra}.`);
+      else Alert.alert('Success', `${n} task(s) created!${failExtra}`);
       router.push('/admin');
     } catch (err: unknown) {
       console.error(err);
@@ -444,7 +517,7 @@ export default function CreateImageTaskScreen() {
                     style={[styles.input, styles.urlInput, focusedInput === 'url' && styles.inputFocused]}
                     value={remoteUrl}
                     onChangeText={setRemoteUrl}
-                    placeholder="https://… görüntü adresi"
+                    placeholder=".jpg / .txt / .json / .zip (ZIP’te görüntü+ses+video karışık olabilir)"
                     placeholderTextColor="#9ca3af"
                     onFocus={() => setFocusedInput('url')}
                     onBlur={() => setFocusedInput(null)}
@@ -461,7 +534,7 @@ export default function CreateImageTaskScreen() {
                 </View>
               ) : null}
 
-              {isCreating && sourceType === 'local' ? (
+              {isCreating && (sourceType === 'local' || sourceType === 'remote') ? (
                 <View style={styles.progressContainer}>
                   <View style={styles.progressBar}>
                     <View style={[styles.progressFill, { width: `${uploadProgress}%` }]} />

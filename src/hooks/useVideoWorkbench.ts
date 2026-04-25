@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
+import { resolvePlayableTaskVideoUrl } from '@/lib/taskVideoUrl';
 import { 
   type TaskData, 
   type VideoAnnotation, 
@@ -16,7 +17,7 @@ import {
 export const useVideoWorkbench = (taskId: string) => {
   const router = useRouter();
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
 
   // Video specific states
   const [currentFrame, setCurrentFrame] = useState<string | null>(null);
@@ -37,8 +38,13 @@ export const useVideoWorkbench = (taskId: string) => {
 
   // Load video task
   const loadVideo = useCallback(async () => {
-    if (!taskId) return;
-    
+    if (!taskId) {
+      setTask(null);
+      setVideoUrl(null);
+      setLoading(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from('tasks')
       .select('*')
@@ -52,6 +58,7 @@ export const useVideoWorkbench = (taskId: string) => {
       } else {
         Alert.alert('Hata', 'Supabase Detay Hatası: ' + error.message);
       }
+      setLoading(false);
       return;
     }
     
@@ -73,7 +80,12 @@ export const useVideoWorkbench = (taskId: string) => {
       };
       
       setTask(taskData);
-      setVideoUrl(taskData.video_url ?? null);
+      const playable = await resolvePlayableTaskVideoUrl({
+        taskId: String(data.id),
+        rawVideoUrl: taskData.video_url,
+        session,
+      });
+      setVideoUrl(playable ?? (taskData.video_url ? String(taskData.video_url) : null));
       
       // Load existing video annotations
       if (taskData.annotation_data && Array.isArray(taskData.annotation_data)) {
@@ -81,7 +93,7 @@ export const useVideoWorkbench = (taskId: string) => {
       }
     }
     setLoading(false);
-  }, [taskId]);
+  }, [taskId, session]);
 
   // Handle AI transcription
   const handleAITranscription = useCallback(async () => {

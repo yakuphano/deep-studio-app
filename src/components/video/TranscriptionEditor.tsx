@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { videoWorkbenchStyles } from '@/theme/videoWorkbenchStyles';
 
@@ -23,53 +23,59 @@ export const TranscriptionEditor: React.FC<TranscriptionEditorProps> = ({
   currentTimestamp,
 }) => {
   return (
-    <View style={videoWorkbenchStyles.transcriptionSection}>
+    <View
+      style={[
+        videoWorkbenchStyles.transcriptionSection,
+        videoWorkbenchStyles.transcriptionEditorSidebar,
+      ]}
+    >
       <View style={videoWorkbenchStyles.sectionHeader}>
-        <Text style={videoWorkbenchStyles.sectionTitle}>Transcription</Text>
+        <Text style={videoWorkbenchStyles.sectionTitle}>Notes (optional)</Text>
         <View style={videoWorkbenchStyles.sectionActions}>
           <TouchableOpacity
             style={[
               videoWorkbenchStyles.actionButton,
               videoWorkbenchStyles.aiButton,
-              isTranscribing && videoWorkbenchStyles.buttonDisabled
+              isTranscribing && videoWorkbenchStyles.buttonDisabled,
             ]}
             onPress={handleAITranscription}
             disabled={isTranscribing || !currentFrame}
           >
-            <Ionicons 
-              name="sparkles-outline" 
-              size={16} 
-              color={isTranscribing || !currentFrame ? '#94a3b8' : '#8b5cf6'} 
+            <Ionicons
+              name="sparkles-outline"
+              size={16}
+              color={isTranscribing || !currentFrame ? '#94a3b8' : '#8b5cf6'}
             />
-            <Text style={[
-              videoWorkbenchStyles.actionButtonText,
-              isTranscribing && videoWorkbenchStyles.buttonDisabledText
-            ]}>
-              {isTranscribing ? 'Transcribing...' : 'AI Transcribe'}
+            <Text
+              style={[
+                videoWorkbenchStyles.actionButtonText,
+                isTranscribing && videoWorkbenchStyles.buttonDisabledText,
+              ]}
+            >
+              {isTranscribing ? 'Transcribing...' : 'AI draft'}
             </Text>
           </TouchableOpacity>
         </View>
       </View>
-      
+
       <View style={videoWorkbenchStyles.transcriptionContainer}>
-        <ScrollView style={videoWorkbenchStyles.transcriptionScroll}>
-          <Text
-            style={videoWorkbenchStyles.transcriptionInput}
-            multiline
-            value={transcription}
-            onChangeText={setTranscription}
-            placeholder="Transcription will appear here..."
-            editable={!isTranscribing}
-          />
-        </ScrollView>
+        <TextInput
+          style={videoWorkbenchStyles.transcriptionInput}
+          multiline
+          value={transcription}
+          onChangeText={setTranscription}
+          placeholder="Add notes for this frame…"
+          placeholderTextColor="#64748b"
+          editable={!isTranscribing}
+        />
       </View>
-      
-      {currentFrame && (
+
+      {currentFrame ? (
         <View style={videoWorkbenchStyles.timeRangeInfo}>
           <Text style={videoWorkbenchStyles.timeRangeLabel}>Frame: {currentFrameNumber}</Text>
           <Text style={videoWorkbenchStyles.timeRangeLabel}>Time: {Math.floor(currentTimestamp)}s</Text>
         </View>
-      )}
+      ) : null}
     </View>
   );
 };

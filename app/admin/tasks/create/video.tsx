@@ -22,6 +22,7 @@ import {
   isZipDatasetUrl,
   isZipDatasetResponse,
 } from '@/lib/importRemoteMedia';
+import JSZip from 'jszip';
 
 /** Web file dialog + DocumentPicker: zip ve video */
 const WEB_FILE_ACCEPT =
@@ -88,6 +89,37 @@ function isVideoFile(name: string, mime?: string | null): boolean {
 
 function isValidVideoOrZip(name: string, mime?: string | null): boolean {
   return isZipFile(name, mime) || isVideoFile(name, mime);
+}
+
+/** Görüntü görevi (image.tsx) ile aynı mantık: yerel ZIP Edge olmadan istemcide açılır. */
+async function processZipVideoEntries(file: SelectedFileInfo): Promise<{ name: string; zipEntry: JSZip.JSZipObject }[]> {
+  const zip = new JSZip();
+  const zipContent =
+    Platform.OS === 'web' && file.webFile
+      ? await zip.loadAsync(file.webFile)
+      : await (async () => {
+          const response = await fetch(file.uri);
+          if (!response.ok) {
+            throw new Error(`ZIP okunamadı (HTTP ${response.status}). Dosyayı tekrar seçin veya tarayıcıyı yenileyin.`);
+          }
+          return zip.loadAsync(await response.blob());
+        })();
+  const out: { name: string; zipEntry: JSZip.JSZipObject }[] = [];
+  zipContent.forEach((relativePath, zf) => {
+    if (zf.dir) return;
+    const lower = relativePath.toLowerCase();
+    const dot = lower.lastIndexOf('.');
+    const ext = dot >= 0 ? lower.slice(dot) : '';
+    if (VIDEO_EXTENSIONS.includes(ext)) {
+      out.push({ name: relativePath, zipEntry: zf });
+    }
+  });
+  if (out.length === 0) {
+    throw new Error(
+      'ZIP içinde desteklenen video bulunamadı. Kullanılan uzantılar: ' + VIDEO_EXTENSIONS.join(', ')
+    );
+  }
+  return out;
 }
 
 function resolveUploadContentType(name: string, mime?: string | null): string {
@@ -308,6 +340,25 @@ export default function CreateVideoTaskScreen() {
     [user?.id]
   );
 
+  /** Yerel ZIP içinden çıkan tek video baytı (Edge yok; image göreviyle aynı model). */
+  const uploadVideoBytes = useCallback(
+    async (bytes: ArrayBuffer, logicalName: string): Promise<string> => {
+      if (!user?.id) throw new Error('Oturum gerekli');
+      const baseName = logicalName.split('/').pop() || logicalName;
+      const safe = sanitizeFileName(baseName);
+      const path = `videos/${user.id}/${Date.now()}_${safe}`;
+      const contentType = resolveUploadContentType(baseName, null);
+      const { error } = await supabase.storage.from('task-assets').upload(path, bytes, {
+        contentType,
+        upsert: false,
+      });
+      if (error) throw new Error(error.message || 'Storage yükleme hatası');
+      const { data } = supabase.storage.from('task-assets').getPublicUrl(path);
+      return data.publicUrl;
+    },
+    [user?.id]
+  );
+
   const applySelectedFile = useCallback(
     (info: SelectedFileInfo) => {
       const sizeErr = validateFileSizeForStorage(info.size);
@@ -333,6 +384,12 @@ export default function CreateVideoTaskScreen() {
       setSelectedFile(info);
       setUploadProgress(0);
       setFileStatusMessage(`Dosya seçildi: ${info.name}`);
+
+      if (isZipFile(info.name, info.mimeType)) {
+        setIsUploading(false);
+        setFileStatusMessage(`ZIP seçildi: ${info.name}. «Create Task» ile içindeki videolar yüklenecek.`);
+        return;
+      }
 
       queueMicrotask(() => {
         void uploadToStorage(info, { trigger: 'auto' });
@@ -407,6 +464,13 @@ export default function CreateVideoTaskScreen() {
       notifyUser('Eksik dosya', 'Önce bir dosya seçin.');
       return null;
     }
+    if (isZipFile(selectedFile.name, selectedFile.mimeType)) {
+      notifyUser(
+        'ZIP',
+        'ZIP dosyasının tamamını Storage’a yüklemeniz gerekmez. Formu doldurup «Create Task» ile görev oluşturun; videolar o anda tek tek yüklenecek.'
+      );
+      return null;
+    }
     return uploadToStorage(selectedFile, { trigger: 'manual' });
   };
 
@@ -428,69 +492,74 @@ export default function CreateVideoTaskScreen() {
 
       if (sourceType === 'local') {
         if (!selectedFile) {
-          notifyUser('Eksik Bilgi', 'Lütfen bir video veya .zip dosyası seçin ve yükleyin.');
+          notifyUser('Eksik Bilgi', 'Lütfen bir video veya .zip dosyası seçin.');
           return;
         }
         if (isUploading) {
           notifyUser('Bekleyin', 'Dosya hâlâ yükleniyor; tamamlanana kadar bekleyin.');
           return;
         }
-        let url = uploadedPublicUrl;
-        if (!url) {
-          url = await uploadToStorage(selectedFile, { trigger: 'auto' });
-          if (!url) return;
-        }
 
         if (isZipFile(selectedFile.name, selectedFile.mimeType)) {
           const companyName = (taskData.company_name || taskData.title || 'import').trim();
           if (!companyName) {
-            notifyUser('Eksik Bilgi', 'ZIP içe aktarma için Şirket Adı veya Başlık gerekir.');
+            notifyUser('Eksik Bilgi', 'ZIP için Şirket Adı veya Başlık gerekir.');
             return;
           }
           if (!taskData.title?.trim()) {
-            notifyUser('Eksik Bilgi', 'ZIP görev başlığı şablonu (title) gerekir.');
+            notifyUser('Eksik Bilgi', 'Görev başlığı şablonu (title) gerekir.');
             return;
           }
-          setFileStatusMessage('ZIP veri seti sunucuda işleniyor (içindeki her video ayrı görev olur)…');
-          setUploadProgress(30);
-          const zipPayload = await importRemoteMediaViaEdge(url, 'video', {
-            zipTaskTemplate: {
-              company_name: companyName,
-              title_prefix: taskData.title.trim(),
-              description: taskData.description || '',
-              price: Number(taskData.price),
-            },
-          });
-          setFileStatusMessage(null);
-          if (!isZipDatasetResponse(zipPayload)) {
-            notifyUser('ZIP', 'Beklenmeyen yanıt. import-remote-media Edge sürümünü kontrol edin.');
-            return;
-          }
-          if (zipPayload.created === 0) {
-            notifyUser(
-              'ZIP',
-              'ZIP içinden video görevi oluşturulamadı. İçerikte .mp4/.webm/.mov/.m4v dosyaları olduğundan ve Edge loglarından emin olun.'
-            );
-            return;
-          }
-          setUploadProgress(100);
-          zipPayload.errors?.forEach((e) => console.warn('[ZIP import]', e));
-          const skipPart = zipPayload.skipped > 0 ? ` Atlanan: ${zipPayload.skipped}.` : '';
-          notifyUser(
-            'ZIP veri seti',
-            `ZIP içe aktarma tamamlandı.\nOluşturulan görev: ${zipPayload.created}.${skipPart}`
-          );
-          router.push('/admin');
-          return;
-        }
 
-        rowsToInsert.push({
-          title: taskData.title,
-          description: taskData.description || '',
-          type: 'video',
-          video_url: url,
-          price: Number(taskData.price),
-        });
+          setFileStatusMessage('ZIP açılıyor; her video Storage’a yükleniyor (görüntü görevindeki gibi, Edge gerekmez)…');
+          setUploadProgress(8);
+
+          let videoEntries: { name: string; zipEntry: JSZip.JSZipObject }[];
+          try {
+            videoEntries = await processZipVideoEntries(selectedFile);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            notifyUser('ZIP', msg);
+            return;
+          }
+
+          const n = videoEntries.length;
+          for (let index = 0; index < n; index++) {
+            const { name: innerName, zipEntry } = videoEntries[index];
+            const buf = await zipEntry.async('arraybuffer');
+            const perFileErr = validateFileSizeForStorage(buf.byteLength);
+            if (perFileErr) {
+              notifyUser('Dosya boyutu', `${innerName}: ${perFileErr}`);
+              return;
+            }
+            const publicUrl = await uploadVideoBytes(buf, innerName);
+            rowsToInsert.push({
+              title: n > 1 ? `${taskData.title.trim()} - ${index + 1}` : taskData.title.trim(),
+              description: `${taskData.description || ''}\n\nKaynak (ZIP): ${innerName}`.trim(),
+              type: 'video',
+              video_url: publicUrl,
+              price: Number(taskData.price),
+            });
+            setUploadProgress(Math.round(((index + 1) / n) * 92) + 8);
+          }
+
+          setFileStatusMessage(null);
+          setUploadProgress(100);
+        } else {
+          let url = uploadedPublicUrl;
+          if (!url) {
+            url = await uploadToStorage(selectedFile, { trigger: 'auto' });
+            if (!url) return;
+          }
+
+          rowsToInsert.push({
+            title: taskData.title,
+            description: taskData.description || '',
+            type: 'video',
+            video_url: url,
+            price: Number(taskData.price),
+          });
+        }
       } else if (remoteUrl.trim()) {
         const urls = splitRemoteMediaUrlsFromInput(remoteUrl);
         if (urls.length === 0) {
@@ -622,7 +691,11 @@ export default function CreateVideoTaskScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.title}>Create Video Annotation Task</Text>
 
         <View style={styles.form}>
@@ -693,19 +766,14 @@ export default function CreateVideoTaskScreen() {
                 placeholder="Enter detailed task description"
                 placeholderTextColor="#9ca3af"
                 multiline
-                numberOfLines={6}
+                numberOfLines={4}
                 onFocus={() => setFocusedInput('description')}
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
 
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Video Kaynağı (Video / .zip veya URL)</Text>
-              <Text style={styles.hintText}>
-                Yerel yükleme üst sınırı (yapılandırma): {MAX_STORAGE_UPLOAD_MB} MB — 94 MB gibi dosyalar için
-                Supabase Dashboard’daki Storage limitini ve .env içinde EXPO_PUBLIC_MAX_STORAGE_UPLOAD_MB değerini
-                artırın.
-              </Text>
+              <Text style={styles.label}>Video kaynağı</Text>
 
               <View style={styles.sourceSelector}>
                 <TouchableOpacity
@@ -784,7 +852,11 @@ export default function CreateVideoTaskScreen() {
                   <Text style={styles.fileSize}>
                     {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
                   </Text>
-                  {uploadedPublicUrl ? (
+                  {isZipFile(selectedFile.name, selectedFile.mimeType) ? (
+                    <Text style={styles.zipReadyHint}>
+                      Ayrı yükleme gerekmez — «Create Task» ile ZIP açılır, içindeki videolar Storage’a aktarılır.
+                    </Text>
+                  ) : uploadedPublicUrl ? (
                     <Text style={styles.uploadedHint}>Storage’a yüklendi.</Text>
                   ) : null}
                 </View>
@@ -804,7 +876,10 @@ export default function CreateVideoTaskScreen() {
                 </View>
               ) : null}
 
-              {selectedFile && sourceType === 'local' && !isUploading ? (
+              {selectedFile &&
+              sourceType === 'local' &&
+              !isUploading &&
+              !isZipFile(selectedFile.name, selectedFile.mimeType) ? (
                 <TouchableOpacity
                   style={[
                     styles.uploadActionButton,
@@ -824,7 +899,11 @@ export default function CreateVideoTaskScreen() {
                 </TouchableOpacity>
               ) : null}
 
-              {selectedFile && sourceType === 'local' && uploadedPublicUrl && !isUploading ? (
+              {selectedFile &&
+              sourceType === 'local' &&
+              uploadedPublicUrl &&
+              !isUploading &&
+              !isZipFile(selectedFile.name, selectedFile.mimeType) ? (
                 <TouchableOpacity
                   style={styles.uploadRetryButton}
                   onPress={() => void uploadSelectedFile()}
@@ -875,20 +954,23 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 20,
-    paddingTop: 60,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 48,
+    paddingBottom: 28,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
     color: '#f8fafc',
-    marginBottom: 32,
+    marginBottom: 18,
     textAlign: 'center',
   },
   form: {
     flexDirection: 'row',
-    gap: 24,
-    marginBottom: 24,
+    gap: 20,
+    marginBottom: 16,
   },
   leftColumn: {
     flex: 1,
@@ -897,19 +979,13 @@ const styles = StyleSheet.create({
     flex: 1.5,
   },
   formGroup: {
-    marginBottom: 20,
+    marginBottom: 14,
   },
   label: {
     fontSize: 16,
     fontWeight: '600',
     color: '#ffffff',
-    marginBottom: 8,
-  },
-  hintText: {
-    fontSize: 12,
-    color: '#94a3b8',
-    marginBottom: 10,
-    lineHeight: 18,
+    marginBottom: 6,
   },
   input: {
     backgroundColor: '#1f2937',
@@ -980,11 +1056,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#34d399',
   },
+  zipReadyHint: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#93c5fd',
+    lineHeight: 17,
+  },
   progressContainer: {
     marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  progressColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
+  progressLabel: {
+    fontSize: 12,
+    color: '#93c5fd',
+    marginTop: 6,
   },
   progressBar: {
     flex: 1,
@@ -1039,7 +1130,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1f2937',
     borderRadius: 8,
     padding: 4,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   sourceButton: {
     flex: 1,
@@ -1082,12 +1173,12 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     backgroundColor: '#3b82f6',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
     borderRadius: 12,
     alignItems: 'center',
-    marginTop: 32,
-    minHeight: 52,
+    marginTop: 12,
+    minHeight: 48,
     justifyContent: 'center',
   },
   saveButtonText: {

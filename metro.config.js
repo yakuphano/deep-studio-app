@@ -43,9 +43,9 @@ if (supabaseOrigin) {
           res.setHeader('Access-Control-Allow-Origin', '*');
           res.setHeader(
             'Access-Control-Allow-Headers',
-            'authorization, x-client-info, apikey, content-type, prefer, accept, accept-profile, content-profile'
+            'authorization, x-client-info, apikey, content-type, prefer, accept, accept-profile, content-profile, range'
           );
-          res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
           res.setHeader('Access-Control-Max-Age', '86400');
           res.statusCode = 204;
           res.end();

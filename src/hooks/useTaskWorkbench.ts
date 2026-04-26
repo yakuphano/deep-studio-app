@@ -97,7 +97,7 @@ export const useTaskWorkbench = (taskId: string | undefined, userId: string | un
           .from('tasks')
           .select('*')
           .eq('id', taskId)
-          .single();
+          .maybeSingle();
 
         if (error) {
           console.log('Detay Hatası:', error);
@@ -106,44 +106,54 @@ export const useTaskWorkbench = (taskId: string | undefined, userId: string | un
           } else {
             Alert.alert('Hata', 'Supabase Detay Hatası: ' + error.message);
           }
+          return;
         }
-        
-        if (!error && data) {
-          const isVideo = data.category === 'video';
-          const taskData: TaskData = {
-            id: String(data.id),
-            title: String(data.title ?? '') || 'İsimsiz Görev',
-            status: (data.status ?? 'pending') as TaskStatus,
-            price: data.price != null ? Number(data.price) : 0,
-            type: resolveTaskType(data as Record<string, unknown>) as TaskType,
-            category: data.category ?? null,
-            audio_url: data.audio_url ?? data.audioUrl ?? null,
-            content_url: data.content_url ?? null,
-            file_url: data.file_url ?? null,
-            image_url: data.image_url ?? data.imageUrl ?? null,
-            video_url: data.video_url ?? data.videoUrl ?? null,
-            transcription: data.transcription ?? '',
-            annotation_data: data.annotation_data ?? null,
-            language: data.language ?? null,
-          };
-          
-          setTask(taskData);
-          setTranscription(taskData.transcription ?? '');
-          
-          if (Array.isArray(taskData.annotation_data)) {
-            setAnnotations(taskData.annotation_data as Annotation[]);
-          }
 
-          // Load video annotations if exists
-          if (Array.isArray(data.annotation_data) && isVideo) {
-            const videoAnns = (data.annotation_data as any[]).filter(ann => ann.timestamp).map(ann => ({
-              id: ann.id,
-              label: ann.label,
-              timestamp: formatTime(ann.timestamp || ann.seconds || 0),
-              seconds: ann.timestamp || ann.seconds || 0
-            }));
-            setVideoAnnotations(videoAnns);
+        if (!data) {
+          const msg =
+            'Görev bulunamadı. Silinmiş olabilir, ID yanlış veya bu hesabın görmeye yetkisi olmayabilir.';
+          if (typeof window !== 'undefined') {
+            window.alert(msg);
+          } else {
+            Alert.alert('Hata', msg);
           }
+          return;
+        }
+
+        const isVideo = data.category === 'video';
+        const taskData: TaskData = {
+          id: String(data.id),
+          title: String(data.title ?? '') || 'İsimsiz Görev',
+          status: (data.status ?? 'pending') as TaskStatus,
+          price: data.price != null ? Number(data.price) : 0,
+          type: resolveTaskType(data as Record<string, unknown>) as TaskType,
+          category: data.category ?? null,
+          audio_url: data.audio_url ?? data.audioUrl ?? null,
+          content_url: data.content_url ?? null,
+          file_url: data.file_url ?? null,
+          image_url: data.image_url ?? data.imageUrl ?? null,
+          video_url: data.video_url ?? data.videoUrl ?? null,
+          transcription: data.transcription ?? '',
+          annotation_data: data.annotation_data ?? null,
+          language: data.language ?? null,
+        };
+
+        setTask(taskData);
+        setTranscription(taskData.transcription ?? '');
+
+        if (Array.isArray(taskData.annotation_data)) {
+          setAnnotations(taskData.annotation_data as Annotation[]);
+        }
+
+        // Load video annotations if exists
+        if (Array.isArray(data.annotation_data) && isVideo) {
+          const videoAnns = (data.annotation_data as any[]).filter(ann => ann.timestamp).map(ann => ({
+            id: ann.id,
+            label: ann.label,
+            timestamp: formatTime(ann.timestamp || ann.seconds || 0),
+            seconds: ann.timestamp || ann.seconds || 0
+          }));
+          setVideoAnnotations(videoAnns);
         }
       } finally {
         setLoading(false);
@@ -325,14 +335,14 @@ export const useTaskWorkbench = (taskId: string | undefined, userId: string | un
           .order('created_at', { ascending: false })
           .limit(1)
           .select('id')
-          .single();
-          
-        if (claimError) {
-          if (claimError.code === 'PGRST116') {
-            router.replace('/dashboard');
-          }
-        } else if (claimedTask) {
+          .maybeSingle();
+
+        if (claimError) throw claimError;
+
+        if (claimedTask) {
           router.replace(`/task/${claimedTask.id}`);
+        } else {
+          router.replace('/dashboard');
         }
       } else {
         router.replace('/dashboard');

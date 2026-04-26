@@ -12,16 +12,12 @@ import { ANNOTATION_LABELS, type CustomLabelDefinition } from '@/constants/annot
 
 export default function TaskDetailScreen() {
   const params = useLocalSearchParams<{ id: string | string[] }>();
-  const id = Array.isArray(params.id) ? params.id[0] : params.id;
+  const rawId = Array.isArray(params.id) ? params.id[0] : params.id;
+  const taskId =
+    typeof rawId === 'string' && rawId.length > 0 && rawId !== 'undefined' ? rawId : undefined;
   const router = useRouter();
   const { user } = useAuth();
 
-  // Infinite loop protection
-  if (!id || id === 'undefined' || typeof id !== 'string') {
-    return <View style={taskDetailStyles.container}><Text style={taskDetailStyles.loadingText}>Loading...</Text></View>;
-  }
-
-  // Use extracted hooks
   const {
     task,
     loading,
@@ -42,7 +38,7 @@ export default function TaskDetailScreen() {
     setSelectedAnnotationId,
     setAnnotations,
     setTranscription,
-  } = useTaskWorkbench(id, user?.id);
+  } = useTaskWorkbench(taskId, user?.id);
 
   const [selectedLabel, setSelectedLabel] = useState<string>(
     String(ANNOTATION_LABELS[0] ?? 'Other')
@@ -56,6 +52,7 @@ export default function TaskDetailScreen() {
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
+    if (!taskId) return;
     if (loading || !task) return;
     const tl = String(task.type ?? '').toLowerCase();
     const cat = String(task.category ?? '').toLowerCase();
@@ -63,8 +60,8 @@ export default function TaskDetailScreen() {
     const isVideo =
       tl === 'video' || cat.includes('video') || (hasVideoUrl && tl !== 'image' && tl !== 'audio');
     if (!isVideo) return;
-    router.replace(`/(tabs)/video-annotation?id=${encodeURIComponent(String(id))}` as any);
-  }, [loading, task, id, router]);
+    router.replace(`/(tabs)/video-annotation?id=${encodeURIComponent(taskId)}` as any);
+  }, [loading, task, taskId, router]);
 
   const handleUpdateAnnotationLabel = useCallback(
     (annotationId: string, label: string) => {
@@ -146,6 +143,14 @@ export default function TaskDetailScreen() {
 
   const finalAudioUrl =
     task?.audio_url || task?.content_url || task?.file_url || null;
+
+  if (!taskId) {
+    return (
+      <View style={taskDetailStyles.container}>
+        <Text style={taskDetailStyles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
 
   // Loading guard
   if (loading || !task) {

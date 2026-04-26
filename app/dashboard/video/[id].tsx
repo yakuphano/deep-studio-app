@@ -88,7 +88,7 @@ export default function VideoTaskDetailScreen() {
         .from('tasks')
         .select('*')
         .eq('id', taskId)
-        .single();
+        .maybeSingle();
       if (error) {
         console.log('Detay Hatası:', error);
         if (typeof window !== 'undefined') {
@@ -96,38 +96,49 @@ export default function VideoTaskDetailScreen() {
         } else {
           Alert.alert('Hata', 'Supabase Detay Hatası: ' + error.message);
         }
+        setLoading(false);
+        return;
       }
-      if (!error && data) {
-        // DEBUG LOG - Gelen ham veriyi kontrol et
-        console.log('Veritabanından Gelen Ham Veri:', data);
-        console.log('video_url kolonu:', data.video_url);
-        console.log('videoUrl kolonu:', data.videoUrl);
-        
-        const cat = (data.category ?? '').toString().toLowerCase();
-        const taskData: TaskData = {
-          id: String(data.id),
-          title: String(data.title ?? '') || 'İsimsiz Görev',
-          status: data.status ?? 'pending',
-          price: data.price != null ? Number(data.price) : 0,
-          type: (data.type ?? (cat === 'video' ? 'video' : 'audio')) as 'audio' | 'image' | 'video',
-          category: data.category ?? null,
-          audio_url: data.audio_url ?? data.audioUrl,
-          image_url: data.image_url ?? data.imageUrl ?? null,
-          video_url: data.video_url ?? data.videoUrl ?? null,
-          file_url: data.file_url ?? null,
-          transcription: data.transcription ?? '',
-          annotation_data: data.annotation_data ?? null,
-          language: data.language ?? null,
-        };
-        
-        // DEBUG LOG - Video URL'yi kontrol et
-        console.log('Oynatılacak Video URL:', taskData?.video_url);
-        console.log('Tüm Task Data:', taskData);
-        
-        setTask(taskData);
-        if (Array.isArray(taskData.annotation_data)) {
-          setAnnotations(taskData.annotation_data as Annotation[]);
+      if (!data) {
+        const msg =
+          'Görev bulunamadı. Silinmiş olabilir, ID yanlış veya bu hesabın görmeye yetkisi olmayabilir.';
+        if (typeof window !== 'undefined') {
+          window.alert(msg);
+        } else {
+          Alert.alert('Hata', msg);
         }
+        setLoading(false);
+        return;
+      }
+      // DEBUG LOG - Gelen ham veriyi kontrol et
+      console.log('Veritabanından Gelen Ham Veri:', data);
+      console.log('video_url kolonu:', data.video_url);
+      console.log('videoUrl kolonu:', data.videoUrl);
+
+      const cat = (data.category ?? '').toString().toLowerCase();
+      const taskData: TaskData = {
+        id: String(data.id),
+        title: String(data.title ?? '') || 'İsimsiz Görev',
+        status: data.status ?? 'pending',
+        price: data.price != null ? Number(data.price) : 0,
+        type: (data.type ?? (cat === 'video' ? 'video' : 'audio')) as 'audio' | 'image' | 'video',
+        category: data.category ?? null,
+        audio_url: data.audio_url ?? data.audioUrl,
+        image_url: data.image_url ?? data.imageUrl ?? null,
+        video_url: data.video_url ?? data.videoUrl ?? null,
+        file_url: data.file_url ?? null,
+        transcription: data.transcription ?? '',
+        annotation_data: data.annotation_data ?? null,
+        language: data.language ?? null,
+      };
+
+      // DEBUG LOG - Video URL'yi kontrol et
+      console.log('Oynatılacak Video URL:', taskData?.video_url);
+      console.log('Tüm Task Data:', taskData);
+
+      setTask(taskData);
+      if (Array.isArray(taskData.annotation_data)) {
+        setAnnotations(taskData.annotation_data as Annotation[]);
       }
       setLoading(false);
     };
@@ -199,17 +210,10 @@ export default function VideoTaskDetailScreen() {
           .order('created_at', { ascending: false })
           .limit(1)
           .select('id')
-          .single();
-        
-        if (claimError) {
-          if (claimError.code === 'PGRST116') {
-            router.replace('/dashboard');
-            return;
-          } else {
-            throw claimError;
-          }
-        }
-        
+          .maybeSingle();
+
+        if (claimError) throw claimError;
+
         if (claimedTask) {
           router.replace(`/task/${claimedTask.id}`);
         } else {

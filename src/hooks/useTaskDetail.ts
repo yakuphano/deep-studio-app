@@ -67,7 +67,7 @@ export const useTaskDetail = (taskId: string, userId: string | undefined) => {
         .from('tasks')
         .select('*')
         .eq('id', taskId)
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.error('FETCH ERROR - Supabase Error:', error);
@@ -80,31 +80,38 @@ export const useTaskDetail = (taskId: string, userId: string | undefined) => {
       }
 
       console.log('FETCH PROGRESS - DATA RECEIVED:', data);
-      if (data) {
-        const taskData: TaskData = {
-          id: String(data.id),
-          title: String(data.title ?? '') || 'Untitled Task',
-          status: data.status ?? 'pending',
-          price: data.price != null ? Number(data.price) : 0,
-          type: resolveTaskType(data as Record<string, unknown>) as TaskData['type'],
-          category: data.category ?? null,
-          audio_url: data.audio_url ?? data.audioUrl,
-          content_url: data.content_url,
-          audioUrl: data.audioUrl,
-          image_url: data.image_url ?? data.imageUrl ?? null,
-          video_url: data.video_url ?? data.videoUrl ?? null,
-          file_url: data.file_url ?? null,
-          transcription: data.transcription ?? '',
-          annotation_data: data.annotation_data ?? null,
-          language: data.language ?? null,
-        };
-        console.log('FETCH PROGRESS - setting task data:', taskData);
-        setTask(taskData);
-        setTranscription(taskData.transcription ?? '');
-      } else {
-        console.log('FETCH WARNING - no data received');
+      if (!data) {
+        const msg =
+          'Task not found. It may have been deleted, the ID may be invalid, or your account may not have access.';
+        if (typeof window !== 'undefined') {
+          window.alert(msg);
+        } else {
+          Alert.alert('Error', msg);
+        }
         setTask(null);
+        return;
       }
+
+      const taskData: TaskData = {
+        id: String(data.id),
+        title: String(data.title ?? '') || 'Untitled Task',
+        status: data.status ?? 'pending',
+        price: data.price != null ? Number(data.price) : 0,
+        type: resolveTaskType(data as Record<string, unknown>) as TaskData['type'],
+        category: data.category ?? null,
+        audio_url: data.audio_url ?? data.audioUrl,
+        content_url: data.content_url,
+        audioUrl: data.audioUrl,
+        image_url: data.image_url ?? data.imageUrl ?? null,
+        video_url: data.video_url ?? data.videoUrl ?? null,
+        file_url: data.file_url ?? null,
+        transcription: data.transcription ?? '',
+        annotation_data: data.annotation_data ?? null,
+        language: data.language ?? null,
+      };
+      console.log('FETCH PROGRESS - setting task data:', taskData);
+      setTask(taskData);
+      setTranscription(taskData.transcription ?? '');
     } catch (error) {
       console.error('FETCH ERROR - Unexpected error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -246,18 +253,14 @@ export const useTaskDetail = (taskId: string, userId: string | undefined) => {
           .order('created_at', { ascending: false })
           .limit(1)
           .select('id')
-          .single();
-        
-        if (claimError) {
-          if (claimError.code === 'PGRST116') {
-            return; // No more tasks
-          } else {
-            throw claimError;
-          }
-        }
-        
-        if (claimedTask) {
+          .maybeSingle();
+
+        if (claimError) throw claimError;
+
+        if (claimedTask && typeof window !== 'undefined') {
           window.location.href = `/task/${claimedTask.id}`;
+        } else if (typeof window !== 'undefined') {
+          window.location.href = '/dashboard';
         }
       }
     } catch (error) {

@@ -1,5 +1,5 @@
-import { Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
+import { useMetroSupabaseEdgeProxy } from '@/lib/supabaseEdgeDevProxy';
 import { normalizeRemoteMediaUrl, splitRemoteMediaUrlsFromInput } from '@/lib/mediaUrl';
 
 export type ImportTaskKind = 'image' | 'video' | 'audio';
@@ -54,28 +54,24 @@ type ImportRemoteMediaRequestBody = {
   zipTaskTemplate?: ZipTaskTemplate;
 };
 
-/** Web + __DEV__: Metro `/_supabase-fn` proxy (CORS’suz). Kapatmak: EXPO_PUBLIC_USE_EDGE_PROXY=0 */
-function useMetroEdgeProxy(): boolean {
-  if (Platform.OS !== 'web') return false;
-  if (process.env.EXPO_PUBLIC_USE_EDGE_PROXY === '0') return false;
-  if (process.env.EXPO_PUBLIC_USE_EDGE_PROXY === '1') return true;
-  return typeof __DEV__ !== 'undefined' && __DEV__;
-}
-
 function resolveImportRemoteMediaPostUrl(supabaseUrl: string): string {
   const base = supabaseUrl.replace(/\/$/, '');
   const direct = `${base}/functions/v1/import-remote-media`;
-  if (!useMetroEdgeProxy() || typeof window === 'undefined') return direct;
+  if (!useMetroSupabaseEdgeProxy() || typeof window === 'undefined') return direct;
   return `${window.location.origin}/_supabase-fn/import-remote-media`;
 }
 
 function hintWrongEdgeDeploy(directUrl: string): string {
   return (
-    ' Supabase’deki `import-remote-media` bu uygulamanın beklediği sürüm değil (repo: `supabase/functions/import-remote-media`). ' +
-    'Doğrulama: `curl -sS -X POST ' +
-    directUrl +
-    " -H 'Content-Type: application/json' --data '{}' ` — şablon yanıt (ör. message: Başarılı) ise yeniden deploy edin: " +
-    '`npx supabase@latest functions deploy import-remote-media`'
+    '\n\nSupabase bu projede henüz bu uygulamanın `import-remote-media` kodunu çalıştırmıyor (çoğu zaman Dashboard’dan oluşturulan varsayılan “Hello” fonksiyonu kalır).\n\n' +
+    'Yapmanız gerekenler:\n' +
+    '1) Terminalde `npx supabase@latest login` ardından proje klasöründe `npx supabase@latest link --project-ref <PROJECT_REF>` (ref: Supabase Dashboard → Project Settings → General).\n' +
+    '2) Dashboard → Edge Functions → Secrets: `SUPABASE_SERVICE_ROLE_KEY` tanımlı olsun (ZIP işlemi buna ihtiyaç duyar).\n' +
+    '3) Bu repodan deploy: `npx supabase@latest functions deploy import-remote-media`\n' +
+    '   (kaynak: `supabase/functions/import-remote-media/`)\n' +
+    '4) Videolar için ayrıca: `npx supabase@latest functions deploy task-media`\n\n' +
+    'Hızlı kontrol: boş POST yanıtında yalnızca `message` alanı varsa şablondur — gerçek fonksiyon `results` veya ZIP için `importMode: "zip_dataset"` döner.\n' +
+    `Kontrol URL: ${directUrl}`
   );
 }
 
@@ -145,7 +141,10 @@ function validateImportPayload(payload: unknown, directFnUrl: string): ImportSee
   }
   const any = payload as Record<string, unknown>;
   if (typeof any.message === 'string' && any.results === undefined && any.importMode === undefined) {
-    throw new Error('Sunucudaki import-remote-media şablon veya eski sürüm.' + hintWrongEdgeDeploy(directFnUrl));
+    throw new Error(
+      'ZIP / uzak içe aktarma: Sunucudaki Edge fonksiyonu güncel değil (şablon yanıtı algılandı).' +
+        hintWrongEdgeDeploy(directFnUrl)
+    );
   }
   return payload as ImportSeedResponse;
 }
@@ -191,7 +190,7 @@ export async function importRemoteMediaViaEdge(
   const postUrl = resolveImportRemoteMediaPostUrl(supabaseUrl);
   const directFnUrl = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/import-remote-media`;
 
-  if (useMetroEdgeProxy() && typeof window !== 'undefined') {
+  if (useMetroSupabaseEdgeProxy() && typeof window !== 'undefined') {
     console.info('[importRemoteMediaViaEdge] POST →', postUrl, '(Metro proxy; doğrudan:', directFnUrl, ')');
   }
 

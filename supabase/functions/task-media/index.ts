@@ -12,8 +12,9 @@ import { createClient } from 'npm:@supabase/supabase-js@2.49.8';
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type, prefer, accept, accept-profile, content-profile',
+    'authorization, x-client-info, apikey, content-type, prefer, accept, accept-profile, content-profile, range',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges, Content-Length, Content-Type',
 };
 
 Deno.serve(async (req) => {
@@ -45,7 +46,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    const authHeader = req.headers.get('Authorization') ?? '';
+    const url = new URL(req.url);
+    const queryToken = url.searchParams.get('access_token')?.trim() ?? '';
+    const authHeader =
+      (req.headers.get('Authorization')?.trim() ||
+        (queryToken ? `Bearer ${queryToken}` : '')) ||
+      '';
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -60,8 +66,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    const url = new URL(req.url);
     const taskId = url.searchParams.get('task_id')?.trim();
+    const wantStream = url.searchParams.get('stream') === '1';
     if (!taskId) {
       return new Response(JSON.stringify({ error: 'task_id gerekli' }), {
         status: 400,
@@ -88,6 +94,8 @@ Deno.serve(async (req) => {
         ? task.media_storage_path.trim()
         : null;
 
+    let targetUrl: string | null = null;
+
     if (storagePath) {
       const { data: signed, error: signErr } = await admin.storage
         .from('task-assets')
@@ -98,25 +106,41 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      return Response.redirect(signed.signedUrl, 302);
+      targetUrl = signed.signedUrl;
+    } else {
+      const t = task.type?.toString().toLowerCase() ?? '';
+      const target =
+        (t === 'video' && task.video_url) ||
+        (t === 'audio' && task.audio_url) ||
+        (t === 'image' && task.image_url) ||
+        task.image_url ||
+        task.video_url ||
+        task.audio_url ||
+        null;
+      if (!target) {
+        return new Response(JSON.stringify({ error: 'Bu görevde medya URL’i yok' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      targetUrl = String(target).trim();
     }
 
-    const t = task.type?.toString().toLowerCase() ?? '';
-    const target =
-      (t === 'video' && task.video_url) ||
-      (t === 'audio' && task.audio_url) ||
-      (t === 'image' && task.image_url) ||
-      task.image_url ||
-      task.video_url ||
-      task.audio_url ||
-      null;
-    if (!target) {
-      return new Response(JSON.stringify({ error: 'Bu görevde medya URL’i yok' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (wantStream && targetUrl) {
+      const range = req.headers.get('Range') ?? '';
+      const upstreamHeaders = new Headers();
+      if (range) upstreamHeaders.set('Range', range);
+      const upstream = await fetch(targetUrl, { headers: upstreamHeaders });
+      const outHeaders = new Headers(corsHeaders);
+      const copy = ['Content-Type', 'Accept-Ranges', 'Content-Range', 'Content-Length', 'Cache-Control', 'ETag'];
+      for (const k of copy) {
+        const v = upstream.headers.get(k);
+        if (v) outHeaders.set(k, v);
+      }
+      return new Response(upstream.body, { status: upstream.status, headers: outHeaders });
     }
-    return Response.redirect(target, 302);
+
+    return Response.redirect(targetUrl, 302);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return new Response(JSON.stringify({ error: msg }), {

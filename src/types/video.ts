@@ -18,6 +18,8 @@ export interface VideoAnnotation {
   frameNumber: number;
   timestamp: number;
   annotations: any[];
+  /** Kare yakalandığında data URL; oturumda önizleme için (DB’ye yazılırken çıkarılabilir) */
+  snapshotUrl?: string | null;
 }
 
 export interface WebVideoPlayerProps {

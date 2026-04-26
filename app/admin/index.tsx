@@ -29,6 +29,26 @@ type User = {
   created_at: string;
 };
 
+type ExportTaskType = 'audio' | 'image' | 'video';
+
+function getFormatOptionsForTaskType(exportTaskType: ExportTaskType) {
+  if (exportTaskType === 'audio') {
+    return [
+      { key: 'json', label: 'JSON' },
+      { key: 'csv', label: 'CSV' },
+      { key: 'txt', label: 'TXT' },
+      { key: 'srt', label: 'SRT' },
+    ];
+  }
+  return [
+    { key: 'yolo', label: 'YOLO' },
+    { key: 'coco', label: 'COCO' },
+    { key: 'pascalvoc', label: 'Pascal VOC' },
+    { key: 'json', label: 'JSON' },
+    { key: 'csv', label: 'CSV' },
+  ];
+}
+
 function ActionCard({
   icon,
   iconColor,
@@ -81,88 +101,14 @@ export default function AdminPanelScreen() {
   const [selectedLanguage, setSelectedLanguage] = useState<string>('all');
   // const [showPassword, setShowPassword] = useState(false);
 
-  // Debug logs
-  console.log('Mevcut Kullanici:', user);
-  console.log('Admin Page - Role:', user?.role);
-  console.log('Admin Page - isAdmin:', isAdmin);
-  console.log('Admin Dashboard Loaded');
-  
-  // HARD OVERRIDE: Force admin access for specific email
   const isDevAdmin = user?.email === 'yakup.hano@deepannotation.ai';
   const hasAdminAccess = isAdmin === true || isDevAdmin;
-  
-  console.log('Admin check:', {
-    email: user?.email,
-    isAdmin,
-    isDevAdmin,
-    hasAdminAccess
-  });
-  
-  // STABLE ADMIN CHECK: Use loading spinner instead of hiding UI
-  if (isAdmin === null && !isDevAdmin) {
-    console.log('Admin status loading, showing spinner');
-    return (
-      <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={{ color: '#f8fafc', fontSize: 16, marginTop: 16 }}>Checking admin access...</Text>
-      </View>
-    );
-  }
-  
-  // Only show Access Denied if loading is false AND isAdmin is explicitly false AND not dev admin
-  if (isAdmin === false && !isDevAdmin) {
-    console.log('Access denied - user is not admin');
-    return (
-      <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}>
-        <Text style={{ color: '#ef4444', fontSize: 18 }}>Access Denied</Text>
-        <Text style={{ color: '#94a3b8', fontSize: 14, marginTop: 8 }}>You don't have admin privileges</Text>
-      </View>
-    );
-  }
-  
-  // Language options for export filter
-  const languageOptions = [
-    { key: 'all', label: 'All Languages' },
-    { key: 'en', label: 'English' },
-    { key: 'tr', label: 'Turkish' },
-    { key: 'ku', label: 'Kurdish' },
-    { key: 'az', label: 'Azerbaijani Turkish' },
-  ];
-  
-  // Dynamic format options based on task type
-  const getFormatOptions = () => {
-    if (exportTaskType === 'audio') {
-      return [
-        { key: 'json', label: 'JSON' },
-        { key: 'csv', label: 'CSV' },
-        { key: 'txt', label: 'TXT' },
-        { key: 'srt', label: 'SRT' },
-      ];
-    } else {
-      // Image and Video
-      return [
-        { key: 'yolo', label: 'YOLO' },
-        { key: 'coco', label: 'COCO' },
-        { key: 'pascalvoc', label: 'Pascal VOC' },
-        { key: 'json', label: 'JSON' },
-        { key: 'csv', label: 'CSV' },
-      ];
-    }
-  };
-  
-  // Set default format when task type changes
+  const adminStatusLoading = isAdmin === null && !isDevAdmin;
+
   useEffect(() => {
-    const formats = getFormatOptions();
+    const formats = getFormatOptionsForTaskType(exportTaskType);
     setExportFormat(formats[0].key);
   }, [exportTaskType]);
-  
-  // Available languages for user creation
-  const availableLanguages = [
-    { code: 'en', name: 'English' },
-    { code: 'tr', name: 'Turkish' },
-    { code: 'ku', name: 'Kurdish' },
-    { code: 'az', name: 'Azerbaijani Turkish' },
-  ];
 
   const fetchDashboardStats = useCallback(async () => {
     console.log('FETCH START: fetchDashboardStats');
@@ -208,15 +154,20 @@ export default function AdminPanelScreen() {
         pendingPayments = 0;
       }
       
-      // 4. Monthly Revenue - FIXED: Remove problematic .in() query
+      // 4. Monthly Revenue — ay sonu takvim günü yerine bir sonraki ayın 1’i (Nisan → 2026-05-01)
       const currentMonth = new Date().toISOString().slice(0, 7);
+      const [yStr, mStr] = currentMonth.split('-');
+      const y = Number(yStr);
+      const m = Number(mStr);
+      const nextMonthStart =
+        m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`;
       const { data: completedTasks } = await supabase
         .from('tasks')
         .select('price')
         .eq('status', 'completed') // Simple .eq() instead of .in()
         .eq('is_pool_task', true)
         .gte('updated_at', `${currentMonth}-01`)
-        .lt('updated_at', `${currentMonth}-31`);
+        .lt('updated_at', nextMonthStart);
       
       const monthlyRevenue = completedTasks?.reduce((sum, task) => sum + (task.price || 0), 0) || 0;
       
@@ -267,10 +218,44 @@ export default function AdminPanelScreen() {
   }, []);
 
   useEffect(() => {
-    fetchDashboardStats();
-  }, []); // Remove fetchDashboardStats from dependencies to prevent infinite loop
-  
-  // Helper functions - Add New Annotator functions moved to /admin/users page
+    if (adminStatusLoading || !hasAdminAccess) return;
+    void fetchDashboardStats();
+  }, [adminStatusLoading, hasAdminAccess, fetchDashboardStats]);
+
+  // Debug logs (her render; geliştirme)
+  console.log('Mevcut Kullanici:', user);
+  console.log('Admin Page - Role:', user?.role);
+  console.log('Admin Page - isAdmin:', isAdmin);
+  console.log('Admin Dashboard Loaded');
+  console.log('Admin check:', { email: user?.email, isAdmin, isDevAdmin, hasAdminAccess });
+
+  if (adminStatusLoading) {
+    console.log('Admin status loading, showing spinner');
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#3b82f6" />
+        <Text style={{ color: '#f8fafc', fontSize: 16, marginTop: 16 }}>Checking admin access...</Text>
+      </View>
+    );
+  }
+
+  if (!hasAdminAccess) {
+    console.log('Access denied - user is not admin');
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ color: '#ef4444', fontSize: 18 }}>Access Denied</Text>
+        <Text style={{ color: '#94a3b8', fontSize: 14, marginTop: 8 }}>You don't have admin privileges</Text>
+      </View>
+    );
+  }
+
+  const languageOptions = [
+    { key: 'all', label: 'All Languages' },
+    { key: 'en', label: 'English' },
+    { key: 'tr', label: 'Turkish' },
+    { key: 'ku', label: 'Kurdish' },
+    { key: 'az', label: 'Azerbaijani Turkish' },
+  ];
 
   const handleExport = async () => {
     if (!exportClient.trim()) {
@@ -550,7 +535,7 @@ export default function AdminPanelScreen() {
             
             <Text style={styles.exportLabel}>Export Type</Text>
             <View style={styles.exportFormatRow}>
-              {getFormatOptions().map((format) => (
+              {getFormatOptionsForTaskType(exportTaskType).map((format) => (
                 <TouchableOpacity
                   key={format.key}
                   style={[styles.formatChip, exportFormat === format.key && styles.formatChipActive]}

@@ -8,6 +8,8 @@ node_modules/
 dist/
 web-build/
 expo-env.d.ts
+# Local web export / test bundles (may embed EXPO_PUBLIC_* secrets)
+.expo-web-export-test/
 
 # Native
 *.orig.*

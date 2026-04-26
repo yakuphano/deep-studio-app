@@ -121,6 +121,14 @@ function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
 const REQUEST_DELAY_MS = 800;
 let lastRequestTime = 0;
 
+/** Groq anahtarı — .env içinde tutun; repoda asla sabit string kullanmayın. */
+function resolveGroqApiKey(): string | undefined {
+  const fromPublic = process.env.EXPO_PUBLIC_GROQ_API_KEY?.trim();
+  const fromPrivate = process.env.GROQ_API_KEY?.trim();
+  const key = fromPublic || fromPrivate;
+  return key || undefined;
+}
+
 async function waitBetweenRequests(): Promise<void> {
   const now = Date.now();
   const elapsed = now - lastRequestTime;
@@ -180,12 +188,13 @@ export interface GroqTranscribeOptions {
 export async function transcribeWithGroq(options: GroqTranscribeOptions): Promise<GroqTranscribeResult> {
   const { fileBlob, fileUrl, mimeType, fileName, language } = options;
 
-  const API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+  const API_KEY = resolveGroqApiKey();
 
-  if (!API_KEY || API_KEY === 'gsk_your_key_here' || (typeof API_KEY === 'string' && API_KEY.trim() === '')) {
+  if (!API_KEY || API_KEY === 'gsk_your_key_here') {
     return {
       text: '',
-      error: 'Groq API anahtarı tanımlı değil (.env: EXPO_PUBLIC_GROQ_API_KEY)',
+      error:
+        'Groq API anahtarı tanımlı değil. Proje kökünde .env dosyasına GROQ_API_KEY veya EXPO_PUBLIC_GROQ_API_KEY ekleyin (ör. .env.example).',
     };
   }
 

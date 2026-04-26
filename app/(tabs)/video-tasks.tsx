@@ -161,7 +161,6 @@ export default function VideoTasksScreen() {
         <View style={styles.emptyContainer}>
           <Ionicons name="videocam-outline" size={80} color="#8b5cf6" style={styles.emptyIcon} />
           <Text style={styles.emptyTitle}>No Video Tasks</Text>
-          <Text style={styles.emptyDescription}>No video tasks found in your language.</Text>
 
           <TouchableOpacity style={styles.coloredRefreshButton} onPress={() => loadData()} activeOpacity={0.8}>
             <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
@@ -243,12 +242,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#f8fafc',
     marginTop: 20,
-    textAlign: 'center',
-  },
-  emptyDescription: {
-    fontSize: 16,
-    color: '#94a3b8',
-    marginTop: 8,
     textAlign: 'center',
   },
   coloredRefreshButton: {

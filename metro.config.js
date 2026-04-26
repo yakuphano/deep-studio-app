@@ -4,6 +4,7 @@
  */
 const path = require('path');
 const { getDefaultConfig } = require('expo/metro-config');
+const metroResolver = require('metro-resolver');
 
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
@@ -17,6 +18,27 @@ function isSupabaseFnProxyPath(req) {
 
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
+
+// three.js: Metro bazen `package.json` exports / `module` alanından `build/three.module.js`
+// yolunu çözemiyor (500 → bundle JSON dönüyor). Doğrudan build dosyasına yönlendir.
+const threeModulePath = path.join(__dirname, 'node_modules', 'three', 'build', 'three.module.js');
+const upstreamResolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === 'three') {
+    return { type: 'sourceFile', filePath: threeModulePath };
+  }
+  if (typeof upstreamResolveRequest === 'function') {
+    return upstreamResolveRequest(context, moduleName, platform);
+  }
+  if (typeof context.resolveRequest === 'function') {
+    return context.resolveRequest(context, moduleName, platform);
+  }
+  return metroResolver.resolve(
+    { ...context, resolveRequest: metroResolver.resolve },
+    moduleName,
+    platform
+  );
+};
 
 if (supabaseOrigin) {
   const upstreamEnhance = config.server?.enhanceMiddleware;

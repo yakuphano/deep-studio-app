@@ -42,6 +42,22 @@ export default function CreateTaskScreen() {
       color: '#3b82f6',
       route: '/admin/tasks/create/video',
     },
+    {
+      id: 'medical',
+      title: 'Medical Data Annotation',
+      description: 'Create medical imaging tasks (ROI, labels) from images or zip batches',
+      icon: 'medkit',
+      color: '#14b8a6',
+      route: '/admin/tasks/create/medical',
+    },
+    {
+      id: 'lidar',
+      title: 'LiDAR Annotation',
+      description: "Create LiDAR bird's-eye view tasks from images or zip batches",
+      icon: 'scan',
+      color: '#f97316',
+      route: '/admin/tasks/create/lidar',
+    },
   ];
 
   const handleTaskTypeSelect = (route: string) => {
@@ -126,12 +142,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 20,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    alignContent: 'flex-start',
   },
   taskTypeCard: {
-    flex: 1,
+    flexGrow: 0,
+    flexShrink: 1,
     minWidth: 280,
     maxWidth: 350,
+    width: 280,
     backgroundColor: '#1e293b',
     borderRadius: 16,
     borderWidth: 1,

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAnnotationTaskNav } from '@/contexts/AnnotationTaskNavContext';
 import AnnotationCanvas, { type Annotation, type Tool } from '@/components/AnnotationCanvas';
 import { resolveTaskImageUrl } from '@/lib/audioUrl';
 import WorkbenchImageToolRail from '@/components/workbench/WorkbenchImageToolRail';
@@ -41,19 +42,21 @@ export default function ImageTaskDetailScreen() {
   const params = useLocalSearchParams<{ id: string | string[] }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const router = useRouter();
+  const { t, i18n } = useTranslation();
+  const { user, session, signOut, isAdmin } = useAuth();
+  const annotationNav = useAnnotationTaskNav();
   const navigateBackFromDetail = useCallback(() => {
+    const fallback = annotationNav.listPath;
     try {
       if (typeof router.canGoBack === 'function' && router.canGoBack()) {
         router.back();
       } else {
-        router.replace('/dashboard/image');
+        router.replace(fallback);
       }
     } catch {
-      router.replace('/dashboard/image');
+      router.replace(fallback);
     }
-  }, [router]);
-  const { t, i18n } = useTranslation();
-  const { user, session, signOut, isAdmin } = useAuth();
+  }, [router, annotationNav.listPath]);
   const [task, setTask] = useState<TaskData | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -84,16 +87,25 @@ export default function ImageTaskDetailScreen() {
   const audioUrl = task?.audio_url;
   const imageUrl = task?.image_url;
   const videoUrl = task?.video_url;
-  const isImageTask = task?.type === 'image' || (task?.category ?? '').toString().toLowerCase().includes('image');
+  const typeOrCat = `${(task?.type ?? '').toString().toLowerCase()} ${(task?.category ?? '').toString().toLowerCase()}`;
+  const isImageTask =
+    task?.type === 'image' ||
+    typeOrCat.includes('image') ||
+    typeOrCat.includes('medical') ||
+    typeOrCat.includes('lidar');
   const isSubmitted = task?.status === 'submitted';
 
   const taskType: 'audio' | 'image' | 'video' = (() => {
     const hasImageUrl = !!task?.image_url;
     const hasVideoUrl = !!task?.video_url;
-    const typeIsImage = task?.type === 'image';
+    const typeLower = (task?.type ?? '').toString().toLowerCase();
+    const typeIsImage =
+      task?.type === 'image' || typeLower === 'medical' || typeLower === 'lidar';
     const typeIsVideo = task?.type === 'video';
-    const categoryIsImage = (task?.category ?? '').toLowerCase() === 'image';
-    const categoryIsVideo = (task?.category ?? '').toLowerCase() === 'video';
+    const catLower = (task?.category ?? '').toString().toLowerCase();
+    const categoryIsImage =
+      catLower === 'image' || catLower === 'medical' || catLower === 'lidar';
+    const categoryIsVideo = catLower === 'video';
     
     // Image priority for this screen
     if (hasImageUrl || typeIsImage || categoryIsImage) return 'image';
@@ -256,35 +268,39 @@ export default function ImageTaskDetailScreen() {
       triggerEarningsRefresh();
 
       if (navigateToNext) {
-        const { data: claimedTask, error: claimError } = await supabase
+        let claimQuery = supabase
           .from('tasks')
-          .update({ 
-            assigned_to: user.id, 
-            is_pool_task: false 
+          .update({
+            assigned_to: user.id,
+            is_pool_task: false,
           })
           .is('assigned_to', null)
           .is('is_pool_task', true)
           .neq('status', 'submitted')
           .neq('status', 'completed')
-          .neq('id', id)
+          .neq('id', id);
+        if (annotationNav.poolTypeFilter) {
+          claimQuery = claimQuery.eq('type', annotationNav.poolTypeFilter);
+        }
+        const { data: claimedTask, error: claimError } = await claimQuery
           .order('created_at', { ascending: false })
           .limit(1)
           .select('id')
           .single();
-        
+
         if (claimError) {
           if (claimError.code === 'PGRST116') {
-            router.replace('/dashboard');
+            router.replace(annotationNav.listPath);
             return;
           } else {
             throw claimError;
           }
         }
-        
+
         if (claimedTask) {
-          router.replace(`/task/${claimedTask.id}`);
+          router.replace(`${annotationNav.detailBasePath}/${claimedTask.id}`);
         } else {
-          router.replace('/dashboard');
+          router.replace(annotationNav.listPath);
         }
       }
     } catch (err) {
@@ -297,7 +313,7 @@ export default function ImageTaskDetailScreen() {
     } finally {
       setSaving(false);
     }
-  }, [id, user?.id, transcription, annotations, t, router]);
+  }, [id, user?.id, transcription, annotations, t, router, annotationNav]);
 
   const handleSubmitAndExit = () => handleSubmit(false);
   const handleSubmitNext = () => handleSubmit(true);

@@ -142,7 +142,6 @@ export default function AudioTasksScreen() {
           <View style={styles.emptyWrap}>
             <Ionicons name="mic-outline" size={64} color="#22c55e" />
             <Text style={styles.emptyTitle}>No Audio Tasks</Text>
-            <Text style={styles.emptyDescription}>No audio tasks found in your language.</Text>
             <TouchableOpacity style={styles.emptyRefresh} onPress={() => fetchAudioTasks(true)} activeOpacity={0.8}>
               <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
               <Text style={styles.emptyRefreshText}>Refresh Tasks</Text>
@@ -275,13 +274,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginTop: 16,
     textAlign: 'center',
-  },
-  emptyDescription: {
-    fontSize: 16,
-    color: '#94a3b8',
-    marginTop: 8,
-    textAlign: 'center',
-    paddingHorizontal: 24,
   },
   emptyRefresh: {
     marginTop: 24,

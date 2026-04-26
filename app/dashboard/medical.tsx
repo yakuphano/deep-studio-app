@@ -25,9 +25,7 @@ type Task = {
   language: string;
   category?: string | null;
   type?: string | null;
-  audio_url?: string | null;
   image_url?: string | null;
-  transcription?: string | null;
   is_pool_task?: boolean;
   assigned_to?: string | null;
 };
@@ -44,12 +42,14 @@ function getLanguageLabel(code: string) {
   return languages[code] || code;
 }
 
-export default function ImageTasksScreen() {
+const ACCENT = '#14b8a6';
+
+export default function MedicalTasksScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
   const { user, session } = useAuth();
-  const [imageTasks, setImageTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const { width } = useWindowDimensions();
   const numColumns = taskListGridColumnCount(width);
@@ -61,28 +61,31 @@ export default function ImageTasksScreen() {
   const userId = user?.id ?? session?.user?.id ?? null;
   const navigatorReady = rootNavigationState?.key != null;
 
-  const fetchImageTasks = useCallback(async (showLoading = true) => {
-    if (!userId) return;
-    if (showLoading) setLoading(true);
+  const fetchTasks = useCallback(
+    async (showLoading = true) => {
+      if (!userId) return;
+      if (showLoading) setLoading(true);
 
-    try {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('type', 'image')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false });
+      try {
+        const { data, error } = await supabase
+          .from('tasks')
+          .select('*')
+          .eq('type', 'medical')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('[image-tasks] Fetch error:', error);
-        return;
+        if (error) {
+          console.error('[medical-tasks] Fetch error:', error);
+          return;
+        }
+
+        setTasks(data || []);
+      } finally {
+        setLoading(false);
       }
-
-      setImageTasks(data || []);
-    } finally {
-      setLoading(false);
-    }
-  }, [userId]);
+    },
+    [userId]
+  );
 
   useEffect(() => {
     if (!navigatorReady) return;
@@ -90,13 +93,13 @@ export default function ImageTasksScreen() {
       router.replace('/');
       return;
     }
-    fetchImageTasks(true);
+    fetchTasks(true);
   }, [navigatorReady, userId, session]);
 
   useFocusEffect(
     useCallback(() => {
-      if (userId && navigatorReady) fetchImageTasks(false);
-    }, [userId, navigatorReady])
+      if (userId && navigatorReady) fetchTasks(false);
+    }, [userId, navigatorReady, fetchTasks])
   );
 
   const handleBack = useCallback(() => {
@@ -106,7 +109,7 @@ export default function ImageTasksScreen() {
   if (!user || !session) {
     return (
       <View style={styles.authLoading}>
-        <ActivityIndicator size="large" color="#ec4899" />
+        <ActivityIndicator size="large" color={ACCENT} />
         <Text style={styles.authLoadingText}>Yükleniyor...</Text>
       </View>
     );
@@ -116,26 +119,26 @@ export default function ImageTasksScreen() {
     <View style={styles.container}>
       <View style={styles.breadcrumbRow}>
         <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
-          <Ionicons name="arrow-back" size={16} color="#f9a8d4" />
+          <Ionicons name="arrow-back" size={16} color="#5eead4" />
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.breadcrumbText}>
-          {`${t('nav.dashboard')} > ${t('nav.breadcrumbImage')}`}
+          {`${t('nav.dashboard')} > ${t('nav.breadcrumbMedical')}`}
         </Text>
       </View>
 
       <View style={styles.pageHeader}>
-        <Text style={styles.pageTitle}>Image Annotation Tasks</Text>
+        <Text style={styles.pageTitle}>{t('tasks.pageTitleMedical')}</Text>
       </View>
 
       <View style={styles.body}>
         {loading ? (
           <ActivityIndicator size="large" color="#ffffff" style={styles.loader} />
-        ) : imageTasks.length === 0 ? (
+        ) : tasks.length === 0 ? (
           <View style={styles.emptyWrap}>
-            <Ionicons name="image-outline" size={64} color="#ec4899" />
-            <Text style={styles.emptyTitle}>No Image Tasks</Text>
-            <TouchableOpacity style={styles.emptyRefresh} onPress={() => fetchImageTasks(true)} activeOpacity={0.8}>
+            <Ionicons name="medkit-outline" size={64} color={ACCENT} />
+            <Text style={styles.emptyTitle}>No medical tasks</Text>
+            <TouchableOpacity style={styles.emptyRefresh} onPress={() => fetchTasks(true)} activeOpacity={0.8}>
               <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
               <Text style={styles.emptyRefreshText}>Refresh Tasks</Text>
             </TouchableOpacity>
@@ -143,19 +146,19 @@ export default function ImageTasksScreen() {
         ) : (
           <View style={styles.gridContainer}>
             <FlatList
-              data={imageTasks}
+              data={tasks}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <TaskListCard
-                  title={`${t('tasks.taskListHeadingImage')} - ${item.title}`}
+                  title={`${t('tasks.taskListHeadingMedical')} — ${item.title}`}
                   status={item.status}
                   price={item.price}
-                  accent="#ec4899"
-                  icon="image"
+                  accent={ACCENT}
+                  icon="medkit"
                   subtitle={getLanguageLabel(item.language)}
                   ctaLabel={t('tasks.startTask')}
                   style={[styles.cardSlot, { width: cardSlotWidth }]}
-                  onPress={() => router.push(`/dashboard/image/${item.id}`)}
+                  onPress={() => router.push(`/dashboard/medical/${item.id}`)}
                 />
               )}
               numColumns={numColumns}
@@ -211,11 +214,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 10,
-    backgroundColor: 'rgba(236, 72, 153, 0.12)',
+    backgroundColor: 'rgba(20, 184, 166, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(236, 72, 153, 0.35)',
+    borderColor: 'rgba(20, 184, 166, 0.35)',
   },
-  backText: { color: '#f9a8d4', fontSize: 14, fontWeight: '600' },
+  backText: { color: '#5eead4', fontSize: 14, fontWeight: '600' },
   breadcrumbText: { color: '#4b5563', fontSize: 12 },
   pageHeader: {
     alignItems: 'center',
@@ -270,7 +273,7 @@ const styles = StyleSheet.create({
   },
   emptyRefresh: {
     marginTop: 24,
-    backgroundColor: '#ec4899',
+    backgroundColor: ACCENT,
     paddingVertical: 14,
     paddingHorizontal: 30,
     borderRadius: 12,

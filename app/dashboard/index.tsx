@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 
-type TaskType = 'transcription' | 'image' | 'video';
+type TaskType = 'transcription' | 'image' | 'video' | 'medical' | 'lidar';
 
 function TaskSelectionCards({
   onSelect,
@@ -37,10 +37,14 @@ function TaskSelectionCards({
             <View style={styles.cardIcon}>
               <Ionicons name="mic" size={48} color="#3b82f6" />
             </View>
-            <Text style={styles.cardLabel}>{t('tasks.cardAudioTranscription')}</Text>
-            <Text style={styles.cardHint}>
-              {t('tasks.listenToAudio')} • {t('tasks.transcribeHere')}
-            </Text>
+            <View style={styles.cardTitleArea}>
+              <Text style={styles.cardLabel} numberOfLines={2}>
+                {t('tasks.cardAudioTranscription')}
+              </Text>
+              <Text style={styles.cardHint}>
+                {t('tasks.listenToAudio')} • {t('tasks.transcribeHere')}
+              </Text>
+            </View>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.selectionCard}
@@ -50,8 +54,12 @@ function TaskSelectionCards({
             <View style={styles.cardIcon}>
               <Ionicons name="image" size={48} color="#f472b6" />
             </View>
-            <Text style={styles.cardLabel}>{t('tasks.cardImageAnnotation')}</Text>
-            <Text style={styles.cardHint}>BBox • Polygon • Segmentation</Text>
+            <View style={styles.cardTitleArea}>
+              <Text style={styles.cardLabel} numberOfLines={2}>
+                {t('tasks.cardImageAnnotation')}
+              </Text>
+              <Text style={styles.cardHint}>{t('tasks.hintImageAnnotation')}</Text>
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -62,8 +70,44 @@ function TaskSelectionCards({
             <View style={styles.cardIcon}>
               <Ionicons name="videocam" size={48} color="#8b5cf6" />
             </View>
-            <Text style={styles.cardLabel}>{t('tasks.cardVideoAnnotation')}</Text>
-            <Text style={styles.cardHint}>Frame • Object • Tracking</Text>
+            <View style={styles.cardTitleArea}>
+              <Text style={styles.cardLabel} numberOfLines={2}>
+                {t('tasks.cardVideoAnnotation')}
+              </Text>
+              <Text style={styles.cardHint}>{t('tasks.hintVideoAnnotation')}</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.selectionCard}
+            onPress={() => onSelect('medical')}
+            activeOpacity={0.9}
+          >
+            <View style={styles.cardIcon}>
+              <Ionicons name="medkit" size={48} color="#14b8a6" />
+            </View>
+            <View style={styles.cardTitleArea}>
+              <Text style={styles.cardLabel} numberOfLines={2}>
+                {t('tasks.cardMedicalData')}
+              </Text>
+              <Text style={styles.cardHint}>{t('tasks.hintMedicalData')}</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.selectionCard}
+            onPress={() => onSelect('lidar')}
+            activeOpacity={0.9}
+          >
+            <View style={styles.cardIcon}>
+              <Ionicons name="scan" size={48} color="#f97316" />
+            </View>
+            <View style={styles.cardTitleArea}>
+              <Text style={styles.cardLabel} numberOfLines={2}>
+                {t('tasks.cardLidarAnnotation')}
+              </Text>
+              <Text style={styles.cardHint}>{t('tasks.hintLidarAnnotation')}</Text>
+            </View>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -85,6 +129,10 @@ export default function DashboardHubScreen() {
       router.push('/dashboard/image');
     } else if (type === 'video') {
       router.push('/(tabs)/video-tasks');
+    } else if (type === 'medical') {
+      router.push('/dashboard/medical');
+    } else if (type === 'lidar') {
+      router.push('/dashboard/lidar');
     }
   };
 
@@ -121,19 +169,22 @@ const styles = StyleSheet.create({
   cardsContainer: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
-    alignItems: 'flex-start',
+    alignItems: 'stretch',
     flexWrap: 'wrap',
     gap: 20,
   },
   selectionCard: {
-    width: '30%',
-    minWidth: 300,
-    maxWidth: 350,
+    flexBasis: '18%',
+    flexGrow: 1,
+    minWidth: 160,
+    maxWidth: 280,
+    height: 228,
     backgroundColor: 'rgba(30, 41, 59, 0.8)',
     borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
-    padding: 24,
+    paddingVertical: 20,
+    paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000000',
@@ -150,19 +201,27 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
+    flexShrink: 0,
+  },
+  cardTitleArea: {
+    minHeight: 72,
+    width: '100%',
+    justifyContent: 'center',
   },
   cardLabel: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
     color: '#f1f5f9',
-    marginBottom: 6,
     textAlign: 'center',
+    lineHeight: 22,
   },
   cardHint: {
     fontSize: 13,
     color: '#94a3b8',
     textAlign: 'center',
     fontWeight: '500',
+    marginTop: 8,
+    lineHeight: 18,
   },
 });

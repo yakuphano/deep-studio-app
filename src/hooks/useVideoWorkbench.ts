@@ -78,12 +78,14 @@ export const useVideoWorkbench = (taskId: string) => {
     return typeof u === 'string' && u.length >= MIN_SNAPSHOT_DATA_URL_LEN;
   }
 
+  /** DB / eski veride frameNumber string gelebilir; === ile eşleşmezse aynı kare için ikinci blok oluşur (timeline çiftleri). */
   function findBlockIndex(
     next: VideoAnnotation[],
     frameNumber: number,
     timeSec: number
   ): number {
-    const byFn = next.findIndex((a) => a.frameNumber === frameNumber);
+    const fn = Number(frameNumber);
+    const byFn = next.findIndex((a) => Number(a.frameNumber) === fn);
     if (byFn >= 0) return byFn;
     if (!Number.isFinite(timeSec) || timeSec <= 0.001) return -1;
     let bestI = -1;
@@ -99,7 +101,47 @@ export const useVideoWorkbench = (taskId: string) => {
     return bestD <= CAPTURE_TS_TOL_SEC ? bestI : -1;
   }
 
-  /** Supabase satır boyutu için kayıtta önizleme URL’lerini çıkar */
+  /** Aynı kare numarasına birden fazla blok varsa tek blokta birleştir (timeline'da çift satır önleme). */
+  function consolidateVideoAnnotationBlocks(blocks: VideoAnnotation[]): VideoAnnotation[] {
+    if (!Array.isArray(blocks) || blocks.length <= 1) return blocks;
+    const byFrame = new Map<number, VideoAnnotation>();
+    for (const b of blocks) {
+      const fn = Number(b.frameNumber ?? 0);
+      const cur = byFrame.get(fn);
+      if (!cur) {
+        byFrame.set(fn, { ...b, frameNumber: fn });
+        continue;
+      }
+      const annById = new Map<string, unknown>();
+      for (const x of cur.annotations || []) {
+        const id = String((x as { id?: string })?.id ?? '');
+        if (id) annById.set(id, x);
+      }
+      for (const x of b.annotations || []) {
+        const id = String((x as { id?: string })?.id ?? '');
+        if (id) annById.set(id, x);
+      }
+      const mergedAnn = [...annById.values()];
+      const snapA = cur.snapshotUrl;
+      const snapB = b.snapshotUrl;
+      const preferSnap = isUsableSnapshotUrl(snapA)
+        ? snapA
+        : isUsableSnapshotUrl(snapB)
+          ? snapB
+          : snapA ?? snapB;
+      byFrame.set(fn, {
+        id: String(cur.id ?? b.id ?? `frame_${fn}`),
+        frameNumber: fn,
+        timestamp: Number(cur.timestamp ?? b.timestamp ?? 0) || Number(b.timestamp ?? 0),
+        annotations: mergedAnn,
+        snapshotUrl: preferSnap,
+      });
+    }
+    return Array.from(byFrame.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([, v]) => v);
+  }
+
   function stripSnapshotUrlsForDb(blocks: VideoAnnotation[]): VideoAnnotation[] {
     return blocks.map(({ snapshotUrl: _snap, ...rest }) => ({ ...rest }));
   }
@@ -133,7 +175,7 @@ export const useVideoWorkbench = (taskId: string) => {
     } else {
       next.push(block);
     }
-    return next;
+    return consolidateVideoAnnotationBlocks(next);
   }
 
   /** Oynatıcı `timeupdate` ile değişen süreyi kayıt anahtarı olarak kullanma (yarış / yanlış kare) */
@@ -177,51 +219,15 @@ export const useVideoWorkbench = (taskId: string) => {
           JSON.stringify(prev[i].annotations) === JSON.stringify(annotations) &&
           prev[i].snapshotUrl === nextBlock.snapshotUrl
         ) {
-          return prev;
+          return consolidateVideoAnnotationBlocks(prev);
         }
         const n = [...prev];
         n[i] = nextBlock;
-        return n;
+        return consolidateVideoAnnotationBlocks(n);
       }
-      return [...prev, nextBlock];
+      return consolidateVideoAnnotationBlocks([...prev, nextBlock]);
     });
   }, [annotations, currentFrame, currentFrameNumber]);
-
-  const silentSaveDraft = useCallback(async () => {
-    if (!taskId || !user?.id) return;
-    const base = videoAnnotationsRef.current;
-    const mergedPayload =
-      currentFrameRef.current != null
-        ? mergeCurrentFrameIntoList(
-            base,
-            currentFrameNumberRef.current,
-            persistTimestampRef.current,
-            annotationsRef.current,
-            currentFrameRef.current
-          )
-        : base;
-    setVideoAnnotations(mergedPayload);
-    const { error } = await supabase
-      .from('tasks')
-      .update({
-        annotation_data: stripSnapshotUrlsForDb(mergedPayload),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', taskId);
-    if (error) {
-      console.warn('[video workbench] autosave', error.message);
-      throw new Error(error.message);
-    }
-  }, [taskId, user?.id]);
-
-  /** 10 sn otomatik kayıt (sessiz) */
-  useEffect(() => {
-    if (!taskId || !user?.id) return;
-    const id = setInterval(() => {
-      void silentSaveDraft().catch(() => {});
-    }, 10_000);
-    return () => clearInterval(id);
-  }, [taskId, user?.id, silentSaveDraft]);
 
   const getSubmitValidationMessages = useCallback((): string[] => {
     const msgs: string[] = [];
@@ -249,6 +255,9 @@ export const useVideoWorkbench = (taskId: string) => {
     }
 
     setThumbnailCache({});
+    setVideoAnnotations([]);
+    setAnnotations([]);
+    setSelectedAnnotationId(null);
 
     const { data, error } = await supabase
       .from('tasks')
@@ -303,9 +312,16 @@ export const useVideoWorkbench = (taskId: string) => {
     });
     setVideoUrl(playable ?? (taskData.video_url ? String(taskData.video_url) : null));
 
-    // Load existing video annotations
-    if (taskData.annotation_data && Array.isArray(taskData.annotation_data)) {
-      setVideoAnnotations(taskData.annotation_data as VideoAnnotation[]);
+    /** Yalnızca gönderilmiş / tamamlanmış görevlerde sunucudaki anotasyonu göster (taslak DB kaydı yok). */
+    const st = String(taskData.status ?? '').toLowerCase();
+    const useServerAnnotations = st === 'submitted' || st === 'completed';
+    if (
+      useServerAnnotations &&
+      taskData.annotation_data &&
+      Array.isArray(taskData.annotation_data)
+    ) {
+      const loadedBlocks = taskData.annotation_data as VideoAnnotation[];
+      setVideoAnnotations(consolidateVideoAnnotationBlocks(loadedBlocks));
     }
     setLoading(false);
   }, [taskId, session]);
@@ -369,7 +385,7 @@ export const useVideoWorkbench = (taskId: string) => {
           }
         }
         let j = findBlockIndex(next, frameNumber, timestamp);
-        if (j >= 0 && next[j].frameNumber !== frameNumber) {
+        if (j >= 0 && Number(next[j].frameNumber) !== Number(frameNumber)) {
           next[j] = {
             ...next[j],
             frameNumber,
@@ -408,7 +424,7 @@ export const useVideoWorkbench = (taskId: string) => {
             });
           }
         }
-        return next;
+        return consolidateVideoAnnotationBlocks(next);
       });
 
       const batch = pendingThumbWritesRef.current;
@@ -464,11 +480,22 @@ export const useVideoWorkbench = (taskId: string) => {
 
     setSaving(true);
     try {
-      await silentSaveDraft();
+      const base = videoAnnotationsRef.current;
+      const mergedPayload =
+        currentFrameRef.current != null
+          ? mergeCurrentFrameIntoList(
+              base,
+              currentFrameNumberRef.current,
+              persistTimestampRef.current,
+              annotationsRef.current,
+              currentFrameRef.current
+            )
+          : base;
+      setVideoAnnotations(mergedPayload);
       if (typeof window !== 'undefined') {
-        window.alert(t('taskDetail.saveSuccess') || 'Kaydedildi');
+        window.alert(t('videoWorkbench.sessionOnlyHint'));
       } else {
-        Alert.alert(t('taskDetail.successTitle') || 'Başarılı', t('taskDetail.saveSuccess') || 'Kaydedildi');
+        Alert.alert(t('taskDetail.successTitle') || 'OK', t('videoWorkbench.sessionOnlyHint'));
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -480,7 +507,7 @@ export const useVideoWorkbench = (taskId: string) => {
     } finally {
       setSaving(false);
     }
-  }, [taskId, user?.id, t, silentSaveDraft]);
+  }, [taskId, user?.id, t]);
 
   // Handle submit
   const handleSubmit = useCallback(async (navigateToNext: boolean = false) => {
@@ -590,9 +617,9 @@ export const useVideoWorkbench = (taskId: string) => {
     currentFrame,
     currentFrameNumber,
     currentTimestamp,
+    videoDuration,
     videoAnnotations,
     thumbnailCache,
-    videoDuration,
     videoUrl,
     task,
     saving,
@@ -609,7 +636,6 @@ export const useVideoWorkbench = (taskId: string) => {
     handleTimeUpdate,
     handleLoadedMetadata,
     handleSaveDraft,
-    silentSaveDraft,
     handleSubmit,
     togglePlayPause,
     handleDeleteAnnotation,

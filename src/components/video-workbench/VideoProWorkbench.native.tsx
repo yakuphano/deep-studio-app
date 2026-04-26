@@ -3,7 +3,7 @@ import { View, Text } from 'react-native';
 
 type Props = { taskId?: string };
 
-/** Native: profesyonel masaüstü arayüzü yalnızca web’de yüklenir. */
+/** Native: pro workbench UI runs on web only (.web.tsx). */
 export default function VideoProWorkbench(_props: Props) {
   return (
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>

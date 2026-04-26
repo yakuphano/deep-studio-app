@@ -341,5 +341,8 @@
     "annotation": "Etiketleme",
     "customClassPlaceholder": "Sınıf adı…",
     "customLabelsSection": "Ek sınıflar"
+  },
+  "videoWorkbench": {
+    "sessionOnlyHint": "Bu işlem yalnızca oturumda birleştirir. Sunucuya kaydetmek için Gönder veya Gönder ve Çık kullanın."
   }
 }

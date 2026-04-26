@@ -77,38 +77,52 @@ export default function LidarThreeView({
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x020617);
+    scene.fog = new THREE.FogExp2(0x020617, 0.0035);
 
-    const camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 500);
-    camera.position.set(22, 26, 32);
-    camera.lookAt(0, 0, 0);
+    const camera = new THREE.PerspectiveCamera(50, w / h, 0.15, 520);
+    camera.position.set(34, 30, 34);
+    camera.lookAt(0, 0.6, 0);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      logarithmicDepthBuffer: true,
+    });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(w, h);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
     wrap.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.07;
-    controls.target.set(0, 0, 0);
+    controls.target.set(0, 0.6, 0);
+    controls.maxPolarAngle = Math.PI * 0.92;
 
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geom.computeBoundingSphere();
     const mat = new THREE.PointsMaterial({
-      size: 0.11,
+      size: 0.24,
       vertexColors: true,
       sizeAttenuation: true,
       transparent: true,
-      opacity: 0.94,
+      opacity: 1,
       depthWrite: false,
+      depthTest: true,
     });
     const points = new THREE.Points(geom, mat);
     scene.add(points);
 
-    const grid = new THREE.GridHelper(80, 40, 0x475569, 0x1e293b);
+    const grid = new THREE.GridHelper(96, 48, 0x64748b, 0x1e293b);
     scene.add(grid);
+
+    const axes = new THREE.AxesHelper(5);
+    axes.renderOrder = 1;
+    scene.add(axes);
 
     const cuboidRoot = new THREE.Group();
     scene.add(cuboidRoot);
@@ -161,7 +175,7 @@ export default function LidarThreeView({
     });
 
     const raycaster = new THREE.Raycaster();
-    raycaster.params.Points!.threshold = 0.28;
+    raycaster.params.Points!.threshold = 0.42;
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const hit = new THREE.Vector3();
 
@@ -260,6 +274,12 @@ export default function LidarThreeView({
     t.geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     t.geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     t.geom.computeBoundingSphere();
+    const bs = t.geom.boundingSphere;
+    const r = bs?.radius ?? 28;
+    const ptSize = Math.min(0.55, Math.max(0.16, r * 0.006));
+    const pm = t.points.material as THREE.PointsMaterial;
+    pm.size = ptSize;
+    pm.needsUpdate = true;
   }, [positions, colors]);
 
   useEffect(() => {
@@ -329,7 +349,12 @@ export default function LidarThreeView({
   return (
     <div style={styles.wrap}>
       <div ref={wrapRef} style={styles.canvasHost} />
-      <div style={styles.hintBar}>{hint}</div>
+      <div style={styles.hintBar}>
+        <div>{hint}</div>
+        <div style={styles.hintSub}>
+          Colors by height: low (purple/blue) → high (yellow/white). Axes: X red, Y green, Z blue.
+        </div>
+      </div>
     </div>
   );
 }
@@ -354,11 +379,19 @@ const styles: Record<string, React.CSSProperties> = {
     bottom: 0,
     left: 0,
     right: 0,
-    padding: '6px 8px',
+    padding: '8px 10px',
     fontSize: 11,
     color: '#94a3b8',
     textAlign: 'center',
     pointerEvents: 'none',
-    background: 'linear-gradient(transparent, rgba(2,6,23,0.85))',
+    background: 'linear-gradient(transparent, rgba(2,6,23,0.92))',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+  },
+  hintSub: {
+    fontSize: 10,
+    color: '#64748b',
+    lineHeight: 1.35,
   },
 };

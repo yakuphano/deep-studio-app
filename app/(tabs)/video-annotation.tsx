@@ -256,8 +256,9 @@ function VideoAnnotationMobile({ taskId }: { taskId?: string }) {
 }
 
 export default function VideoAnnotationScreen() {
-  const params = useLocalSearchParams<{ id: string | string[] }>();
-  const id = Array.isArray(params.id) ? params.id[0] : params.id;
+  const params = useLocalSearchParams<{ id?: string | string[]; taskId?: string | string[] }>();
+  const rawId = params.id ?? params.taskId;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
   if (Platform.OS === 'web') {
     return <VideoProWorkbench taskId={id ?? ''} />;

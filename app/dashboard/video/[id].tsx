@@ -16,6 +16,7 @@ import {
   type CustomLabelDefinition,
 } from '@/constants/annotationLabels';
 import { WorkbenchObjectListChrome } from '@/components/workbench/WorkbenchObjectListChrome';
+import VideoProWorkbench from '@/components/video-workbench/VideoProWorkbench';
 
 interface TaskData {
   id: string;
@@ -56,14 +57,10 @@ export default function VideoTaskDetailScreen() {
   const audioUrl = task?.audio_url;
   const imageUrl = task?.image_url;
   const videoUrl = task?.video_url;
-  
-  // DEBUG LOG - Gelen video verisini kontrol et
-  console.log('Gelen Video Verisi:', task);
-  console.log('Video URL Değeri:', videoUrl);
-  
-  const isVideoTask = task?.type === 'video' || (task?.category ?? '').toString().toLowerCase().includes('video');
+
   const isSubmitted = task?.status === 'submitted';
 
+  /** Must match the branch that shows the video editor (includes tasks with video_url but non-video type). */
   const taskType: 'audio' | 'image' | 'video' = (() => {
     const hasVideoUrl = !!task?.video_url;
     const hasImageUrl = !!task?.image_url;
@@ -71,14 +68,13 @@ export default function VideoTaskDetailScreen() {
     const typeIsImage = task?.type === 'image';
     const categoryIsVideo = (task?.category ?? '').toLowerCase() === 'video';
     const categoryIsImage = (task?.category ?? '').toLowerCase() === 'image';
-    
-    // Video priority for this screen
+
     if (hasVideoUrl || typeIsVideo || categoryIsVideo) return 'video';
-    // Image fallback
     if (hasImageUrl || typeIsImage || categoryIsImage) return 'image';
-    // Default to audio
     return 'audio';
   })();
+
+  const isVideoTask = taskType === 'video';
 
   useEffect(() => {
     if (!id) return;
@@ -110,11 +106,6 @@ export default function VideoTaskDetailScreen() {
         setLoading(false);
         return;
       }
-      // DEBUG LOG - Gelen ham veriyi kontrol et
-      console.log('Veritabanından Gelen Ham Veri:', data);
-      console.log('video_url kolonu:', data.video_url);
-      console.log('videoUrl kolonu:', data.videoUrl);
-
       const cat = (data.category ?? '').toString().toLowerCase();
       const taskData: TaskData = {
         id: String(data.id),
@@ -131,10 +122,6 @@ export default function VideoTaskDetailScreen() {
         annotation_data: data.annotation_data ?? null,
         language: data.language ?? null,
       };
-
-      // DEBUG LOG - Video URL'yi kontrol et
-      console.log('Oynatılacak Video URL:', taskData?.video_url);
-      console.log('Tüm Task Data:', taskData);
 
       setTask(taskData);
       if (Array.isArray(taskData.annotation_data)) {
@@ -332,13 +319,8 @@ export default function VideoTaskDetailScreen() {
     );
   }
 
-  if (isWeb && isVideoTask) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
-        <ActivityIndicator size="large" color="#8b5cf6" />
-        <Text style={styles.loadingText}>Video annotation açılıyor…</Text>
-      </View>
-    );
+  if (isWeb && isVideoTask && id) {
+    return <VideoProWorkbench taskId={id} />;
   }
 
   if (taskType === 'video') {

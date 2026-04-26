@@ -342,5 +342,8 @@
     "annotation": "Annotation",
     "customClassPlaceholder": "Class name…",
     "customLabelsSection": "Custom classes"
+  },
+  "videoWorkbench": {
+    "sessionOnlyHint": "Current frame data was merged in this session only. Use Submit or Submit & Exit to save to the server."
   }
 }

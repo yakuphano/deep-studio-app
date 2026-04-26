@@ -624,7 +624,7 @@ export const useAnnotationActions = ({
               id: `magic_wand-${Date.now()}`,
               type: 'magic_wand' as const,
               points: pts,
-              label: selectedLabel ?? '',
+              label: '',
             };
             onAnnotationsChange((prev) => [...prev, wand as Annotation]);
             armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
@@ -666,7 +666,7 @@ export const useAnnotationActions = ({
               onAnnotationsChange((prev) => [...prev, newPolygon]);
               setHistory((prev) => [...prev, { type: 'annotation', data: newPolygon }]);
               armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
-              onSelect?.(null);
+              onSelect?.(newPolygon.id);
             }
             setIsDrawingPolygon(false);
             setPolygonPoints([]);
@@ -1328,7 +1328,6 @@ export const useAnnotationActions = ({
         const pending = pendingPointPlacementRef.current;
         pendingPointPlacementRef.current = null;
         armSuppressObjectSelectAfterCreate(suppressObjectSelectUntilRef);
-        onSelect?.(null);
         if (!pending) break;
         const pointAnnotation = {
           id: `point-${Date.now()}`,
@@ -1339,6 +1338,7 @@ export const useAnnotationActions = ({
         };
         onAnnotationsChange((prev) => [...prev, pointAnnotation]);
         setHistory((prev) => [...prev, { type: 'annotation', data: pointAnnotation }]);
+        onSelect?.(pointAnnotation.id);
         break;
       }
     }

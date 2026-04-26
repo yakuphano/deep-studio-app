@@ -1,44 +1,50 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, Platform, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import AnnotationCanvas, { type Annotation, type Tool } from '@/components/AnnotationCanvas';
-import BrushColorPalette from '@/components/workbench/BrushColorPalette';
-import VideoMultiFrameObjectList from '@/components/video-workbench/VideoMultiFrameObjectList';
-import { DEFAULT_BRUSH_COLOR } from '@/types/annotations';
-import {
-  ANNOTATION_LABELS,
-  customLabelDefinitionsToMap,
-  mergeAnnotationChipLabels,
-  type CustomLabelDefinition,
-} from '@/constants/annotationLabels';
-import { videoProWorkbenchStyles as S, proColors } from '@/theme/videoProWorkbenchTheme';
+import VideoAnnotationTimeline from '@/components/video-workbench/VideoAnnotationTimeline.web';
+import AnnotatorVideoRightPanel from '@/components/video-workbench/AnnotatorVideoRightPanel.web';
+import WorkbenchVideoToolRail from '@/components/video-workbench/WorkbenchVideoToolRail.web';
+import { createVideoProWorkbenchStyles, desktopWorkbenchDark } from '@/theme/videoProWorkbenchTheme';
 import { useVideoWorkbench } from '@/hooks/useVideoWorkbench';
 import { WebVideoPlayer, type WebVideoPlayerHandle } from '@/components/video-workbench/WebVideoPlayer.web';
+import { useAuth } from '@/contexts/AuthContext';
+import { WorkbenchObjectListChrome } from '@/components/workbench/WorkbenchObjectListChrome';
+import {
+  ANNOTATION_LABELS,
+  mergeAnnotationChipLabels,
+  customLabelDefinitionsToMap,
+  type CustomLabelDefinition,
+} from '@/constants/annotationLabels';
 
 const FPS = 30;
+const C = desktopWorkbenchDark;
 
 type Props = { taskId: string };
 
 export default function VideoProWorkbench({ taskId }: Props) {
   const router = useRouter();
   const { t } = useTranslation();
+  const { user } = useAuth();
   const videoRef = useRef<WebVideoPlayerHandle>(null);
   const canvasRef = useRef<any>(null);
-  const [activeTool, setActiveTool] = useState<Tool>('bbox');
-  const [selectedLabel, setSelectedLabel] = useState<string>(String(ANNOTATION_LABELS[0] ?? 'Other'));
-  const [trackMode, setTrackMode] = useState(false);
+
+  const S = useMemo(() => createVideoProWorkbenchStyles(C), []);
+
   const [extraLabelDefinitions, setExtraLabelDefinitions] = useState<CustomLabelDefinition[]>([]);
-  const [brushColor, setBrushColor] = useState(DEFAULT_BRUSH_COLOR);
-  const [brushPaletteOpen, setBrushPaletteOpen] = useState(false);
+  const [activeTool, setActiveTool] = useState<Tool>('bbox');
+  /** Yeni çizimler canvas’ta boş etiketle oluşur; sınıf sağ panel veya 1–5 ile atanır */
+  const [selectedLabel, setSelectedLabel] = useState<string>('');
+  const [trackMode, setTrackMode] = useState(false);
 
   const {
     currentFrame,
     currentFrameNumber,
     videoAnnotations,
-    thumbnailCache,
     videoUrl,
+    videoDuration,
     task,
     saving,
     loading,
@@ -55,11 +61,26 @@ export default function VideoProWorkbench({ taskId }: Props) {
     setVideoAnnotations,
     setSelectedAnnotationId,
     requestSelectAnnotationAfterFrameCapture,
+    getSubmitValidationMessages,
   } = useVideoWorkbench(taskId);
 
   useEffect(() => {
     loadVideo();
   }, [loadVideo]);
+
+  const totalFrames = useMemo(() => {
+    const d = Number.isFinite(videoDuration) && videoDuration > 0 ? videoDuration : 0;
+    return Math.max(1, Math.floor(d * FPS) + 1);
+  }, [videoDuration]);
+
+  const progressPct = useMemo(() => {
+    const annotated = new Set<number>();
+    for (const b of videoAnnotations) {
+      if ((b.annotations ?? []).length > 0) annotated.add(b.frameNumber);
+    }
+    const denom = Math.max(1, totalFrames - 1);
+    return Math.min(100, Math.round((annotated.size / denom) * 100));
+  }, [videoAnnotations, totalFrames]);
 
   const builtInLabelSet = useMemo(
     () => new Set<string>(ANNOTATION_LABELS as unknown as string[]),
@@ -84,25 +105,22 @@ export default function VideoProWorkbench({ taskId }: Props) {
     [builtInLabelSet]
   );
 
-  const handleRemoveExtraLabelOption = useCallback(
-    (label: string) => {
-      setExtraLabelDefinitions((prev) => prev.filter((d) => d.label !== label));
-      const relabel = (a: Annotation) => {
+  const handleRemoveExtraLabelOption = useCallback((label: string) => {
+    setExtraLabelDefinitions((prev) => prev.filter((d) => d.label !== label));
+    setAnnotations((prev) =>
+      prev.map((a) => {
         const cur =
           typeof a.label === 'object' && a.label !== null
-            ? String((a.label as any).name ?? (a.label as any).label ?? '')
+            ? String((a.label as { name?: string }).name ?? (a.label as { label?: string }).label ?? '')
             : String(a.label ?? '');
-        return cur === label ? ({ ...a, label: 'Other' } as Annotation) : a;
-      };
-      setAnnotations((prev) => prev.map(relabel));
-      setVideoAnnotations((prev) =>
-        prev.map((block) => ({
-          ...block,
-          annotations: (block.annotations ?? []).map(relabel),
-        }))
-      );
-    },
-    [setAnnotations, setVideoAnnotations]
+        return cur === label ? { ...a, label: 'Other' } : a;
+      })
+    );
+  }, [setAnnotations]);
+
+  const chipLabels = useMemo(
+    () => mergeAnnotationChipLabels(extraLabelDefinitions.map((d) => d.label)),
+    [extraLabelDefinitions]
   );
 
   const labelColorOverrides = useMemo(
@@ -110,97 +128,77 @@ export default function VideoProWorkbench({ taskId }: Props) {
     [extraLabelDefinitions]
   );
 
-  const chipLabels = useMemo(
-    () => mergeAnnotationChipLabels(extraLabelDefinitions.map((d) => d.label)),
-    [extraLabelDefinitions]
+  const onSeekTimelineFrame = useCallback(
+    (frame: number) => {
+      const max = Math.max(0, totalFrames - 1);
+      const clamped = Math.max(0, Math.min(max, frame));
+      const t = clamped / FPS;
+      videoRef.current?.pause();
+      videoRef.current?.seekToTime(t);
+    },
+    [FPS, totalFrames]
   );
 
-  const onUpdateLabelForFrame = useCallback(
-    (frameNumber: number, annId: string, label: string) => {
-      if (frameNumber === currentFrameNumber) {
-        handleUpdateAnnotationLabel(annId, label);
-        setVideoAnnotations((prev) =>
-          prev.map((b) => ({
-            ...b,
-            annotations: (b.annotations ?? []).map((a: Annotation) =>
-              a.id === annId ? { ...a, label } : a
-            ),
-          }))
-        );
-      } else {
-        setVideoAnnotations((prev) =>
-          prev.map((b) =>
-            b.frameNumber !== frameNumber
-              ? b
-              : {
-                  ...b,
-                  annotations: (b.annotations ?? []).map((a: Annotation) =>
-                    a.id === annId ? { ...a, label } : a
-                  ),
-                }
-          )
-        );
-      }
-      setSelectedLabel(label);
+  const frameJumpControl = useMemo(
+    () => ({
+      totalFrames,
+      currentFrameNumber,
+      onJumpFrame: onSeekTimelineFrame,
+    }),
+    [totalFrames, currentFrameNumber, onSeekTimelineFrame]
+  );
+
+  const onUpdateLabelForSelected = useCallback(
+    (annId: string, label: string) => {
+      handleUpdateAnnotationLabel(annId, label);
+      setVideoAnnotations((prev) =>
+        prev.map((b) =>
+          b.frameNumber !== currentFrameNumber
+            ? b
+            : {
+                ...b,
+                annotations: (b.annotations ?? []).map((a: Annotation) =>
+                  a.id === annId ? { ...a, label } : a
+                ),
+              }
+        )
+      );
     },
     [currentFrameNumber, handleUpdateAnnotationLabel, setVideoAnnotations]
   );
 
-  const onDeleteAnnotationForFrame = useCallback(
-    (frameNumber: number, annId: string) => {
-      if (frameNumber === currentFrameNumber) {
-        handleDeleteAnnotation(annId);
-        setVideoAnnotations((prev) =>
-          prev.map((b) => ({
-            ...b,
-            annotations: (b.annotations ?? []).filter((a: Annotation) => a.id !== annId),
-          }))
+  const trySubmit = useCallback(
+    (navigateNext: boolean) => {
+      const msgs = getSubmitValidationMessages();
+      const incomplete = msgs.length > 0 || progressPct < 100;
+      if (incomplete && typeof window !== 'undefined') {
+        const ok = window.confirm(
+          'Some frames still have missing annotations.\n\nSubmit anyway?'
         );
+        if (!ok) return;
+      }
+      void handleSubmit(navigateNext);
+    },
+    [getSubmitValidationMessages, handleSubmit, progressPct]
+  );
+
+  const navigateBack = useCallback(() => {
+    try {
+      if (typeof router.canGoBack === 'function' && router.canGoBack()) {
+        router.back();
       } else {
-        setVideoAnnotations((prev) =>
-          prev.map((b) =>
-            b.frameNumber !== frameNumber
-              ? b
-              : {
-                  ...b,
-                  annotations: (b.annotations ?? []).filter((a: Annotation) => a.id !== annId),
-                }
-          )
-        );
-        if (selectedAnnotationId === annId) setSelectedAnnotationId(null);
+        router.replace('/dashboard/video' as never);
       }
-    },
-    [currentFrameNumber, handleDeleteAnnotation, selectedAnnotationId, setVideoAnnotations, setSelectedAnnotationId]
-  );
-
-  const onJumpToFrame = useCallback((_: number, timestamp: number) => {
-    if (typeof document !== 'undefined') {
-      const el = document.activeElement as HTMLElement | null;
-      el?.blur?.();
+    } catch {
+      router.replace('/dashboard/video' as never);
     }
-    videoRef.current?.pause();
-    videoRef.current?.seekToTime(timestamp);
-  }, []);
-
-  const onSelectObjectFromList = useCallback(
-    (_frameNumber: number, annotationId: string, timestamp: number) => {
-      if (typeof document !== 'undefined') {
-        const el = document.activeElement as HTMLElement | null;
-        el?.blur?.();
-      }
-      requestSelectAnnotationAfterFrameCapture(annotationId);
-      videoRef.current?.pause();
-      videoRef.current?.seekToTime(timestamp);
-    },
-    [requestSelectAnnotationAfterFrameCapture]
-  );
+  }, [router]);
 
   const effectiveTool: Tool = trackMode ? 'magic_wand' : activeTool;
 
-  const setTool = useCallback((tool: Tool) => {
+  const setTool = useCallback((t: Tool) => {
     setTrackMode(false);
-    setActiveTool(tool);
-    if (tool !== 'brush') setBrushPaletteOpen(false);
+    setActiveTool(t);
   }, []);
 
   useEffect(() => {
@@ -214,41 +212,67 @@ export default function VideoProWorkbench({ taskId }: Props) {
         videoRef.current?.togglePlayPause();
         return;
       }
-      if (e.key === 'a' || e.key === 'A') {
+      if (e.key === 'ArrowLeft') {
         e.preventDefault();
         videoRef.current?.stepFrames(e.shiftKey ? -10 : -1);
         return;
       }
-      if (e.key === 'd' || e.key === 'D') {
+      if (e.key === 'ArrowRight') {
         e.preventDefault();
         videoRef.current?.stepFrames(e.shiftKey ? 10 : 1);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          /* redo not available */
+        } else {
+          canvasRef.current?.handleUndo?.();
+        }
+        return;
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const ids = annotations.map((a) => a.id).filter(Boolean);
+        if (ids.length === 0) return;
+        const cur = selectedAnnotationId ? ids.indexOf(selectedAnnotationId) : -1;
+        const next = ids[(cur + 1) % ids.length];
+        setSelectedAnnotationId(next ?? null);
         return;
       }
       if (!e.ctrlKey && !e.metaKey) {
         if (e.key === 'v' || e.key === 'V') setTool('select');
         if (e.key === 'b' || e.key === 'B') setTool('bbox');
         if (e.key === 'p' || e.key === 'P') setTool('polygon');
-        if (e.key === 'o' || e.key === 'O') setTool('points');
-        if (e.key === 'l' || e.key === 'L') setTool('polyline');
-        if (e.key === 'f' || e.key === 'F') setTool('brush');
+        if (e.key === 'k' || e.key === 'K') setTool('points');
+        if (e.key === 'z' || e.key === 'Z') setTool('pan');
         if (e.key === 't' || e.key === 'T') setTrackMode((m) => !m);
         if (e.key === 'Delete' || e.key === 'Backspace') {
           if (selectedAnnotationId) handleDeleteAnnotation(selectedAnnotationId);
         }
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        e.preventDefault();
-        canvasRef.current?.handleUndo?.();
-      }
       const num = parseInt(e.key, 10);
-      if (!e.ctrlKey && !e.metaKey && num >= 1 && num <= 9) {
-        const lab = chipLabels[num - 1];
-        if (lab) setSelectedLabel(lab);
+      const quickLabels = chipLabels.slice(0, 9);
+      if (!e.ctrlKey && !e.metaKey && num >= 1 && num <= quickLabels.length) {
+        const lab = quickLabels[num - 1];
+        if (!lab) return;
+        if (selectedAnnotationId) {
+          onUpdateLabelForSelected(selectedAnnotationId, lab);
+        } else {
+          setSelectedLabel(lab);
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [chipLabels, handleDeleteAnnotation, selectedAnnotationId, setTool]);
+  }, [
+    annotations,
+    chipLabels,
+    handleDeleteAnnotation,
+    onUpdateLabelForSelected,
+    selectedAnnotationId,
+    setTool,
+  ]);
 
   const isSubmitted = task?.status === 'submitted';
 
@@ -261,117 +285,69 @@ export default function VideoProWorkbench({ taskId }: Props) {
   }
 
   return (
-    <View style={S.root}>
-      <View style={S.backHeaderRow}>
-        <TouchableOpacity style={S.backButton} onPress={() => router.back()} activeOpacity={0.8}>
+    <View style={[S.root, { backgroundColor: C.bg, flex: 1, position: 'relative' as const }]}>
+      {/* Görüntü görevi üst şeridi: Back + sağ üstte tür + fiyat */}
+      <View style={topStyles.headerStrip}>
+        <TouchableOpacity style={topStyles.backBtn} onPress={navigateBack} activeOpacity={0.8}>
           <Ionicons name="arrow-back" size={20} color="#3b82f6" />
-          <Text style={S.backButtonText}>{t('taskDetail.back')}</Text>
+          <Text style={topStyles.backBtnText}>{t('taskDetail.back')}</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={S.mainRow}>
-        <ScrollView
-          style={S.leftToolRail}
-          contentContainerStyle={S.leftToolRailContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <TouchableOpacity
-            style={[S.toolRailBtn, activeTool === 'select' && !trackMode && S.toolRailBtnActive]}
-            onPress={() => setTool('select')}
-            accessibilityLabel="Select"
-            {...(Platform.OS === 'web' ? ({ title: 'Select (V)' } as object) : {})}
-          >
-            <Ionicons name="hand-left-outline" size={18} color={proColors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[S.toolRailBtn, activeTool === 'bbox' && !trackMode && S.toolRailBtnActive]}
-            onPress={() => setTool('bbox')}
-            accessibilityLabel="Bounding box"
-            {...(Platform.OS === 'web' ? ({ title: 'Bounding box (B)' } as object) : {})}
-          >
-            <Ionicons name="square-outline" size={18} color={proColors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[S.toolRailBtn, activeTool === 'polygon' && !trackMode && S.toolRailBtnActive]}
-            onPress={() => setTool('polygon')}
-            accessibilityLabel="Polygon"
-            {...(Platform.OS === 'web' ? ({ title: 'Polygon (P)' } as object) : {})}
-          >
-            <Ionicons name="git-merge-outline" size={18} color={proColors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[S.toolRailBtn, activeTool === 'points' && !trackMode && S.toolRailBtnActive]}
-            onPress={() => setTool('points')}
-            accessibilityLabel="Points"
-            {...(Platform.OS === 'web' ? ({ title: 'Points (O)' } as object) : {})}
-          >
-            <Ionicons name="locate-outline" size={18} color={proColors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[S.toolRailBtn, activeTool === 'polyline' && !trackMode && S.toolRailBtnActive]}
-            onPress={() => setTool('polyline')}
-            accessibilityLabel="Polyline"
-            {...(Platform.OS === 'web' ? ({ title: 'Polyline (L)' } as object) : {})}
-          >
-            <Ionicons name="analytics-outline" size={18} color={proColors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[S.toolRailBtn, activeTool === 'brush' && !trackMode && S.toolRailBtnActive]}
-            onPress={() => {
-              setTool('brush');
-              setBrushPaletteOpen((o) => !o);
-            }}
-            accessibilityLabel="Brush"
-            {...(Platform.OS === 'web' ? ({ title: 'Brush (F)' } as object) : {})}
-          >
-            <Ionicons name="brush-outline" size={18} color={proColors.text} />
-          </TouchableOpacity>
-          {activeTool === 'brush' && brushPaletteOpen ? (
-            <View style={{ width: 52, alignSelf: 'center', marginBottom: 4 }}>
-              <BrushColorPalette
-                currentColor={brushColor}
-                onSelectColor={(c) => {
-                  setBrushColor(c);
-                  setBrushPaletteOpen(false);
-                }}
-                width={52}
-              />
-            </View>
-          ) : null}
-          <TouchableOpacity
-            style={[S.toolRailBtn, trackMode && S.toolRailBtnActive]}
-            onPress={() => setTrackMode((m) => !m)}
-            accessibilityLabel="Track"
-            {...(Platform.OS === 'web' ? ({ title: 'Track (T)' } as object) : {})}
-          >
-            <Ionicons name="color-wand-outline" size={18} color={proColors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={S.toolRailBtn}
-            onPress={() => canvasRef.current?.handleUndo?.()}
-            accessibilityLabel="Undo"
-            {...(Platform.OS === 'web' ? ({ title: 'Undo (Ctrl+Z)' } as object) : {})}
-          >
-            <Ionicons name="arrow-undo-outline" size={18} color={proColors.text} />
-          </TouchableOpacity>
-        </ScrollView>
+      <View style={topStyles.taskInfoBar} pointerEvents="box-none">
+        <Text style={topStyles.taskInfoType}>{t('tasks.cardVideoAnnotation')}</Text>
+        <View style={topStyles.taskInfoPriceBadge}>
+          <Text style={topStyles.taskInfoPriceText}>{task?.price ?? 0} TL</Text>
+        </View>
+      </View>
 
-        <View style={S.center}>
-          <View style={S.centerStack}>
+      <View style={{ flex: 1, minHeight: 0, minWidth: 0, width: '100%', maxWidth: '100%' }}>
+      <View style={[S.mainRow, { flex: 1, minHeight: 0, minWidth: 0, width: '100%', maxWidth: '100%' }]}>
+        <View
+          style={{
+            alignItems: 'center',
+            backgroundColor: '#0f172a',
+            borderRightWidth: 1,
+            borderRightColor: '#334155',
+          }}
+        >
+          <WorkbenchVideoToolRail
+            activeTool={activeTool}
+            trackMode={trackMode}
+            onToolChange={(t) => setTool(t)}
+            onToggleTrack={() => setTrackMode((m) => !m)}
+            onUndo={() => canvasRef.current?.handleUndo?.()}
+            onResetView={() => canvasRef.current?.resetView?.()}
+            selectedAnnotationId={selectedAnnotationId}
+            onDeleteSelected={() => {
+              if (selectedAnnotationId) handleDeleteAnnotation(selectedAnnotationId);
+            }}
+          />
+        </View>
+
+        <View
+          style={[
+            S.centerColumn,
+            {
+              flex: 1,
+              minWidth: 0,
+              flexShrink: 1,
+              backgroundColor: C.bg,
+              overflow: 'hidden',
+            },
+          ]}
+        >
+          <View style={[S.centerStack, { flex: 1, minHeight: 0, minWidth: 0, backgroundColor: C.bg }]}>
             {currentFrame ? (
-              <View style={S.canvasWrap}>
+              <View style={[S.canvasWrap, { flex: 1, backgroundColor: C.bg }]}>
                 <View style={S.canvasFitBar} pointerEvents="box-none">
                   <TouchableOpacity
                     style={S.canvasFitButton}
                     onPress={() => canvasRef.current?.resetView?.()}
                     activeOpacity={0.85}
-                    accessibilityLabel={t('annotation.resetView')}
-                    {...(Platform.OS === 'web'
-                      ? ({ title: t('annotation.resetView') } as object)
-                      : {})}
+                    {...(Platform.OS === 'web' ? ({ title: 'Reset view' } as object) : {})}
                   >
-                    <Ionicons name="contract-outline" size={20} color={proColors.text} />
+                    <Ionicons name="contract-outline" size={20} color={C.text} />
                   </TouchableOpacity>
                 </View>
                 <View style={S.canvasWorkspace}>
@@ -387,90 +363,259 @@ export default function VideoProWorkbench({ taskId }: Props) {
                     selectedId={selectedAnnotationId}
                     onSelect={setSelectedAnnotationId}
                     selectedLabel={selectedLabel}
-                    isBrushActive={activeTool === 'brush'}
-                    onToolChange={(tool) => setTool(tool as Tool)}
+                    isBrushActive={false}
+                    onToolChange={(tl) => setTool(tl as Tool)}
                     onUndo={() => canvasRef.current?.handleUndo?.()}
                     labelColorOverrides={labelColorOverrides}
                     hideFloatingToolbar
-                    brushColor={brushColor}
-                    onBrushColorChange={setBrushColor}
-                    brushPaletteOpen={brushPaletteOpen}
-                    onBrushPaletteOpenChange={setBrushPaletteOpen}
                   />
                 </View>
               </View>
             ) : (
-              <View style={[S.canvasWrap, { backgroundColor: proColors.bg }]} />
+              <View style={[S.canvasWrap, { flex: 1, backgroundColor: C.bg }]} />
             )}
 
-            <View style={S.videoWrap}>
+            <View style={[S.videoWrap, { flex: 1.35, backgroundColor: C.bg }]}>
               {videoUrl ? (
                 <WebVideoPlayer
                   key={videoUrl}
                   ref={videoRef}
                   src={videoUrl}
                   fps={FPS}
+                  chrome={C}
+                  frameJump={frameJumpControl}
                   onFrameCapture={handleFrameCapture}
                   onTimeUpdate={handleTimeUpdate}
                   onLoadedMetadata={handleLoadedMetadata}
                 />
               ) : (
-                <View style={{ flex: 1, backgroundColor: proColors.bg }} />
+                <View style={{ flex: 1, backgroundColor: C.bg }} />
               )}
             </View>
           </View>
+
+          <VideoAnnotationTimeline
+            colors={C}
+            totalFrames={totalFrames}
+            currentFrameNumber={currentFrameNumber}
+            videoAnnotations={videoAnnotations}
+            onSeekFrame={onSeekTimelineFrame}
+          />
         </View>
 
-        <View style={S.rightPanel}>
-          <View style={{ flex: 1, minHeight: 0, alignSelf: 'stretch' }}>
-            <VideoMultiFrameObjectList
-              videoAnnotations={videoAnnotations}
-              thumbnailCache={thumbnailCache}
-              currentFrameNumber={currentFrameNumber}
-              selectedAnnotationId={selectedAnnotationId}
+        <View
+          style={{
+            width: 300,
+            minWidth: 300,
+            maxWidth: 300,
+            flexGrow: 0,
+            flexShrink: 0,
+            alignSelf: 'stretch',
+            minHeight: 0,
+            flexDirection: 'column',
+            backgroundColor: C.panel,
+            borderLeftWidth: 1,
+            borderLeftColor: '#334155',
+            zIndex: 2,
+          }}
+        >
+          <View style={{ paddingHorizontal: 10, paddingTop: 10, paddingBottom: 4 }}>
+            <WorkbenchObjectListChrome
               extraLabelDefinitions={extraLabelDefinitions}
               onAddExtraLabelOption={handleAddExtraLabelOption}
               onRemoveExtraLabelOption={handleRemoveExtraLabelOption}
-              onJumpToFrame={onJumpToFrame}
-              onSelectObject={onSelectObjectFromList}
-              onUpdateAnnotationLabel={onUpdateLabelForFrame}
-              onDeleteAnnotation={onDeleteAnnotationForFrame}
+            />
+          </View>
+          <View style={{ flex: 1, minHeight: 0 }}>
+            <AnnotatorVideoRightPanel
+              colors={C}
+              annotations={annotations}
+              selectedId={selectedAnnotationId}
+              onSelect={setSelectedAnnotationId}
+              onUpdateLabel={onUpdateLabelForSelected}
+              onDelete={handleDeleteAnnotation}
+              chipLabels={chipLabels}
+              labelColorOverrides={labelColorOverrides}
             />
           </View>
         </View>
       </View>
+      </View>
 
-      {!isSubmitted && (
-        <View style={S.bottomButtonBar}>
-          <View style={S.bottomLeftActions}>
-            <TouchableOpacity style={S.exitButton} onPress={() => router.back()} activeOpacity={0.8}>
-              <Text style={S.exitButtonText}>Exit</Text>
+      {!isSubmitted ? (
+        <View style={bottomStyles.bottomButtonBar}>
+          <View style={bottomStyles.bottomLeftActions}>
+            <TouchableOpacity style={bottomStyles.exitButton} onPress={navigateBack} activeOpacity={0.8}>
+              <Text style={bottomStyles.exitButtonText}>Exit</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[S.submitExitButton, saving && S.submitButtonDisabled]}
-              onPress={() => void handleSubmit(false)}
+              style={[bottomStyles.submitExitButton, saving && bottomStyles.submitButtonDisabled]}
+              onPress={() => trySubmit(false)}
               disabled={saving}
               activeOpacity={0.8}
             >
-              <Text style={S.submitExitButtonText}>
-                {saving ? t('taskDetail.saving') : 'Submit & Exit'}
-              </Text>
+              <Text style={bottomStyles.submitExitButtonText}>{saving ? 'Saving…' : 'Submit & Exit'}</Text>
             </TouchableOpacity>
           </View>
-          <View style={S.bottomRightActions}>
+          <View style={bottomStyles.bottomRightActions}>
             <TouchableOpacity
-              style={[S.submitButtonGreen, saving && S.submitButtonDisabled]}
-              onPress={() => void handleSubmit(true)}
+              style={[bottomStyles.submitButtonGreen, saving && bottomStyles.submitButtonDisabled]}
+              onPress={() => trySubmit(true)}
               disabled={saving}
               activeOpacity={0.8}
             >
-              <Text style={S.submitButtonGreenText}>
-                {saving ? t('taskDetail.saving') : 'Submit'}
-              </Text>
+              <Text style={bottomStyles.submitButtonGreenText}>{saving ? 'Saving…' : 'Submit'}</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <View style={bottomStyles.bottomButtonBar}>
+          <TouchableOpacity style={bottomStyles.exitButton} onPress={navigateBack} activeOpacity={0.8}>
+            <Text style={bottomStyles.exitButtonText}>Exit</Text>
+          </TouchableOpacity>
+          <View style={bottomStyles.submittedBadge}>
+            <Ionicons name="checkmark-circle" size={16} color="#fff" />
+            <Text style={bottomStyles.submittedText}>Submitted</Text>
           </View>
         </View>
       )}
     </View>
   );
 }
+
+const topStyles = StyleSheet.create({
+  headerStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    marginBottom: 4,
+    backgroundColor: '#0f172a',
+    minHeight: 40,
+    maxHeight: 44,
+    zIndex: 1000,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  backBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3b82f6',
+    marginLeft: 8,
+  },
+  taskInfoBar: {
+    position: 'absolute' as const,
+    top: 16,
+    right: 16,
+    zIndex: 1001,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  taskInfoType: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#94a3b8',
+    backgroundColor: 'rgba(148, 163, 184, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  taskInfoPriceBadge: {
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  taskInfoPriceText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#22c55e',
+  },
+});
+
+/** `app/dashboard/image/[id].tsx` alt çubuğu ile aynı düzen */
+const bottomStyles = StyleSheet.create({
+  bottomButtonBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#0f172a',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  bottomLeftActions: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+    flexShrink: 1,
+    flexWrap: 'wrap',
+  },
+  bottomRightActions: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  exitButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+  },
+  exitButtonText: {
+    fontSize: 14,
+    color: '#ef4444',
+    fontWeight: '600',
+  },
+  submitExitButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#3b82f6',
+  },
+  submitExitButtonText: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  submitButtonGreen: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#22c55e',
+  },
+  submitButtonGreenText: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submittedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#22c55e',
+  },
+  submittedText: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: '600',
+  },
+});

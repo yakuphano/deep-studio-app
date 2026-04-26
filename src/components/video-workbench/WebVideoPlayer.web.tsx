@@ -8,7 +8,8 @@ import React, {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
-import { proColors } from '@/theme/videoProWorkbenchTheme';
+import { proColors, type ProThemeColors } from '@/theme/videoProWorkbenchTheme';
+import { hexToRgba } from '@/constants/annotationLabels';
 
 export type WebVideoPlayerHandle = {
   togglePlayPause: () => void;
@@ -22,6 +23,12 @@ export type WebVideoPlayerHandle = {
   setPlaybackRate: (r: number) => void;
 };
 
+type FrameJumpProps = {
+  totalFrames: number;
+  currentFrameNumber: number;
+  onJumpFrame: (frame: number) => void;
+};
+
 type Props = {
   src: string;
   fps?: number;
@@ -29,6 +36,10 @@ type Props = {
   onTimeUpdate: (currentTime: number, duration: number) => void;
   onLoadedMetadata: (duration: number) => void;
   onVideoDimensions?: (w: number, h: number) => void;
+  /** Optional chrome colors (e.g. light workbench theme) */
+  chrome?: ProThemeColors;
+  /** Annotator: jump to frame row under transport */
+  frameJump?: FrameJumpProps;
 };
 
 function safeDuration(video: HTMLVideoElement, fallback: number): number {
@@ -111,9 +122,10 @@ function skipCrossOriginForSrc(src: string): boolean {
 }
 
 export const WebVideoPlayer = forwardRef<WebVideoPlayerHandle, Props>(function WebVideoPlayer(
-  { src, fps = 30, onFrameCapture, onTimeUpdate, onLoadedMetadata, onVideoDimensions },
+  { src, fps = 30, onFrameCapture, onTimeUpdate, onLoadedMetadata, onVideoDimensions, chrome, frameJump },
   ref
 ) {
+  const theme = chrome ?? proColors;
   const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -121,6 +133,7 @@ export const WebVideoPlayer = forwardRef<WebVideoPlayerHandle, Props>(function W
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [jumpFrameText, setJumpFrameText] = useState('0');
   /** CORS: önce anonymous; yükleme hata verirse (çoğu “failed”) crossOrigin kaldırılıp tekrar denenir. */
   const [corsRelaxed, setCorsRelaxed] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
@@ -133,6 +146,10 @@ export const WebVideoPlayer = forwardRef<WebVideoPlayerHandle, Props>(function W
     setCorsRelaxed(false);
     setMediaError(null);
   }, [src]);
+
+  useEffect(() => {
+    if (frameJump) setJumpFrameText(String(frameJump.currentFrameNumber));
+  }, [frameJump?.currentFrameNumber]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -400,66 +417,84 @@ export const WebVideoPlayer = forwardRef<WebVideoPlayerHandle, Props>(function W
         backgroundColor: '#000',
         display: 'flex',
         flexDirection: 'column',
-        border: `1px solid ${proColors.border}`,
-        borderRadius: proColors.radius,
+        border: `1px solid ${theme.border}`,
+        borderRadius: theme.radius,
       } as React.CSSProperties,
     },
     [
-      React.createElement('video', {
-        key: `video-${src}`,
-        ref: (el: HTMLVideoElement | null) => {
-          videoRef.current = el;
+      React.createElement(
+        'div',
+        {
+          key: 'stage',
+          style: {
+            position: 'relative',
+            flex: 1,
+            minHeight: 0,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            backgroundColor: '#000',
+          } as React.CSSProperties,
         },
-        playsInline: true,
-        preload: 'auto',
-        style: {
-          width: '100%',
-          flex: 1,
-          minHeight: 0,
-          objectFit: 'contain' as const,
-          backgroundColor: '#000',
-          outline: 'none',
-        } as React.CSSProperties,
-      }),
-      mediaError
-        ? React.createElement(
-            'div',
-            {
-              key: 'err',
-              style: {
-                position: 'absolute',
-                left: 8,
-                right: 8,
-                top: 8,
-                maxWidth: 'min(100%, 420px)',
-                marginLeft: 'auto',
-                marginRight: 'auto',
-                padding: '6px 8px',
-                borderRadius: 6,
-                backgroundColor: 'rgba(127, 29, 29, 0.92)',
-                border: '1px solid #fca5a5',
-                zIndex: 6,
-              } as React.CSSProperties,
+        [
+          React.createElement('video', {
+            key: `video-${src}`,
+            ref: (el: HTMLVideoElement | null) => {
+              videoRef.current = el;
             },
-            React.createElement(
-              'span',
-              {
-                title: mediaError.length > 80 ? mediaError : undefined,
-                style: {
-                  color: '#fecaca',
-                  fontSize: 11,
-                  lineHeight: 1.35,
-                  display: 'block',
-                  maxHeight: '2.75em',
-                  overflow: 'hidden',
-                  overflowWrap: 'anywhere' as const,
-                  wordBreak: 'break-word' as const,
-                } as React.CSSProperties,
-              },
-              `Video yüklenemedi: ${mediaError}`
-            )
-          )
-        : null,
+            playsInline: true,
+            preload: 'auto',
+            style: {
+              width: '100%',
+              flex: 1,
+              minHeight: 0,
+              objectFit: 'contain' as const,
+              backgroundColor: '#000',
+              outline: 'none',
+            } as React.CSSProperties,
+          }),
+          mediaError
+            ? React.createElement(
+                'div',
+                {
+                  key: 'err',
+                  style: {
+                    position: 'absolute',
+                    left: 8,
+                    right: 8,
+                    top: 8,
+                    maxWidth: 'min(100%, 420px)',
+                    marginLeft: 'auto',
+                    marginRight: 'auto',
+                    padding: '6px 8px',
+                    borderRadius: 6,
+                    backgroundColor: 'rgba(127, 29, 29, 0.92)',
+                    border: '1px solid #fca5a5',
+                    zIndex: 6,
+                  } as React.CSSProperties,
+                },
+                React.createElement(
+                  'span',
+                  {
+                    title: mediaError.length > 80 ? mediaError : undefined,
+                    style: {
+                      color: '#fecaca',
+                      fontSize: 11,
+                      lineHeight: 1.35,
+                      display: 'block',
+                      maxHeight: '2.75em',
+                      overflow: 'hidden',
+                      overflowWrap: 'anywhere' as const,
+                      wordBreak: 'break-word' as const,
+                    } as React.CSSProperties,
+                  },
+                  `Video yüklenemedi: ${mediaError}`
+                )
+              )
+            : null,
+        ]
+      ),
       React.createElement('canvas', {
         key: 'canvas',
         ref: (el: HTMLCanvasElement | null) => {
@@ -472,15 +507,10 @@ export const WebVideoPlayer = forwardRef<WebVideoPlayerHandle, Props>(function W
         {
           key: 'controls',
           style: {
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 2,
-            zIndex: 4,
-            backgroundColor: 'rgba(15, 23, 42, 0.92)',
-            padding: '10px 12px 12px',
-            borderTop: `1px solid ${proColors.border}`,
-            borderRadius: '0 0 6px 6px',
+            flexShrink: 0,
+            backgroundColor: hexToRgba(theme.bg, 0.98),
+            padding: '4px 8px 6px',
+            borderTop: `1px solid ${theme.border}`,
             boxSizing: 'border-box',
           } as React.CSSProperties,
         },
@@ -496,7 +526,13 @@ export const WebVideoPlayer = forwardRef<WebVideoPlayerHandle, Props>(function W
               seekTo(parseFloat(e.target.value)),
             onInput: (e: React.FormEvent<HTMLInputElement>) =>
               seekTo(parseFloat((e.target as HTMLInputElement).value)),
-            style: { width: '100%', cursor: 'pointer' } as React.CSSProperties,
+            style: {
+              width: '100%',
+              cursor: 'pointer',
+              height: 16,
+              margin: 0,
+              padding: 0,
+            } as React.CSSProperties,
           }),
           React.createElement(
             'div',
@@ -504,10 +540,12 @@ export const WebVideoPlayer = forwardRef<WebVideoPlayerHandle, Props>(function W
               key: 'row',
               style: {
                 display: 'flex',
-                justifyContent: 'space-between',
+                flexDirection: 'row',
+                flexWrap: 'wrap',
                 alignItems: 'center',
-                marginTop: 8,
-                gap: 8,
+                justifyContent: 'space-between',
+                gap: '4px 8px',
+                marginTop: 2,
               } as React.CSSProperties,
             },
             [
@@ -515,9 +553,49 @@ export const WebVideoPlayer = forwardRef<WebVideoPlayerHandle, Props>(function W
                 'div',
                 {
                   key: 'l',
-                  style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 } as React.CSSProperties,
+                  style: {
+                    display: 'flex',
+                    flexDirection: 'row',
+                    flexWrap: 'nowrap',
+                    alignItems: 'center',
+                    gap: 3,
+                  } as React.CSSProperties,
                 },
                 [
+                  React.createElement(
+                    'button',
+                    {
+                      key: 'j10b',
+                      type: 'button',
+                      title: 'Jump 10 frames (← + Shift)',
+                      'aria-label': 'Jump 10 frames back',
+                      onClick: () => stepFrames(-10),
+                      style: secondaryBtnStyle(theme),
+                    },
+                    React.createElement(Ionicons, {
+                      name: 'play-skip-back',
+                      size: 16,
+                      color: theme.text,
+                      style: { pointerEvents: 'none' } as const,
+                    })
+                  ),
+                  React.createElement(
+                    'button',
+                    {
+                      key: 'pf',
+                      type: 'button',
+                      title: `${t('taskDetail.videoPrevFrame')} (← / A)`,
+                      'aria-label': `${t('taskDetail.videoPrevFrame')} (← / A)`,
+                      onClick: () => stepFrames(-1),
+                      style: secondaryBtnStyle(theme),
+                    },
+                    React.createElement(Ionicons, {
+                      name: 'chevron-back',
+                      size: 17,
+                      color: theme.text,
+                      style: { pointerEvents: 'none' } as const,
+                    })
+                  ),
                   React.createElement(
                     'button',
                     {
@@ -531,12 +609,12 @@ export const WebVideoPlayer = forwardRef<WebVideoPlayerHandle, Props>(function W
                         if (!video || !video.paused) return;
                         void video.play().catch(() => {});
                       },
-                      style: labeledBtnStyle('start', isPlaying),
+                      style: labeledBtnStyle('start', isPlaying, theme),
                     },
                     React.createElement(Ionicons, {
                       name: 'play',
-                      size: 22,
-                      color: isPlaying ? proColors.textMuted : '#ffffff',
+                      size: 18,
+                      color: isPlaying ? theme.textMuted : '#ffffff',
                       style: { pointerEvents: 'none' } as const,
                     })
                   ),
@@ -553,29 +631,12 @@ export const WebVideoPlayer = forwardRef<WebVideoPlayerHandle, Props>(function W
                         if (!video || video.paused) return;
                         video.pause();
                       },
-                      style: labeledBtnStyle('stop', !isPlaying),
+                      style: labeledBtnStyle('stop', !isPlaying, theme),
                     },
                     React.createElement(Ionicons, {
                       name: 'pause',
-                      size: 22,
-                      color: !isPlaying ? proColors.textMuted : '#ffffff',
-                      style: { pointerEvents: 'none' } as const,
-                    })
-                  ),
-                  React.createElement(
-                    'button',
-                    {
-                      key: 'pf',
-                      type: 'button',
-                      title: `${t('taskDetail.videoPrevFrame')} (A)`,
-                      'aria-label': `${t('taskDetail.videoPrevFrame')} (A)`,
-                      onClick: () => stepFrames(-1),
-                      style: secondaryBtnStyle(),
-                    },
-                    React.createElement(Ionicons, {
-                      name: 'chevron-back',
-                      size: 22,
-                      color: proColors.text,
+                      size: 18,
+                      color: !isPlaying ? theme.textMuted : '#ffffff',
                       style: { pointerEvents: 'none' } as const,
                     })
                   ),
@@ -584,29 +645,66 @@ export const WebVideoPlayer = forwardRef<WebVideoPlayerHandle, Props>(function W
                     {
                       key: 'nf',
                       type: 'button',
-                      title: `${t('taskDetail.videoNextFrame')} (D)`,
-                      'aria-label': `${t('taskDetail.videoNextFrame')} (D)`,
+                      title: `${t('taskDetail.videoNextFrame')} (→ / D)`,
+                      'aria-label': `${t('taskDetail.videoNextFrame')} (→ / D)`,
                       onClick: () => stepFrames(1),
-                      style: secondaryBtnStyle(),
+                      style: secondaryBtnStyle(theme),
                     },
                     React.createElement(Ionicons, {
                       name: 'chevron-forward',
-                      size: 22,
-                      color: proColors.text,
+                      size: 17,
+                      color: theme.text,
+                      style: { pointerEvents: 'none' } as const,
+                    })
+                  ),
+                  React.createElement(
+                    'button',
+                    {
+                      key: 'j10f',
+                      type: 'button',
+                      title: 'Jump 10 frames (→ + Shift)',
+                      'aria-label': 'Jump 10 frames forward',
+                      onClick: () => stepFrames(10),
+                      style: secondaryBtnStyle(theme),
+                    },
+                    React.createElement(Ionicons, {
+                      name: 'play-skip-forward',
+                      size: 16,
+                      color: theme.text,
                       style: { pointerEvents: 'none' } as const,
                     })
                   ),
                 ]
               ),
               React.createElement(
-                'span',
-                { key: 't', style: { fontSize: 11, color: proColors.textMuted, fontFamily: 'monospace' } as React.CSSProperties },
-                `${formatTime(currentTime)} / ${formatTime(duration)}`
-              ),
-              React.createElement(
                 'div',
-                { key: 'r', style: { display: 'flex', gap: 6, alignItems: 'center' } as React.CSSProperties },
+                {
+                  key: 'meta',
+                  style: {
+                    display: 'flex',
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    gap: 6,
+                    flex: '1 1 120px',
+                    minWidth: 0,
+                  } as React.CSSProperties,
+                },
                 [
+                  React.createElement(
+                    'span',
+                    {
+                      key: 't',
+                      style: {
+                        fontSize: 10,
+                        color: theme.textMuted,
+                        fontFamily: 'monospace',
+                        whiteSpace: 'nowrap',
+                      } as React.CSSProperties,
+                    },
+                    `${formatTime(currentTime)} / ${formatTime(duration)}`
+                  ),
                   React.createElement(
                     'select',
                     {
@@ -616,13 +714,14 @@ export const WebVideoPlayer = forwardRef<WebVideoPlayerHandle, Props>(function W
                       onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
                         changeSpeed(parseFloat(e.target.value)),
                       style: {
-                        padding: '4px 8px',
-                        borderRadius: proColors.radius,
-                        backgroundColor: proColors.bg,
-                        border: `1px solid ${proColors.border}`,
-                        color: proColors.text,
-                        fontSize: 11,
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        backgroundColor: theme.bg,
+                        border: `1px solid ${theme.border}`,
+                        color: theme.text,
+                        fontSize: 10,
                         cursor: 'pointer',
+                        height: 26,
                       } as React.CSSProperties,
                     },
                     [
@@ -631,8 +730,82 @@ export const WebVideoPlayer = forwardRef<WebVideoPlayerHandle, Props>(function W
                       React.createElement('option', { key: '1', value: 1 }, '1x'),
                       React.createElement('option', { key: '1.5', value: 1.5 }, '1.5x'),
                       React.createElement('option', { key: '2', value: 2 }, '2x'),
+                      React.createElement('option', { key: '4', value: 4 }, '4x'),
                     ]
                   ),
+                  frameJump
+                    ? React.createElement(
+                        'div',
+                        {
+                          key: 'jump',
+                          style: {
+                            display: 'flex',
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 4,
+                          } as React.CSSProperties,
+                        },
+                        [
+                          React.createElement(
+                            'span',
+                            {
+                              key: 'jl',
+                              title: 'Jump to frame',
+                              style: { fontSize: 10, color: theme.textMuted, userSelect: 'none' } as React.CSSProperties,
+                            },
+                            '#'
+                          ),
+                          React.createElement('input', {
+                            key: 'ji',
+                            type: 'number',
+                            min: 0,
+                            max: Math.max(0, frameJump.totalFrames - 1),
+                            value: jumpFrameText,
+                            onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+                              setJumpFrameText(e.target.value),
+                            style: {
+                              width: 56,
+                              height: 26,
+                              padding: '0 6px',
+                              borderRadius: 4,
+                              border: `1px solid ${theme.border}`,
+                              backgroundColor: theme.bg,
+                              color: theme.text,
+                              fontSize: 11,
+                              boxSizing: 'border-box',
+                            } as React.CSSProperties,
+                          }),
+                          React.createElement(
+                            'button',
+                            {
+                              key: 'jg',
+                              type: 'button',
+                              title: 'Seek to frame',
+                              onClick: () => {
+                                const raw = parseInt(String(jumpFrameText).replace(/[^\d-]/g, ''), 10);
+                                const max = Math.max(0, frameJump.totalFrames - 1);
+                                const f = Number.isFinite(raw)
+                                  ? Math.max(0, Math.min(max, raw))
+                                  : frameJump.currentFrameNumber;
+                                frameJump.onJumpFrame(f);
+                              },
+                              style: {
+                                height: 26,
+                                padding: '0 8px',
+                                borderRadius: 4,
+                                backgroundColor: theme.panel,
+                                border: `1px solid ${theme.border}`,
+                                color: theme.text,
+                                fontSize: 11,
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              } as React.CSSProperties,
+                            },
+                            'Go'
+                          ),
+                        ]
+                      )
+                    : null,
                 ]
               ),
             ]
@@ -643,12 +816,16 @@ export const WebVideoPlayer = forwardRef<WebVideoPlayerHandle, Props>(function W
   );
 });
 
-function labeledBtnStyle(kind: 'start' | 'stop', disabled: boolean): React.CSSProperties {
+function labeledBtnStyle(
+  kind: 'start' | 'stop',
+  disabled: boolean,
+  theme: ProThemeColors
+): React.CSSProperties {
   const base: React.CSSProperties = {
-    width: 44,
-    height: 44,
+    width: 34,
+    height: 34,
     padding: 0,
-    borderRadius: proColors.radius,
+    borderRadius: theme.radius,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -661,25 +838,25 @@ function labeledBtnStyle(kind: 'start' | 'stop', disabled: boolean): React.CSSPr
       ...base,
       backgroundColor: disabled ? '#1e3a2f' : '#15803d',
       color: '#fff',
-      borderColor: disabled ? '#334155' : '#22c55e',
+      borderColor: disabled ? theme.border : '#22c55e',
     };
   }
   return {
     ...base,
-    backgroundColor: disabled ? '#334155' : '#7f1d1d',
+    backgroundColor: disabled ? theme.border : '#7f1d1d',
     color: '#fecaca',
-    borderColor: disabled ? '#475569' : '#ef4444',
+    borderColor: disabled ? theme.textSoft : '#ef4444',
   };
 }
 
-function secondaryBtnStyle(): React.CSSProperties {
+function secondaryBtnStyle(theme: ProThemeColors): React.CSSProperties {
   return {
-    width: 44,
-    height: 44,
+    width: 30,
+    height: 30,
     padding: 0,
-    borderRadius: proColors.radius,
-    backgroundColor: '#334155',
-    border: '1px solid #475569',
+    borderRadius: theme.radius,
+    backgroundColor: theme.panel,
+    border: `1px solid ${theme.border}`,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

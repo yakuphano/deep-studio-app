@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { transcribeWithGroq } from '@/lib/groq';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
 import AudioPlayer from '@/components/AudioPlayer';
@@ -100,18 +101,34 @@ export default function AudioTaskDetailScreen() {
   }, [id]);
 
   const handleAITranscription = useCallback(async () => {
-    if (!audioUrl) return;
+    if (!audioUrl) {
+      const msg = t('taskDetail.noAudio') || 'Ses dosyası bulunamadı';
+      if (typeof window !== 'undefined') window.alert(msg);
+      else Alert.alert(t('login.errorTitle') || 'Hata', msg);
+      return;
+    }
     setTranscribing(true);
     try {
-      // Mock AI transcription
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      setTranscription('This is a sample transcription from the AI service.');
+      const result = await transcribeWithGroq({
+        fileUrl: audioUrl,
+        language: task?.language ?? null,
+      });
+      if (result.error) {
+        const errMsg = result.error;
+        if (typeof window !== 'undefined') window.alert(errMsg);
+        else Alert.alert(t('login.errorTitle') || 'Hata', errMsg);
+        return;
+      }
+      setTranscription(result.text ?? '');
     } catch (err) {
       console.error('AI Transcription Error:', err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (typeof window !== 'undefined') window.alert(errMsg);
+      else Alert.alert(t('login.errorTitle') || 'Hata', errMsg);
     } finally {
       setTranscribing(false);
     }
-  }, [audioUrl]);
+  }, [audioUrl, task?.language, t]);
 
   const handleAIFix = useCallback(async () => {
     if (!transcription.trim()) return;

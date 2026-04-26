@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { TaskListCard } from '@/components/tasks/TaskListCard';
+import { taskListGridColumnCount, taskListCardSlotWidth } from '@/lib/taskListGrid';
 
 type Task = {
   id: string;
@@ -56,7 +57,11 @@ export default function VideoTasksScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { width } = useWindowDimensions();
-  const numColumns = width >= 1200 ? 4 : width >= 900 ? 3 : width >= 600 ? 2 : 1;
+  const numColumns = taskListGridColumnCount(width);
+  const cardSlotWidth = useMemo(
+    () => taskListCardSlotWidth(width, numColumns),
+    [width, numColumns]
+  );
 
   const userId = user?.id ?? session?.user?.id ?? null;
   const navigatorReady = rootNavigationState?.key != null;
@@ -196,31 +201,36 @@ export default function VideoTasksScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <FlatList
-          data={videoTasks}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <TaskListCard
-              title={`${t('tasks.taskListHeadingVideo')} - ${item.title}`}
-              status={item.status}
-              price={item.price}
-              accent="#8b5cf6"
-              icon="videocam"
-              subtitle={item.language ? getLanguageLabel(item.language) : null}
-              ctaLabel={t('tasks.startTask')}
-              style={styles.cardSlot}
-              onPress={() => handleTaskPress(item.id)}
-            />
-          )}
-          numColumns={numColumns}
-          key={numColumns}
-          contentContainerStyle={styles.listContainer}
-          columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#8b5cf6" />
-          }
-        />
+        <View style={styles.gridContainer}>
+          <FlatList
+            data={videoTasks}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <TaskListCard
+                title={`${t('tasks.taskListHeadingVideo')} - ${item.title}`}
+                status={item.status}
+                price={item.price}
+                accent="#8b5cf6"
+                icon="videocam"
+                subtitle={item.language ? getLanguageLabel(item.language) : null}
+                ctaLabel={t('tasks.startTask')}
+                style={[styles.cardSlot, { width: cardSlotWidth }]}
+                onPress={() => handleTaskPress(item.id)}
+              />
+            )}
+            numColumns={numColumns}
+            key={numColumns}
+            contentContainerStyle={[
+              styles.listContainer,
+              numColumns > 1 ? { paddingHorizontal: 4 } : {},
+            ]}
+            columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#8b5cf6" />
+            }
+          />
+        </View>
       )}
     </SafeAreaView>
   );
@@ -269,20 +279,27 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textAlign: 'center',
   },
+  gridContainer: {
+    flex: 1,
+    alignSelf: 'stretch',
+    width: '100%',
+    maxWidth: '100%',
+    paddingHorizontal: 20,
+    minHeight: 0,
+  },
   listContainer: {
     gap: 0,
-    paddingHorizontal: 20,
     paddingBottom: 24,
   },
   columnWrapper: {
     justifyContent: 'flex-start',
     gap: 10,
-    marginBottom: 10,
   },
   cardSlot: {
-    flex: 1,
-    maxWidth: 220,
+    marginBottom: 10,
     minWidth: 0,
+    flexGrow: 0,
+    flexShrink: 0,
   },
   emptyWrap: {
     flex: 1,

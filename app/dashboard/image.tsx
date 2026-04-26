@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { TaskListCard } from '@/components/tasks/TaskListCard';
+import { taskListGridColumnCount, taskListCardSlotWidth } from '@/lib/taskListGrid';
 
 type Task = {
   id: string;
@@ -43,28 +44,6 @@ function getLanguageLabel(code: string) {
   return languages[code] || code;
 }
 
-const IMAGE_GRID_OUTER_PAD = 40; // gridContainer paddingHorizontal 20×2
-const IMAGE_LIST_INNER_PAD = 8; // FlatList content paddingHorizontal 4×2 when numColumns > 1
-const IMAGE_COL_GAP = 10;
-
-/** ~min width per card column incl. gaps; caps at 5 columns for wide dashboards */
-function imageTaskGridColumnCount(windowWidth: number) {
-  const sidePadding = 56;
-  const minSlotWidth = 212;
-  const usable = Math.max(0, windowWidth - sidePadding);
-  const n = Math.floor(usable / minSlotWidth);
-  return Math.max(1, Math.min(5, n));
-}
-
-/** Fixed card width so the last row does not stretch a single item across the screen */
-function imageTaskCardSlotWidth(windowWidth: number, columns: number) {
-  const inner = columns > 1 ? IMAGE_LIST_INNER_PAD : 0;
-  const usable = Math.max(0, windowWidth - IMAGE_GRID_OUTER_PAD - inner);
-  if (columns <= 1) return usable;
-  const gaps = (columns - 1) * IMAGE_COL_GAP;
-  return Math.max(140, Math.floor((usable - gaps) / columns));
-}
-
 export default function ImageTasksScreen() {
   const { t } = useTranslation();
   const router = useRouter();
@@ -73,9 +52,9 @@ export default function ImageTasksScreen() {
   const [imageTasks, setImageTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const { width } = useWindowDimensions();
-  const numColumns = imageTaskGridColumnCount(width);
+  const numColumns = taskListGridColumnCount(width);
   const cardSlotWidth = useMemo(
-    () => imageTaskCardSlotWidth(width, numColumns),
+    () => taskListCardSlotWidth(width, numColumns),
     [width, numColumns]
   );
 

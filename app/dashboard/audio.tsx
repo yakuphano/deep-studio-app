@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { TaskListCard } from '@/components/tasks/TaskListCard';
+import { taskListGridColumnCount, taskListCardSlotWidth } from '@/lib/taskListGrid';
 
 type Task = {
   id: string;
@@ -53,7 +54,11 @@ export default function AudioTasksScreen() {
   const [audioTasks, setAudioTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const { width } = useWindowDimensions();
-  const numColumns = width >= 1200 ? 4 : width >= 900 ? 3 : width >= 600 ? 2 : 1;
+  const numColumns = taskListGridColumnCount(width);
+  const cardSlotWidth = useMemo(
+    () => taskListCardSlotWidth(width, numColumns),
+    [width, numColumns]
+  );
 
   const userId = user?.id ?? session?.user?.id ?? null;
   const navigatorReady = rootNavigationState?.key != null;
@@ -157,7 +162,7 @@ export default function AudioTasksScreen() {
                   icon="mic"
                   subtitle={getLanguageLabel(item.language)}
                   ctaLabel={t('tasks.startTask')}
-                  style={styles.cardSlot}
+                  style={[styles.cardSlot, { width: cardSlotWidth }]}
                   onPress={() => router.push(`/dashboard/audio/${item.id}`)}
                 />
               )}
@@ -238,10 +243,10 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   gridContainer: {
-    maxWidth: 1200,
-    alignSelf: 'center',
+    flex: 1,
+    alignSelf: 'stretch',
     width: '100%',
-    paddingLeft: 20,
+    maxWidth: '100%',
     paddingHorizontal: 20,
     paddingVertical: 5,
     paddingTop: 0,
@@ -249,14 +254,13 @@ const styles = StyleSheet.create({
   },
   columnWrapper: {
     justifyContent: 'flex-start',
-    gap: 0,
+    gap: 10,
   },
   cardSlot: {
-    flex: 1,
-    maxWidth: 220,
-    margin: 2,
-    marginRight: 10,
     marginBottom: 10,
+    minWidth: 0,
+    flexGrow: 0,
+    flexShrink: 0,
   },
   emptyWrap: {
     flex: 1,

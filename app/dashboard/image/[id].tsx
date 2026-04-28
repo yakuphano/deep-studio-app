@@ -13,9 +13,11 @@ import { resolveTaskImageUrl } from '@/lib/audioUrl';
 import WorkbenchImageToolRail from '@/components/workbench/WorkbenchImageToolRail';
 import {
   ANNOTATION_LABELS,
+  MEDICAL_ANNOTATION_LABELS,
   mergeAnnotationChipLabels,
   resolveAnnotationLabelColor,
   customLabelDefinitionsToMap,
+  shouldUseMedicalAnnotationPreset,
   type CustomLabelDefinition,
 } from '@/constants/annotationLabels';
 import { WorkbenchObjectListChrome } from '@/components/workbench/WorkbenchObjectListChrome';
@@ -330,9 +332,16 @@ export default function ImageTaskDetailScreen() {
     setAnnotations(prev => prev.map(a => a.id === id ? { ...a, label } : a));
   }, []);
 
+  const useMedicalPreset = shouldUseMedicalAnnotationPreset(
+    annotationNav.poolTypeFilter,
+    task?.type,
+    task?.category
+  );
+  const chipPreset = useMedicalPreset ? MEDICAL_ANNOTATION_LABELS : ANNOTATION_LABELS;
+
   const builtInLabelSet = useMemo(
-    () => new Set<string>(ANNOTATION_LABELS as unknown as string[]),
-    []
+    () => new Set<string>(chipPreset as unknown as string[]),
+    [useMedicalPreset, chipPreset]
   );
 
   const handleAddExtraLabelOption = useCallback(
@@ -361,15 +370,26 @@ export default function ImageTaskDetailScreen() {
           typeof a.label === 'object' && a.label !== null
             ? String((a.label as any).name ?? (a.label as any).label ?? '')
             : String(a.label ?? '');
-        return cur === label ? { ...a, label: 'Other' } : a;
+        const fallback = (chipPreset as readonly string[]).includes('Other')
+          ? 'Other'
+          : String(chipPreset[0] ?? 'Other');
+        return cur === label ? { ...a, label: fallback } : a;
       })
     );
-  }, []);
+  }, [chipPreset]);
 
   const chipLabels = useMemo(
-    () => mergeAnnotationChipLabels(extraLabelDefinitions.map((d) => d.label)),
-    [extraLabelDefinitions]
+    () => mergeAnnotationChipLabels(extraLabelDefinitions.map((d) => d.label), chipPreset),
+    [extraLabelDefinitions, chipPreset]
   );
+
+  useEffect(() => {
+    if (!task) return;
+    setSelectedLabel((s) => {
+      if (!s || !chipLabels.includes(s)) return chipLabels[0] ?? '';
+      return s;
+    });
+  }, [task?.id, chipLabels]);
 
   const labelColorOverrides = useMemo(
     () => customLabelDefinitionsToMap(extraLabelDefinitions),

@@ -13,9 +13,11 @@ import { DEFAULT_BRUSH_COLOR } from '@/types/annotations';
 import WorkbenchImageToolRail from '@/components/workbench/WorkbenchImageToolRail';
 import {
   ANNOTATION_LABELS,
+  MEDICAL_ANNOTATION_LABELS,
   mergeAnnotationChipLabels,
   resolveAnnotationLabelColor,
   customLabelDefinitionsToMap,
+  shouldUseMedicalAnnotationPreset,
   type CustomLabelDefinition,
 } from '@/constants/annotationLabels';
 import { WorkbenchObjectListChrome } from '@/components/workbench/WorkbenchObjectListChrome';
@@ -314,9 +316,12 @@ export default function ImageTaskDetailScreen() {
     setAnnotations(prev => prev.map(a => a.id === id ? { ...a, label } : a));
   }, []);
 
+  const useMedicalPreset = shouldUseMedicalAnnotationPreset(null, task?.type, task?.category);
+  const chipPreset = useMedicalPreset ? MEDICAL_ANNOTATION_LABELS : ANNOTATION_LABELS;
+
   const builtInLabelSet = useMemo(
-    () => new Set<string>(ANNOTATION_LABELS as unknown as string[]),
-    []
+    () => new Set<string>(chipPreset as unknown as string[]),
+    [chipPreset]
   );
 
   const handleAddExtraLabelOption = useCallback(
@@ -345,20 +350,31 @@ export default function ImageTaskDetailScreen() {
           typeof a.label === 'object' && a.label !== null
             ? String((a.label as any).name ?? (a.label as any).label ?? '')
             : String(a.label ?? '');
-        return cur === label ? { ...a, label: 'Other' } : a;
+        const fallback = (chipPreset as readonly string[]).includes('Other')
+          ? 'Other'
+          : String(chipPreset[0] ?? 'Other');
+        return cur === label ? { ...a, label: fallback } : a;
       })
     );
-  }, []);
+  }, [chipPreset]);
 
   const chipLabels = useMemo(
-    () => mergeAnnotationChipLabels(extraLabelDefinitions.map((d) => d.label)),
-    [extraLabelDefinitions]
+    () => mergeAnnotationChipLabels(extraLabelDefinitions.map((d) => d.label), chipPreset),
+    [extraLabelDefinitions, chipPreset]
   );
 
   const labelColorOverrides = useMemo(
     () => customLabelDefinitionsToMap(extraLabelDefinitions),
     [extraLabelDefinitions]
   );
+
+  useEffect(() => {
+    if (!task) return;
+    setSelectedLabel((s) => {
+      if (!s || !chipLabels.includes(s)) return chipLabels[0] ?? '';
+      return s;
+    });
+  }, [task?.id, chipLabels]);
 
   const getObjectDisplayName = (a: Annotation, idx: number) => {
     const labelStr = typeof a.label === 'object' ? (a.label as any).name || (a.label as any).label : a.label;

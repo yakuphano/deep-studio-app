@@ -25,6 +25,8 @@ export interface ImageAnnotationThreeColumnProps {
   extraLabelDefinitions?: CustomLabelDefinition[];
   onAddExtraLabelOption?: (label: string, color: string) => void;
   onRemoveExtraLabelOption?: (label: string) => void;
+  /** Varsayılan sınıf chip’leri (medical preset vb.) */
+  builtInChipLabels?: readonly string[];
   children: React.ReactNode;
 }
 
@@ -41,6 +43,7 @@ export default function ImageAnnotationThreeColumn({
   extraLabelDefinitions = [],
   onAddExtraLabelOption,
   onRemoveExtraLabelOption,
+  builtInChipLabels,
   children,
 }: ImageAnnotationThreeColumnProps) {
   const [brushColor, setBrushColor] = useState(DEFAULT_BRUSH_COLOR);
@@ -101,6 +104,7 @@ export default function ImageAnnotationThreeColumn({
           extraLabelDefinitions={extraLabelDefinitions}
           onAddExtraLabelOption={onAddExtraLabelOption}
           onRemoveExtraLabelOption={onRemoveExtraLabelOption}
+          builtInChipLabels={builtInChipLabels}
         />
       </View>
     </View>

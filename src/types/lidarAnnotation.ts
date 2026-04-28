@@ -15,15 +15,19 @@ export type LidarCuboidAnnotation = {
   yaw: number;
 };
 
-/** BEV sahnesi ~48 birim genişlik; kutular nokta ölçeğinde okunaklı olsun */
+/**
+ * Default box sizes (width=X, height=Y, depth=Z / BEV length on Z).
+ * Car / pedestrian / cyclist tuned for autonomous-driving style labels.
+ */
 export function defaultCuboidDimensionsForLabel(label: string): { width: number; height: number; depth: number } {
   const L = label.trim().toLowerCase();
-  if (L === 'truck') return { width: 14, height: 4.2, depth: 10 };
-  if (L === 'pedestrian') return { width: 1.2, height: 1.85, depth: 1.1 };
-  if (L === 'cyclist') return { width: 2, height: 1.95, depth: 2.8 };
-  if (L === 'sign') return { width: 4, height: 5, depth: 0.65 };
-  if (L === 'other') return { width: 8, height: 3.2, depth: 8 };
-  return { width: 9.5, height: 2.35, depth: 5.2 };
+  if (L === 'car') return { width: 1.8, height: 1.6, depth: 4.2 };
+  if (L === 'truck') return { width: 2.6, height: 3.2, depth: 12 };
+  if (L === 'pedestrian') return { width: 0.8, height: 1.7, depth: 0.8 };
+  if (L === 'cyclist') return { width: 0.6, height: 1.6, depth: 1.8 };
+  if (L === 'sign') return { width: 0.65, height: 5, depth: 4 };
+  if (L === 'other') return { width: 2, height: 2, depth: 4 };
+  return { width: 1.8, height: 1.6, depth: 4.2 };
 }
 
 export function createEmptyLidarCuboid(label = 'Car'): LidarCuboidAnnotation {

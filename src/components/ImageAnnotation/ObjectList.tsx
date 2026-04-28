@@ -10,6 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import {
+  ANNOTATION_LABELS,
   mergeAnnotationChipLabels,
   resolveAnnotationLabelColor,
   customLabelDefinitionsToMap,
@@ -27,6 +28,8 @@ interface ObjectListProps {
   extraLabelDefinitions?: CustomLabelDefinition[];
   onAddExtraLabelOption?: (label: string, color: string) => void;
   onRemoveExtraLabelOption?: (label: string) => void;
+  /** Varsayılan chip listesi (ör. medical görevlerinde MEDICAL_ANNOTATION_LABELS) */
+  builtInChipLabels?: readonly string[];
 }
 
 const getObjectDisplayName = (a: Annotation, idx: number) => {
@@ -53,6 +56,7 @@ export default function ObjectList({
   extraLabelDefinitions = [],
   onAddExtraLabelOption,
   onRemoveExtraLabelOption,
+  builtInChipLabels = ANNOTATION_LABELS,
 }: ObjectListProps) {
   const { t } = useTranslation();
 
@@ -62,8 +66,12 @@ export default function ObjectList({
   );
 
   const chipLabels = useMemo(
-    () => mergeAnnotationChipLabels(extraLabelDefinitions.map((d) => d.label)),
-    [extraLabelDefinitions]
+    () =>
+      mergeAnnotationChipLabels(
+        extraLabelDefinitions.map((d) => d.label),
+        builtInChipLabels
+      ),
+    [extraLabelDefinitions, builtInChipLabels]
   );
 
   return (

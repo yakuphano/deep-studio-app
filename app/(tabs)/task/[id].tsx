@@ -8,7 +8,13 @@ import TaskHeader from '@/components/workbench/TaskHeader';
 import { TaskMediaView, type TaskMediaViewCanvasHandle } from '@/components/task/TaskMediaView';
 import { TaskEditor } from '@/components/task/TaskEditor';
 import ImageAnnotationThreeColumn from '@/components/workbench/ImageAnnotationThreeColumn';
-import { ANNOTATION_LABELS, type CustomLabelDefinition } from '@/constants/annotationLabels';
+import {
+  ANNOTATION_LABELS,
+  MEDICAL_ANNOTATION_LABELS,
+  shouldUseMedicalAnnotationPreset,
+  mergeAnnotationChipLabels,
+  type CustomLabelDefinition,
+} from '@/constants/annotationLabels';
 
 export default function TaskDetailScreen() {
   const params = useLocalSearchParams<{ id: string | string[] }>();
@@ -40,9 +46,7 @@ export default function TaskDetailScreen() {
     setTranscription,
   } = useTaskWorkbench(taskId, user?.id);
 
-  const [selectedLabel, setSelectedLabel] = useState<string>(
-    String(ANNOTATION_LABELS[0] ?? 'Other')
-  );
+  const [selectedLabel, setSelectedLabel] = useState<string>('');
   const [extraLabelDefinitions, setExtraLabelDefinitions] = useState<CustomLabelDefinition[]>([]);
   const imageCanvasRef = useRef<TaskMediaViewCanvasHandle | null>(null);
   const activeToolRef = useRef(activeTool);
@@ -73,9 +77,12 @@ export default function TaskDetailScreen() {
     [setAnnotations]
   );
 
+  const useMedicalPreset = shouldUseMedicalAnnotationPreset(null, task?.type, task?.category);
+  const chipPreset = useMedicalPreset ? MEDICAL_ANNOTATION_LABELS : ANNOTATION_LABELS;
+
   const builtInLabelSet = useMemo(
-    () => new Set<string>(ANNOTATION_LABELS as unknown as string[]),
-    []
+    () => new Set<string>(chipPreset as unknown as string[]),
+    [chipPreset]
   );
 
   const handleAddExtraLabelOption = useCallback(
@@ -105,12 +112,28 @@ export default function TaskDetailScreen() {
             typeof a.label === 'object' && a.label !== null
               ? String((a.label as any).name ?? (a.label as any).label ?? '')
               : String(a.label ?? '');
-          return cur === label ? { ...a, label: 'Other' } : a;
+          const fallback = (chipPreset as readonly string[]).includes('Other')
+            ? 'Other'
+            : String(chipPreset[0] ?? 'Other');
+          return cur === label ? { ...a, label: fallback } : a;
         })
       );
     },
-    [setAnnotations]
+    [setAnnotations, chipPreset]
   );
+
+  const chipLabelsForBootstrap = useMemo(
+    () => mergeAnnotationChipLabels(extraLabelDefinitions.map((d) => d.label), chipPreset),
+    [extraLabelDefinitions, chipPreset]
+  );
+
+  useEffect(() => {
+    if (!task) return;
+    setSelectedLabel((s) => {
+      if (!s || !chipLabelsForBootstrap.includes(s)) return chipLabelsForBootstrap[0] ?? '';
+      return s;
+    });
+  }, [task?.id, chipLabelsForBootstrap]);
 
   const handleUndoAnnotations = useCallback(() => {
     const canvasUndo = imageCanvasRef.current?.undo;
@@ -261,6 +284,7 @@ export default function TaskDetailScreen() {
             extraLabelDefinitions={extraLabelDefinitions}
             onAddExtraLabelOption={handleAddExtraLabelOption}
             onRemoveExtraLabelOption={handleRemoveExtraLabelOption}
+            builtInChipLabels={chipPreset}
           >
             <TaskMediaView
               ref={imageCanvasRef}

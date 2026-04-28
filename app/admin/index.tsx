@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -93,6 +93,8 @@ export default function AdminPanelScreen() {
   // Export states
   const [exportTaskType, setExportTaskType] = useState<'audio' | 'image' | 'video'>('audio');
   const [exportClient, setExportClient] = useState('');
+  /** Görevlerde geçen company_name listesi (yeniden eskiye); chip ile seçim */
+  const [exportCompanyOptions, setExportCompanyOptions] = useState<string[]>([]);
   const [exportFormat, setExportFormat] = useState<string>('json');
   const [exporting, setExporting] = useState(false);
   const [dateRange, setDateRange] = useState<'all' | 'last7' | 'last30' | 'custom'>('all');
@@ -222,15 +224,38 @@ export default function AdminPanelScreen() {
     void fetchDashboardStats();
   }, [adminStatusLoading, hasAdminAccess, fetchDashboardStats]);
 
-  // Debug logs (her render; geliştirme)
-  console.log('Mevcut Kullanici:', user);
-  console.log('Admin Page - Role:', user?.role);
-  console.log('Admin Page - isAdmin:', isAdmin);
-  console.log('Admin Dashboard Loaded');
-  console.log('Admin check:', { email: user?.email, isAdmin, isDevAdmin, hasAdminAccess });
+  /** Görevlerdeki company_name değerleri: çok şirket varsa chip satırı; varsayılan en son güncellenen görev. */
+  useEffect(() => {
+    if (adminStatusLoading || !hasAdminAccess) return;
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('company_name')
+        .not('company_name', 'is', null)
+        .neq('company_name', '')
+        .order('updated_at', { ascending: false })
+        .limit(500);
+      if (cancelled || error || !data?.length) return;
+      const ordered: string[] = [];
+      const seen = new Set<string>();
+      for (const row of data) {
+        const n = String((row as { company_name?: string | null }).company_name ?? '').trim();
+        if (!n || seen.has(n)) continue;
+        seen.add(n);
+        ordered.push(n);
+      }
+      const maxOptions = 32;
+      setExportCompanyOptions(ordered.slice(0, maxOptions));
+      const latest = ordered[0];
+      if (latest) setExportClient((prev) => (prev.trim() === '' ? latest : prev));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [adminStatusLoading, hasAdminAccess]);
 
   if (adminStatusLoading) {
-    console.log('Admin status loading, showing spinner');
     return (
       <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#3b82f6" />
@@ -240,7 +265,6 @@ export default function AdminPanelScreen() {
   }
 
   if (!hasAdminAccess) {
-    console.log('Access denied - user is not admin');
     return (
       <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}>
         <Text style={{ color: '#ef4444', fontSize: 18 }}>Access Denied</Text>
@@ -259,7 +283,7 @@ export default function AdminPanelScreen() {
 
   const handleExport = async () => {
     if (!exportClient.trim()) {
-      Alert.alert('Validation Error', 'Please enter a client name.');
+      Alert.alert('Validation Error', 'Please enter a company or client name.');
       return;
     }
 
@@ -270,17 +294,21 @@ export default function AdminPanelScreen() {
 
     setExporting(true);
     try {
-      const cols = 'id, title, status, price, language, category, audio_url, image_url, transcription, annotation_data, created_at, updated_at, client_name, assigned_to, is_pool_task';
-      
+      const cols =
+        'id, title, status, price, language, category, audio_url, image_url, transcription, annotation_data, created_at, updated_at, client_name, company_name, assigned_to, is_pool_task';
+
       let query = supabase.from('tasks').select(cols).eq('status', 'completed');
 
       // Filter by task type
       if (exportTaskType) {
         query = query.eq('type', exportTaskType);
       }
-      
-      // Filter by client name
-      query = query.ilike('client_name', `%${exportClient.trim()}%`);
+
+      // Görev oluştururken company_name; eski kayıtlar için client_name — ikisinden biri eşleşsin
+      const raw = exportClient.trim();
+      const q = raw.replace(/\\/g, '\\\\').replace(/,/g, '\\,');
+      const pat = `%${q}%`;
+      query = query.or(`client_name.ilike.${pat},company_name.ilike.${pat}`);
       
       // Filter by language (only for Audio tasks)
       if (exportTaskType === 'audio' && selectedLanguage !== 'all') {
@@ -425,20 +453,9 @@ export default function AdminPanelScreen() {
     }
   };
 
-  console.log("Rendering Admin Dashboard - isAdmin:", isAdmin);
-  
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        
-        {/* DEBUG INFO */}
-        <View style={styles.debugBox}>
-          <Text style={styles.debugText}>DEBUG: User: {user?.email}</Text>
-          <Text style={styles.debugText}>DEBUG: Role: {user?.role}</Text>
-          <Text style={styles.debugText}>DEBUG: isAdmin: {isAdmin ? 'true' : 'false'}</Text>
-        </View>
-
-        {/* Header */}
         <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/dashboard')}>
           <Ionicons name="arrow-back" size={22} color="#f8fafc" />
           <Text style={styles.backButtonText}>Back to Tasks</Text>
@@ -494,7 +511,6 @@ export default function AdminPanelScreen() {
           <TouchableOpacity 
             style={styles.manageAllUsersButton} 
             onPress={() => {
-              console.log('Navigate to users page');
               router.push('/admin/users');
             }}
           >
@@ -548,12 +564,40 @@ export default function AdminPanelScreen() {
               ))}
             </View>
             
-            <Text style={styles.exportLabel}>Client Name</Text>
+            <Text style={styles.exportLabel}>Company name</Text>
+            {exportCompanyOptions.length > 1 ? (
+              <>
+                <Text style={styles.exportHint}>
+                  Kayıtlı şirketler (son aktiviteye göre). Birine dokunun veya alanı elle düzenleyin.
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.companyPickerScroll}
+                  contentContainerStyle={styles.companyPickerRow}
+                >
+                  {exportCompanyOptions.map((name) => {
+                    const active = exportClient.trim() === name;
+                    return (
+                      <TouchableOpacity
+                        key={name}
+                        style={[styles.companyPickerChip, active && styles.companyPickerChipActive]}
+                        onPress={() => setExportClient(name)}
+                      >
+                        <Text style={[styles.companyPickerChipText, active && styles.companyPickerChipTextActive]} numberOfLines={1}>
+                          {name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            ) : null}
             <TextInput
               style={styles.exportInput}
               value={exportClient}
               onChangeText={setExportClient}
-              placeholder="Enter client name"
+              placeholder="Şirket adı veya filtre metni"
               placeholderTextColor="#64748b"
             />
             
@@ -646,26 +690,17 @@ const styles = StyleSheet.create({
     flex: 1, 
     backgroundColor: '#0f172a' 
   },
-  scroll: { 
-    padding: 20, 
-    paddingBottom: 40 
-  },
-  debugBox: {
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 20,
-  },
-  debugText: {
-    color: '#ffffff',
-    fontSize: 12,
+  scroll: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 40,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 20,
-    paddingVertical: 8,
+    marginBottom: 10,
+    paddingVertical: 6,
     paddingHorizontal: 12,
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 8,
@@ -676,11 +711,11 @@ const styles = StyleSheet.create({
     fontWeight: '600', 
     color: '#f8fafc' 
   },
-  pageTitle: { 
-    fontSize: 28, 
-    fontWeight: '700', 
-    color: '#f8fafc', 
-    marginBottom: 32 
+  pageTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#f8fafc',
+    marginBottom: 16,
   },
   statsRow: {
     flexDirection: 'row',
@@ -810,6 +845,44 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#f8fafc',
     marginBottom: 8,
+  },
+  exportHint: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginBottom: 8,
+    lineHeight: 16,
+  },
+  companyPickerScroll: {
+    marginBottom: 8,
+    maxHeight: 44,
+  },
+  companyPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+    paddingRight: 8,
+  },
+  companyPickerChip: {
+    maxWidth: 200,
+    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  companyPickerChipActive: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderColor: '#f59e0b',
+  },
+  companyPickerChipText: {
+    color: '#cbd5e1',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  companyPickerChipTextActive: {
+    color: '#fbbf24',
   },
   exportTaskTypeRow: {
     flexDirection: 'row',

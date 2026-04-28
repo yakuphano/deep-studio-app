@@ -36,6 +36,9 @@ const CUBOID_WIRE_EDGES: [number, number][] = [
   [3, 7],
 ];
 
+/** Poligonu kapat: imleç ile ilk köşe arasındaki mesafe ekranda bu kadar (px); görüntü uzayı eşiği zoom ile şişip erken kapanmayı tetikliyordu. */
+const POLYGON_CLOSE_SCREEN_PX = 18;
+
 /** Ön + arka yüzün birleşik sınırlayıcı kutusu (tıklanabilir alan) */
 function pointInCuboidBounds(
   ann: { x: number; y: number; width: number; height: number; dx?: number; dy?: number },
@@ -280,6 +283,7 @@ interface UseAnnotationActionsProps {
   onSelect: (id: string | null) => void;
   selectedLabel: string | null;
   screenToImage: (clientX: number, clientY: number) => { x: number; y: number };
+  imageToScreen: (imageX: number, imageY: number) => { x: number; y: number };
   getHandleAt: (x: number, y: number, annotation: any, scale: number) => any;
   scale: number;
   handleUndo: () => void;
@@ -355,6 +359,7 @@ export const useAnnotationActions = ({
   onSelect,
   selectedLabel,
   screenToImage,
+  imageToScreen,
   getHandleAt,
   scale,
   handleUndo,
@@ -634,16 +639,21 @@ export const useAnnotationActions = ({
         }
 
         case 'polygon': {
-          /** İlk noktaya bu kadar yakınsa (görüntü px) poligon kapanır; en az 3 köşe gerekir */
-          const closeThreshold = Math.max(14 / Math.max(scale, 0.08), 10);
+          /** Kapanış: en az 3 köşe + imleç ilk köşenin **ekrandaki** konumuna yakın (görüntü uzayı eşiği zoom’da şişmez). */
           if (!isDrawingPolygon) {
             setPolygonPoints([image]);
             setIsDrawingPolygon(true);
             break;
           }
           const first = polygonPoints[0];
-          const nearFirst = distance(image, first) < closeThreshold;
-          if (nearFirst && polygonPoints.length >= 3) {
+          let nearFirst = false;
+          if (polygonPoints.length >= 3) {
+            const pScr = imageToScreen(image.x, image.y);
+            const fScr = imageToScreen(first.x, first.y);
+            nearFirst =
+              Math.hypot(pScr.x - fScr.x, pScr.y - fScr.y) < POLYGON_CLOSE_SCREEN_PX;
+          }
+          if (nearFirst) {
             const withinBounds =
               imageSize &&
               polygonPoints.every(
@@ -671,9 +681,6 @@ export const useAnnotationActions = ({
             setIsDrawingPolygon(false);
             setPolygonPoints([]);
             setPolylinePreviewPoint(null);
-            break;
-          }
-          if (nearFirst && polygonPoints.length < 3) {
             break;
           }
           setPolygonPoints((prev) => [...prev, image]);
@@ -777,6 +784,7 @@ export const useAnnotationActions = ({
       onSelect,
       selectedLabel,
       screenToImage,
+      imageToScreen,
       getHandleAt,
       scale,
       handleUndo,

@@ -21,12 +21,19 @@ type Props = {
   extraLabelDefinitions: CustomLabelDefinition[];
   onAddExtraLabelOption: (label: string, color: string) => void;
   onRemoveExtraLabelOption: (label: string) => void;
+  /** LiDAR-style: only OBJECTS title + add; hides custom class input and swatches. */
+  compact?: boolean;
+  onPrimaryAdd?: () => void;
+  primaryAddDisabled?: boolean;
 };
 
 export function WorkbenchObjectListChrome({
   extraLabelDefinitions,
   onAddExtraLabelOption,
   onRemoveExtraLabelOption,
+  compact,
+  onPrimaryAdd,
+  primaryAddDisabled,
 }: Props) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState('');
@@ -38,6 +45,52 @@ export function WorkbenchObjectListChrome({
     onAddExtraLabelOption(s, pickedColor);
     setDraft('');
   };
+
+  if (compact) {
+    return (
+      <>
+        <View style={styles.headerRow}>
+          <Text style={styles.title} numberOfLines={1}>
+            {t('annotation.objects').toUpperCase()}
+          </Text>
+          <View style={styles.headerSpacer} />
+          <TouchableOpacity
+            style={[styles.addBtn, primaryAddDisabled && styles.addBtnDisabled]}
+            onPress={onPrimaryAdd}
+            disabled={Boolean(primaryAddDisabled)}
+            accessibilityRole="button"
+            accessibilityLabel={t('annotation.addObject')}
+          >
+            <Ionicons name="add-outline" size={22} color="#e2e8f0" />
+          </TouchableOpacity>
+        </View>
+
+        {extraLabelDefinitions.length > 0 ? (
+          <View style={styles.strip}>
+            <Text style={styles.stripTitle}>{t('annotation.customLabelsSection')}</Text>
+            <View style={styles.pillsRow}>
+              {extraLabelDefinitions.map(({ label: lbl, color }) => (
+                <View key={lbl} style={styles.pill}>
+                  <View style={[styles.pillDot, { backgroundColor: color }]} />
+                  <Text style={styles.pillText} numberOfLines={1}>
+                    {lbl}
+                  </Text>
+                  <TouchableOpacity
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    onPress={() => onRemoveExtraLabelOption(lbl)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${t('annotation.deleteObject')}: ${lbl}`}
+                  >
+                    <Ionicons name="close-circle" size={16} color="#94a3b8" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <>
@@ -109,6 +162,10 @@ export function WorkbenchObjectListChrome({
 }
 
 const styles = StyleSheet.create({
+  headerSpacer: {
+    flex: 1,
+    minWidth: 0,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -145,6 +202,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#334155',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  addBtnDisabled: {
+    opacity: 0.4,
   },
   swatchesRow: {
     flexDirection: 'row',

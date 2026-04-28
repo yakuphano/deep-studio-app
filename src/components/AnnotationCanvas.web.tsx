@@ -284,6 +284,7 @@ export default React.forwardRef(function AnnotationCanvas({
     onSelect: onSelect ?? (() => {}),
     selectedLabel: selectedLabel ?? null,
     screenToImage,
+    imageToScreen,
     getHandleAt,
     scale,
     handleUndo,

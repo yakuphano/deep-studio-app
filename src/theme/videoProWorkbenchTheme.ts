@@ -27,9 +27,38 @@ export const desktopWorkbenchLight = {
   radius: 8,
 } as const;
 
+/** LiDAR annotator — slate + sky accent (#38bdf8) */
+export const annotatorWorkbenchDark = {
+  bg: '#0f172a',
+  panel: '#1e293b',
+  border: 'rgba(148, 163, 184, 0.22)',
+  accent: '#38bdf8',
+  accentMuted: 'rgba(56, 189, 248, 0.16)',
+  text: '#f8fafc',
+  textMuted: '#94a3b8',
+  textSoft: '#64748b',
+  danger: '#f87171',
+  radius: 10,
+} as const;
+
+export const annotatorWorkbenchLight = {
+  bg: '#f8fafc',
+  panel: '#ffffff',
+  border: '#e2e8f0',
+  accent: '#0284c7',
+  accentMuted: 'rgba(2, 132, 199, 0.12)',
+  text: '#0f172a',
+  textMuted: '#475569',
+  textSoft: '#64748b',
+  danger: '#dc2626',
+  radius: 10,
+} as const;
+
 export type ProThemeColors =
   | typeof desktopWorkbenchDark
-  | typeof desktopWorkbenchLight;
+  | typeof desktopWorkbenchLight
+  | typeof annotatorWorkbenchDark
+  | typeof annotatorWorkbenchLight;
 
 /** @deprecated Use desktopWorkbenchDark — kept as alias for imports expecting `proColors` */
 export const proColors: ProThemeColors = desktopWorkbenchDark;
@@ -44,12 +73,12 @@ export function createVideoProWorkbenchStyles(c: ProThemeColors) {
       backgroundColor: c.bg,
     },
     topNav: {
-      minHeight: 60,
-      maxHeight: 60,
+      minHeight: 52,
       flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: 12,
-      gap: 12,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      gap: 10,
       backgroundColor: c.panel,
       borderBottomWidth: 1,
       borderBottomColor: c.border,

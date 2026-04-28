@@ -51,11 +51,11 @@ export default function TopNavbar() {
 
   // Fallback admin check - force show Management button for specific email
   const isFallbackAdmin = user?.email === 'yakup.hano@deepannotation.ai';
-  
+
   // Show loading state while admin status is being determined
   if (isAdmin === null) {
     return (
-      <View style={[styles.container, Platform.OS === 'web' && styles.containerWeb, { paddingTop: insets.top + 12 }]}>
+      <View style={[styles.container, Platform.OS === 'web' && styles.containerWeb, { paddingTop: insets.top + 8 }]}>
         <View style={styles.inner}>
           <View style={styles.brand}>
             <Text style={styles.brandText}>Deep Studio</Text>
@@ -70,11 +70,11 @@ export default function TopNavbar() {
   }
   
   const showAdminLink = isAdmin || isFallbackAdmin;
-  
+
   const navLinks = [
     ...NAV_ITEMS,
     ...(showAdminLink ? [{ href: '/admin', labelKey: 'nav.management', isAdminLink: true }] : []),
-  ].map((x) => ({ ...x, isAdminLink: (x as any).isAdminLink ?? false }));
+  ].map((x) => ({ ...x, isAdminLink: (x as { isAdminLink?: boolean }).isAdminLink ?? false }));
 
   const handleLogout = async () => {
     console.log('Emergency logout initiated');
@@ -110,7 +110,7 @@ export default function TopNavbar() {
   if (!user || !session) return null;
 
   return (
-    <View style={[styles.container, Platform.OS === 'web' && styles.containerWeb, { paddingTop: insets.top + 12 }]}>
+    <View style={[styles.container, Platform.OS === 'web' && styles.containerWeb, { paddingTop: insets.top + 8 }]}>
       <View style={styles.inner}>
         <TouchableOpacity style={styles.brand} onPress={goHome} activeOpacity={0.8}>
           <Text style={styles.brandText}>Deep Studio</Text>
@@ -241,11 +241,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.08)',
-    paddingBottom: 12,
+    paddingBottom: 8,
   },
   containerWeb: {
-    position: 'sticky' as any,
+    position: 'fixed' as any,
     top: 0,
+    left: 0,
+    right: 0,
     zIndex: 1000,
   },
   rightGroup: {
@@ -264,12 +266,12 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   brand: {
-    paddingVertical: 8,
-    paddingRight: 24,
+    paddingVertical: 6,
+    paddingRight: 20,
     paddingLeft: 0,
   },
   brandText: {
-    fontSize: 34,
+    fontSize: 28,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.5,
@@ -291,8 +293,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 24,
   },
   navItem: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 10,
   },
   navItemActive: {
@@ -306,7 +308,7 @@ const styles = StyleSheet.create({
   },
   navItemInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   navText: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#FFFFFF',
     fontWeight: '500',
   },
@@ -339,13 +341,13 @@ const styles = StyleSheet.create({
   langBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 10,
     backgroundColor: 'transparent',
   },
   langText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '500',
     color: '#FFFFFF',
   },

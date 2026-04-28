@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,15 @@ import {
   FlatList,
   ActivityIndicator,
   SafeAreaView,
-  Alert,
   useWindowDimensions,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useRootNavigationState } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useTranslation } from 'react-i18next';
 import { TaskListCard } from '@/components/tasks/TaskListCard';
+import { useAuth } from '@/contexts/AuthContext';
 
 type Task = {
   id: string;
@@ -45,76 +45,71 @@ function getLanguageLabel(code: string) {
 export default function VideoTasksScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const rootNavigationState = useRootNavigationState();
+  const { user, session } = useAuth();
+  const userId = user?.id ?? session?.user?.id ?? null;
+  const navigatorReady = rootNavigationState?.key != null;
   const { width } = useWindowDimensions();
   const numColumns = width >= 1200 ? 4 : width >= 900 ? 3 : width >= 600 ? 2 : 1;
 
   const [videoTasks, setVideoTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadData = useCallback(async () => {
-    let isMounted = true;
+  /** Tıbbi / LiDAR / görüntü panelleriyle aynı yapı: tek `select *`, yalnızca `pending`; havuz/atanmış ayrımı yok. Video tanımı: type, category veya video_url (görüntü sekmesindeki image_url OR ile aynı mantık). */
+  const fetchVideoTasks = useCallback(
+    async (showLoading = true) => {
+      if (!userId) return;
+      if (showLoading) setLoading(true);
 
-    try {
-      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('tasks')
+          .select('*')
+          .eq('status', 'pending')
+          .or('type.eq.video,category.eq.video,video_url.not.is.null')
+          .order('created_at', { ascending: false });
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const uid = session?.user?.id;
-
-      if (!uid) {
-        if (isMounted) setLoading(false);
-        return;
-      }
-
-      const cols =
-        'id, title, status, price, language, category, type, video_url, is_pool_task, assigned_to';
-
-      const { data: assignedData, error: assignedErr } = await supabase
-        .from('tasks')
-        .select(cols)
-        .eq('assigned_to', uid)
-        .eq('status', 'pending')
-        .or('category.eq.video,type.eq.video');
-
-      const { data: poolData, error: poolErr } = await supabase
-        .from('tasks')
-        .select(cols)
-        .is('assigned_to', null)
-        .eq('status', 'pending')
-        .or('category.eq.video,type.eq.video');
-
-      if (assignedErr || poolErr) {
-        console.error('[video-tasks] fetch error', assignedErr || poolErr);
-        if (isMounted) {
-          setVideoTasks([]);
-          setLoading(false);
+        if (error) {
+          console.error('[video-tasks] Fetch error:', error);
+          return;
         }
-        return;
-      }
 
-      if (isMounted) {
-        const allTasks = [...(poolData || []), ...(assignedData || [])];
-        setVideoTasks(allTasks);
+        setVideoTasks((data as Task[]) || []);
+      } finally {
         setLoading(false);
       }
-    } catch (error) {
-      console.error('[video-tasks] error', error);
-      if (isMounted) setLoading(false);
+    },
+    [userId]
+  );
+
+  useEffect(() => {
+    if (!navigatorReady) return;
+    if (!user || !session) {
+      try {
+        router.replace('/');
+      } catch (_) {}
+      return;
     }
-  }, []);
+    fetchVideoTasks(true);
+  }, [navigatorReady, userId, session]);
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
-    }, [loadData])
+      if (userId && navigatorReady) fetchVideoTasks(false);
+    }, [userId, navigatorReady])
   );
 
+  if (!user || !session) {
+    return (
+      <View style={styles.authLoading}>
+        <ActivityIndicator size="large" color="#8b5cf6" />
+        <Text style={styles.authLoadingText}>Yükleniyor...</Text>
+      </View>
+    );
+  }
+
   const handleClaim = async (taskId: string) => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const uid = session?.user?.id;
+    const uid = user?.id ?? session?.user?.id;
     if (!uid) return;
 
     const alreadyMine = videoTasks.some((x) => x.id === taskId && x.assigned_to === uid);
@@ -162,7 +157,7 @@ export default function VideoTasksScreen() {
           <Ionicons name="videocam-outline" size={80} color="#8b5cf6" style={styles.emptyIcon} />
           <Text style={styles.emptyTitle}>No Video Tasks</Text>
 
-          <TouchableOpacity style={styles.coloredRefreshButton} onPress={() => loadData()} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.coloredRefreshButton} onPress={() => fetchVideoTasks(true)} activeOpacity={0.8}>
             <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
             <Text style={styles.buttonText}>Refresh Tasks</Text>
           </TouchableOpacity>
@@ -185,7 +180,7 @@ export default function VideoTasksScreen() {
               subtitle={item.language ? getLanguageLabel(item.language) : null}
               ctaLabel={t('tasks.startTask')}
               style={styles.cardSlot}
-              onPress={() => handleClaim(item.id)}
+              onPress={() => router.push(`/dashboard/video/${item.id}`)}
             />
           )}
         />
@@ -195,6 +190,14 @@ export default function VideoTasksScreen() {
 }
 
 const styles = StyleSheet.create({
+  authLoading: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  authLoadingText: { color: '#e2e8f0', fontSize: 15 },
   container: { flex: 1, backgroundColor: '#0f172a' },
   breadcrumbRow: {
     flexDirection: 'row',

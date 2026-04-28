@@ -9,7 +9,6 @@ import {
   SafeAreaView,
   useWindowDimensions,
   RefreshControl,
-  Alert,
   Platform,
 } from 'react-native';
 import { useRouter, useRootNavigationState } from 'expo-router';
@@ -72,30 +71,19 @@ export default function VideoTasksScreen() {
       if (showLoading) setLoading(true);
 
       try {
-        const cols =
-          'id, title, status, price, language, category, type, video_url, is_pool_task, assigned_to';
-
-        const { data: assignedData, error: assignedErr } = await supabase
+        const { data, error } = await supabase
           .from('tasks')
-          .select(cols)
-          .eq('assigned_to', userId)
+          .select('*')
           .eq('status', 'pending')
-          .or('category.eq.video,type.eq.video');
+          .or('type.eq.video,category.eq.video,video_url.not.is.null')
+          .order('created_at', { ascending: false });
 
-        const { data: poolData, error: poolErr } = await supabase
-          .from('tasks')
-          .select(cols)
-          .is('assigned_to', null)
-          .eq('status', 'pending')
-          .or('category.eq.video,type.eq.video');
-
-        if (assignedErr || poolErr) {
-          console.error('[tasks/video] fetch error', assignedErr || poolErr);
-          setVideoTasks([]);
+        if (error) {
+          console.error('[tasks/video] Fetch error:', error);
           return;
         }
 
-        setVideoTasks([...(poolData || []), ...(assignedData || [])]);
+        setVideoTasks((data as Task[]) || []);
       } finally {
         setLoading(false);
       }
@@ -125,33 +113,6 @@ export default function VideoTasksScreen() {
       router.replace('/dashboard');
     }
   }, []);
-
-  const handleTaskPress = useCallback(
-    async (taskId: string) => {
-      if (!userId) return;
-
-      const { data, error } = await supabase
-        .from('tasks')
-        .update({ assigned_to: userId })
-        .eq('id', taskId)
-        .is('assigned_to', null)
-        .select();
-
-      if (error || !data?.length) {
-        const alreadyMine = videoTasks.find((x) => x.id === taskId)?.assigned_to === userId;
-        if (alreadyMine) {
-          router.push(`/task/${taskId}`);
-          return;
-        }
-        Alert.alert('Uyarı', 'Bu görev alınamadı veya başkası tarafından alındı.');
-        return;
-      }
-
-      await fetchVideoTasks(false);
-      router.push(`/task/${taskId}`);
-    },
-    [userId, videoTasks, fetchVideoTasks]
-  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -214,7 +175,7 @@ export default function VideoTasksScreen() {
                 subtitle={item.language ? getLanguageLabel(item.language) : null}
                 ctaLabel={t('tasks.startTask')}
                 style={[styles.cardSlot, { width: cardSlotWidth }]}
-                onPress={() => handleTaskPress(item.id)}
+                onPress={() => router.push(`/dashboard/video/${item.id}`)}
               />
             )}
             numColumns={numColumns}

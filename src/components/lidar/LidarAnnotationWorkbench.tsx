@@ -145,8 +145,8 @@ export default function LidarAnnotationWorkbench() {
   const [gizmoMode, setGizmoMode] = useState<LidarGizmoMode>('translate');
   const [activeLabel, setActiveLabel] = useState<string>('Other');
   const [extraLabelDefinitions, setExtraLabelDefinitions] = useState<CustomLabelDefinition[]>([]);
-  const chipLabels = useMemo(() => {
-    const out = [...LABELS];
+  const chipLabels = useMemo((): string[] => {
+    const out: string[] = LABELS.slice() as string[];
     const seen = new Set<string>(out);
     for (const d of extraLabelDefinitions) {
       const s = String(d.label ?? '').trim();

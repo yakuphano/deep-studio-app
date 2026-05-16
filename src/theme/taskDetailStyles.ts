@@ -13,10 +13,12 @@ export const taskDetailStyles = StyleSheet.create({
   },
   taskInfoBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     alignItems: 'center',
+    gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
+    paddingRight: 168,
     backgroundColor: '#1e293b',
     borderBottomWidth: 1,
     borderBottomColor: '#334155',

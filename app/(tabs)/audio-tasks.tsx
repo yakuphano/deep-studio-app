@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
 
 type TaskType = 'transcription' | 'image';
 
@@ -31,6 +32,8 @@ type Task = {
   transcription?: string | null;
   is_pool_task?: boolean;
   assigned_to?: string | null;
+  guideline_url?: string | null;
+  guideline_file_name?: string | null;
 };
 
 function AudioTaskCard({
@@ -62,6 +65,11 @@ function AudioTaskCard({
           {item.title}
         </Text>
       </View>
+      <GuidelineOpenButton
+        variant="card"
+        guidelineUrl={item.guideline_url}
+        guidelineFileName={item.guideline_file_name}
+      />
       <TouchableOpacity style={styles.detailBtn} onPress={() => onPress(item.id)}>
         <Ionicons name="arrow-forward" size={14} color="#3b82f6" />
         <Text style={styles.detailBtnText}>{t('tasks.viewDetails')}</Text>
@@ -134,7 +142,8 @@ export default function AudioTasksScreen() {
     }
     if (showLoading) setLoading(true);
     try {
-      const cols = 'id, title, status, price, language, category, type, audio_url, image_url, transcription, is_pool_task, assigned_to';
+      const cols =
+        'id, title, status, price, language, category, type, audio_url, image_url, transcription, is_pool_task, assigned_to, guideline_url, guideline_file_name';
       
       // My Tasks - assigned to current user (audio only)
       const { data: assignedData, error: assignedErr } = await supabase

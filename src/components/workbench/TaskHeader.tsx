@@ -2,15 +2,26 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
+import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
 
 interface TaskHeaderProps {
   title: string;
   price: number | null;
   taskTypeLabel: string;
   onBack: () => void;
+  guidelineUrl?: string | null;
+  guidelineFileName?: string | null;
 }
 
-export default function TaskHeader({ title, price, taskTypeLabel, onBack }: TaskHeaderProps) {
+export default function TaskHeader({
+  title,
+  price,
+  taskTypeLabel,
+  onBack,
+  guidelineUrl,
+  guidelineFileName,
+}: TaskHeaderProps) {
+  const { t } = useTranslation();
   return (
     <View style={styles.container}>
       {/* Header with Back Button */}
@@ -20,8 +31,14 @@ export default function TaskHeader({ title, price, taskTypeLabel, onBack }: Task
           onPress={onBack}
         >
           <Ionicons name="arrow-back" size={20} color="#3b82f6" />
-          <Text style={styles.backButtonText}>Back</Text>
+          <Text style={styles.backButtonText}>{t('taskDetail.back')}</Text>
         </TouchableOpacity>
+        <GuidelineOpenButton
+          variant="header"
+          guidelineUrl={guidelineUrl ?? null}
+          guidelineFileName={guidelineFileName ?? null}
+          style={styles.guidelineHeaderBtn}
+        />
       </View>
       
       {/* Task Info Overlay */}
@@ -42,11 +59,16 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 8,
     marginBottom: 4,
-    height: 40,
+    minHeight: 40,
     zIndex: 1000,
+    gap: 12,
+  },
+  guidelineHeaderBtn: {
+    flexShrink: 0,
   },
   backButton: {
     flexDirection: 'row',
@@ -65,10 +87,12 @@ const styles = StyleSheet.create({
   },
   taskInfoBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     alignItems: 'center',
+    gap: 12,
     paddingHorizontal: 20,
     paddingVertical: 12,
+    paddingRight: 168,
     backgroundColor: '#1e293b',
     borderBottomWidth: 1,
     borderBottomColor: '#334155',

@@ -274,15 +274,16 @@ export const videoWorkbenchStyles = StyleSheet.create({
 
   taskInfoBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    paddingRight: 168,
     backgroundColor: '#1e293b',
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 12,
   },
   taskInfoType: {
     fontSize: 16,

@@ -14,6 +14,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
 import { useAuth } from '@/contexts/AuthContext';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { resolveTaskImageUrl } from '@/lib/audioUrl';
@@ -134,8 +135,11 @@ export default function LidarAnnotationWorkbench() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState('');
+  const [price, setPrice] = useState<number>(0);
   const [status, setStatus] = useState<string>('pending');
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [guidelineUrl, setGuidelineUrl] = useState<string | null>(null);
+  const [guidelineFileName, setGuidelineFileName] = useState<string | null>(null);
 
   const [positions, setPositions] = useState<Float32Array>(() => syntheticUrbanStrip().positions);
   const [colors, setColors] = useState<Float32Array>(() => syntheticUrbanStrip().colors);
@@ -257,7 +261,10 @@ export default function LidarAnnotationWorkbench() {
         return;
       }
       setTitle(String(data.title ?? ''));
+      setPrice(data.price != null ? Number(data.price) : 0);
       setStatus(String(data.status ?? 'pending'));
+      setGuidelineUrl(data.guideline_url ? String(data.guideline_url) : null);
+      setGuidelineFileName(data.guideline_file_name ? String(data.guideline_file_name) : null);
       const raw = data.image_url ?? data.imageUrl ?? null;
       setImageUrl(raw ? String(raw) : null);
       const ad = data.annotation_data;
@@ -554,15 +561,28 @@ export default function LidarAnnotationWorkbench() {
           <Ionicons name="arrow-back" size={18} color={themeColors.accent} />
           <Text style={S.topNavBackText}>Back</Text>
         </TouchableOpacity>
-        <Text style={[S.topNavMetaStrong, styles.topTitle]} numberOfLines={1}>
-          {title || 'LiDAR'}
-        </Text>
-        <Text style={[S.topNavMetaLine, styles.frameLabel]} numberOfLines={1}>
-          Frame 1 / 1
-        </Text>
-        {status === 'submitted' ? (
-          <Text style={[S.topNavMetaLine, { color: themeColors.textMuted }]}>{statusLabel}</Text>
-        ) : null}
+        <View style={styles.topNavMetaCol}>
+          <Text style={[S.topNavMetaStrong, styles.topTitle]} numberOfLines={1}>
+            {title || 'LiDAR'}
+          </Text>
+          <View style={styles.priceBadge}>
+            <Text style={styles.priceBadgeText}>
+              {t('tasks.fee')}: {price} TL
+            </Text>
+          </View>
+          <Text style={[S.topNavMetaLine, styles.frameLabel]} numberOfLines={1}>
+            Frame 1 / 1
+          </Text>
+          {status === 'submitted' ? (
+            <Text style={[S.topNavMetaLine, { color: themeColors.textMuted }]}>{statusLabel}</Text>
+          ) : null}
+        </View>
+        <GuidelineOpenButton
+          variant="header"
+          guidelineUrl={guidelineUrl}
+          guidelineFileName={guidelineFileName}
+          style={styles.topNavGuideline}
+        />
       </View>
 
       <View style={S.mainRow}>
@@ -1042,19 +1062,44 @@ const rp = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  topNavMetaCol: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    alignItems: 'center' as const,
+    gap: 10,
+    minWidth: 0,
+    paddingRight: 8,
+  },
+  topNavGuideline: {
+    flexShrink: 0,
+  },
   railToolDisabled: { opacity: 0.42 },
   topNavRow: {
-    flexWrap: 'wrap' as const,
-    gap: 8,
+    flexWrap: 'nowrap' as const,
     alignItems: 'center' as const,
+    gap: 10,
     minHeight: 48,
     paddingVertical: 2,
+    paddingRight: 8,
   },
   topTitle: {
-    flex: 1,
-    minWidth: 120,
+    flexShrink: 1,
     fontSize: 15,
     marginHorizontal: 4,
+  },
+  priceBadge: {
+    backgroundColor: 'rgba(34, 197, 94, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.45)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  priceBadgeText: {
+    color: '#86efac',
+    fontSize: 12,
+    fontWeight: '700',
   },
   frameLabel: {
     fontSize: 12,

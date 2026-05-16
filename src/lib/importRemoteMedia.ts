@@ -11,6 +11,9 @@ export type ZipTaskTemplate = {
   price: number;
   language?: string;
   annotation_type?: string;
+  guideline_url?: string;
+  guideline_storage_path?: string;
+  guideline_file_name?: string;
 };
 
 export type ImportRemoteMediaResultItem = {

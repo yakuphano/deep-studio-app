@@ -22,6 +22,11 @@ import {
   isZipDatasetUrl,
 } from '@/lib/importRemoteMedia';
 import JSZip from 'jszip';
+import GuidelineUploadField from '@/components/admin/GuidelineUploadField';
+import {
+  applyGuidelineToTaskRows,
+  type GuidelineFileSelection,
+} from '@/lib/uploadTaskGuideline';
 
 const WEB_FILE_ACCEPT =
   '.jpg,.jpeg,.png,.gif,.webp,.bmp,.zip,image/*,application/zip,application/x-zip-compressed';
@@ -83,6 +88,7 @@ export default function CreateMedicalTaskScreen() {
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [sourceType, setSourceType] = useState<'local' | 'remote'>('local');
   const [remoteUrl, setRemoteUrl] = useState('');
+  const [guidelineFile, setGuidelineFile] = useState<GuidelineFileSelection | null>(null);
 
   const webInputRef = useRef<HTMLInputElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
@@ -328,7 +334,12 @@ export default function CreateMedicalTaskScreen() {
         setUploadProgress(100);
       }
 
-      const { data, error } = await supabase.from('tasks').insert(tasksToCreate).select();
+      const rowsWithGuideline = await applyGuidelineToTaskRows(
+        tasksToCreate,
+        guidelineFile,
+        user.id
+      );
+      const { data, error } = await supabase.from('tasks').insert(rowsWithGuideline).select();
 
       if (error) {
         console.error('DB HATASI', error);
@@ -452,6 +463,12 @@ export default function CreateMedicalTaskScreen() {
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
+
+            <GuidelineUploadField
+              value={guidelineFile}
+              onChange={setGuidelineFile}
+              disabled={isCreating}
+            />
 
             <View style={styles.formGroup}>
               <Text style={styles.label}>Image Source</Text>

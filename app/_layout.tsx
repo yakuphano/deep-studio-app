@@ -3,6 +3,7 @@ import { View, Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { GuidelineDrawerProvider } from '@/contexts/GuidelineDrawerContext';
 import TopNavbar from '../components/TopNavbar';
 
 /** Web: TopNavbar is position:fixed — reserve space so routes are not hidden under it. */
@@ -36,7 +37,9 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <RootLayoutNav />
+        <GuidelineDrawerProvider>
+          <RootLayoutNav />
+        </GuidelineDrawerProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { colors } from '@/theme/colors';
+import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
 
 type Task = {
   id: string;
@@ -28,6 +29,8 @@ type Task = {
   is_pool_task?: boolean;
   assigned_to?: string | null;
   duration?: number | null;
+  guideline_url?: string | null;
+  guideline_file_name?: string | null;
 };
 
 function AudioTaskCard({
@@ -67,7 +70,11 @@ function AudioTaskCard({
         {formatPrice(item.price)}
       </Text>
       
-      {/* Start Task Button - Blue */}
+      <GuidelineOpenButton
+        variant="card"
+        guidelineUrl={item.guideline_url}
+        guidelineFileName={item.guideline_file_name}
+      />
       <TouchableOpacity
         style={styles.startButton}
         onPress={handlePress}

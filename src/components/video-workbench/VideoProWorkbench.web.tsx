@@ -18,6 +18,7 @@ import {
   customLabelDefinitionsToMap,
   type CustomLabelDefinition,
 } from '@/constants/annotationLabels';
+import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
 
 const FPS = 30;
 const C = desktopWorkbenchDark;
@@ -292,9 +293,14 @@ export default function VideoProWorkbench({ taskId }: Props) {
           <Ionicons name="arrow-back" size={20} color="#3b82f6" />
           <Text style={topStyles.backBtnText}>{t('taskDetail.back')}</Text>
         </TouchableOpacity>
+        <GuidelineOpenButton
+          variant="header"
+          guidelineUrl={task?.guideline_url}
+          guidelineFileName={task?.guideline_file_name}
+        />
       </View>
 
-      <View style={topStyles.taskInfoBar} pointerEvents="box-none">
+      <View style={topStyles.taskInfoBar}>
         <Text style={topStyles.taskInfoType}>{t('tasks.cardVideoAnnotation')}</Text>
         <View style={topStyles.taskInfoPriceBadge}>
           <Text style={topStyles.taskInfoPriceText}>{task?.price ?? 0} TL</Text>
@@ -487,6 +493,8 @@ const topStyles = StyleSheet.create({
   headerStrip: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
     paddingHorizontal: 20,
     paddingVertical: 8,
     marginBottom: 4,
@@ -512,13 +520,16 @@ const topStyles = StyleSheet.create({
     marginLeft: 8,
   },
   taskInfoBar: {
-    position: 'absolute' as const,
-    top: 16,
-    right: 16,
-    zIndex: 1001,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'flex-start',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    paddingRight: 168,
+    backgroundColor: '#1e293b',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
   },
   taskInfoType: {
     fontSize: 12,

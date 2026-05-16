@@ -162,6 +162,8 @@ export default function AudioTasksScreen() {
                   subtitle={getLanguageLabel(item.language)}
                   ctaLabel={t('tasks.startTask')}
                   style={[styles.cardSlot, { width: cardSlotWidth }]}
+                  guidelineUrl={(item as { guideline_url?: string }).guideline_url}
+                  guidelineFileName={(item as { guideline_file_name?: string }).guideline_file_name}
                   onPress={() => router.push(`/dashboard/audio/${item.id}`)}
                 />
               )}

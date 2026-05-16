@@ -8,6 +8,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
 
 function formatStatusLabel(status: string) {
   if (!status?.trim()) return 'Pending';
@@ -27,6 +28,8 @@ export function TaskListCard({
   subtitle,
   ctaLabel = 'Start task',
   style,
+  guidelineUrl,
+  guidelineFileName,
 }: {
   title: string;
   status: string;
@@ -37,47 +40,64 @@ export function TaskListCard({
   subtitle?: string | null;
   ctaLabel?: string;
   style?: StyleProp<ViewStyle>;
+  guidelineUrl?: string | null;
+  guidelineFileName?: string | null;
 }) {
   const priceLabel = price != null ? `₺${price}` : '—';
 
   return (
-    <Pressable
-      style={({ pressed, hovered }) => [
-        styles.root,
-        (Boolean(hovered) || pressed) && { borderColor: accent },
-        style,
-      ]}
-      onPress={onPress}
-    >
-      <View style={styles.hero}>
-        <View style={[styles.iconCircle, { backgroundColor: accent }]}>
-          <Ionicons name={icon} size={28} color="#ffffff" />
+    <View style={[styles.root, style]}>
+      <Pressable
+        style={({ pressed, hovered }) => [
+          styles.pressMain,
+          (Boolean(hovered) || pressed) && { borderColor: accent },
+        ]}
+        onPress={onPress}
+      >
+        <View style={styles.hero}>
+          <View style={[styles.iconCircle, { backgroundColor: accent }]}>
+            <Ionicons name={icon} size={28} color="#ffffff" />
+          </View>
         </View>
-      </View>
-      <View style={styles.body}>
-        <Text style={styles.title} numberOfLines={2}>
-          {title}
-        </Text>
-        {subtitle ? (
-          <Text style={styles.subtitle} numberOfLines={1}>
-            {subtitle}
+        <View style={styles.body}>
+          <Text style={styles.title} numberOfLines={2}>
+            {title}
           </Text>
-        ) : null}
-        <View style={styles.metaRow}>
-          <View style={styles.statusPill}>
-            <Ionicons name="time-outline" size={12} color="#fbbf24" />
-            <Text style={styles.statusText}>{formatStatusLabel(status)}</Text>
-          </View>
-          <View style={styles.pricePill}>
-            <Text style={styles.priceText}>{priceLabel}</Text>
+          {subtitle ? (
+            <Text style={styles.subtitle} numberOfLines={1}>
+              {subtitle}
+            </Text>
+          ) : null}
+          <View style={styles.metaRow}>
+            <View style={styles.statusPill}>
+              <Ionicons name="time-outline" size={12} color="#fbbf24" />
+              <Text style={styles.statusText}>{formatStatusLabel(status)}</Text>
+            </View>
+            <View style={styles.pricePill}>
+              <Text style={styles.priceText}>{priceLabel}</Text>
+            </View>
           </View>
         </View>
-        <View style={[styles.cta, { backgroundColor: accent }]}>
+      </Pressable>
+      <View style={styles.footer}>
+        <GuidelineOpenButton
+          variant="card"
+          guidelineUrl={guidelineUrl}
+          guidelineFileName={guidelineFileName}
+        />
+        <Pressable
+          style={({ pressed }) => [
+            styles.cta,
+            { backgroundColor: accent },
+            pressed && { opacity: 0.9 },
+          ]}
+          onPress={onPress}
+        >
           <Text style={styles.ctaText}>{ctaLabel}</Text>
           <Ionicons name="arrow-forward" size={16} color="#ffffff" />
-        </View>
+        </Pressable>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -89,6 +109,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(148, 163, 184, 0.2)',
     overflow: 'hidden',
+  },
+  pressMain: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  footer: {
+    paddingHorizontal: 11,
+    paddingBottom: 12,
+    gap: 8,
   },
   hero: {
     height: 96,
@@ -106,7 +136,7 @@ const styles = StyleSheet.create({
   body: {
     paddingHorizontal: 11,
     paddingTop: 10,
-    paddingBottom: 12,
+    paddingBottom: 8,
     gap: 5,
   },
   title: {
@@ -158,7 +188,6 @@ const styles = StyleSheet.create({
     color: '#86efac',
   },
   cta: {
-    marginTop: 4,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

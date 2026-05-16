@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
 import { transcribeWithGroq } from '@/lib/groq';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
@@ -267,6 +268,11 @@ export default function AudioTaskDetailScreen() {
           <Text style={styles.backText}>{t('taskDetail.back')}</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('common.taskDetail')}</Text>
+        <GuidelineOpenButton
+          variant="header"
+          guidelineUrl={(task as { guideline_url?: string | null }).guideline_url}
+          guidelineFileName={(task as { guideline_file_name?: string | null }).guideline_file_name}
+        />
       </View>
 
       <ScrollView style={styles.content}>
@@ -389,6 +395,9 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#0f172a',

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
 import AnnotationCanvas, { type Annotation, type Tool } from '@/components/AnnotationCanvas';
@@ -674,6 +675,11 @@ export default function VideoTaskDetailScreen() {
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('common.taskDetail')}</Text>
+        <GuidelineOpenButton
+          variant="header"
+          guidelineUrl={(task as { guideline_url?: string | null }).guideline_url}
+          guidelineFileName={(task as { guideline_file_name?: string | null }).guideline_file_name}
+        />
       </View>
 
       <ScrollView style={styles.content}>
@@ -743,15 +749,17 @@ const styles = StyleSheet.create({
     borderTopColor: '#334155',
   },
   
-  // Task info bar
   taskInfoBar: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    zIndex: 1000,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'flex-start',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    paddingRight: 168,
+    backgroundColor: '#1e293b',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
   },
   taskInfoType: {
     fontSize: 12,
@@ -1000,6 +1008,9 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#0f172a',

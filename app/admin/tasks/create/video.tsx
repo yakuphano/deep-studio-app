@@ -23,6 +23,12 @@ import {
   isZipDatasetResponse,
 } from '@/lib/importRemoteMedia';
 import JSZip from 'jszip';
+import GuidelineUploadField from '@/components/admin/GuidelineUploadField';
+import {
+  applyGuidelineToTaskRows,
+  uploadGuidelineIfSelected,
+  type GuidelineFileSelection,
+} from '@/lib/uploadTaskGuideline';
 
 /** Web file dialog + DocumentPicker: zip ve video */
 const WEB_FILE_ACCEPT =
@@ -207,6 +213,7 @@ export default function CreateVideoTaskScreen() {
   const [remoteUrl, setRemoteUrl] = useState('');
   const [uploadedPublicUrl, setUploadedPublicUrl] = useState<string | null>(null);
   const [fileStatusMessage, setFileStatusMessage] = useState<string | null>(null);
+  const [guidelineFile, setGuidelineFile] = useState<GuidelineFileSelection | null>(null);
 
   const webInputRef = useRef<HTMLInputElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
@@ -578,12 +585,14 @@ export default function CreateVideoTaskScreen() {
         if (urls.length === 1 && isZipDatasetUrl(urls[0])) {
           setFileStatusMessage('ZIP veri seti indiriliyor ve işleniyor (birkaç dakika sürebilir)…');
           setUploadProgress(25);
+          const uploadedGuideline = await uploadGuidelineIfSelected(guidelineFile, user?.id);
           const zipPayload = await importRemoteMediaViaEdge(remoteUrl, 'video', {
             zipTaskTemplate: {
               company_name: (taskData.company_name || taskData.title || 'import').trim(),
               title_prefix: taskData.title,
               description: taskData.description || '',
               price: Number(taskData.price),
+              ...(uploadedGuideline ?? {}),
             },
           });
           setFileStatusMessage(null);
@@ -645,7 +654,12 @@ export default function CreateVideoTaskScreen() {
         return;
       }
 
-      const { data, error } = await supabase.from('tasks').insert(rowsToInsert).select();
+      const rowsWithGuideline = await applyGuidelineToTaskRows(
+        rowsToInsert,
+        guidelineFile,
+        user?.id
+      );
+      const { data, error } = await supabase.from('tasks').insert(rowsWithGuideline).select();
 
       if (error) {
         console.error('DB Hatası:', error);
@@ -771,6 +785,12 @@ export default function CreateVideoTaskScreen() {
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
+
+            <GuidelineUploadField
+              value={guidelineFile}
+              onChange={setGuidelineFile}
+              disabled={isCreating || isUploading}
+            />
 
             <View style={styles.formGroup}>
               <Text style={styles.label}>Video kaynağı</Text>

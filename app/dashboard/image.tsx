@@ -30,6 +30,8 @@ type Task = {
   transcription?: string | null;
   is_pool_task?: boolean;
   assigned_to?: string | null;
+  guideline_url?: string | null;
+  guideline_file_name?: string | null;
 };
 
 function getLanguageLabel(code: string) {
@@ -155,6 +157,8 @@ export default function ImageTasksScreen() {
                   subtitle={getLanguageLabel(item.language)}
                   ctaLabel={t('tasks.startTask')}
                   style={[styles.cardSlot, { width: cardSlotWidth }]}
+                  guidelineUrl={item.guideline_url}
+                  guidelineFileName={item.guideline_file_name}
                   onPress={() => router.push(`/dashboard/image/${item.id}`)}
                 />
               )}

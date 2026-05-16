@@ -24,6 +24,12 @@ import {
   isZipDatasetResponse,
 } from '@/lib/importRemoteMedia';
 import JSZip from 'jszip';
+import GuidelineUploadField from '@/components/admin/GuidelineUploadField';
+import {
+  applyGuidelineToTaskRows,
+  uploadGuidelineIfSelected,
+  type GuidelineFileSelection,
+} from '@/lib/uploadTaskGuideline';
 
 const WEB_FILE_ACCEPT =
   '.mp3,.wav,.m4a,.ogg,.flac,.zip,audio/*,application/zip,application/x-zip-compressed';
@@ -89,6 +95,7 @@ export default function CreateAudioTaskScreen() {
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [sourceType, setSourceType] = useState<'local' | 'remote' | 'record'>('local');
   const [remoteUrl, setRemoteUrl] = useState('');
+  const [guidelineFile, setGuidelineFile] = useState<GuidelineFileSelection | null>(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [audioURL, setAudioURL] = useState('');
@@ -340,6 +347,7 @@ export default function CreateAudioTaskScreen() {
 
         if (urls.length === 1 && isZipDatasetUrl(urls[0])) {
           setUploadProgress(30);
+          const uploadedGuideline = await uploadGuidelineIfSelected(guidelineFile, user.id);
           const zipPayload = await importRemoteMediaViaEdge(remoteUrl, 'audio', {
             zipTaskTemplate: {
               company_name: taskData.company_name,
@@ -347,6 +355,7 @@ export default function CreateAudioTaskScreen() {
               description: taskData.description || '',
               price: Number(taskData.price) || 0,
               language: taskData.language,
+              ...(uploadedGuideline ?? {}),
             },
           });
           setIsUploading(false);
@@ -432,7 +441,12 @@ export default function CreateAudioTaskScreen() {
         ];
       }
 
-      const { data, error } = await supabase.from('tasks').insert(tasksToCreate).select();
+      const rowsWithGuideline = await applyGuidelineToTaskRows(
+        tasksToCreate,
+        guidelineFile,
+        user.id
+      );
+      const { data, error } = await supabase.from('tasks').insert(rowsWithGuideline).select();
 
       if (error) {
         console.error('DB HATASI', error);
@@ -558,6 +572,12 @@ export default function CreateAudioTaskScreen() {
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
+
+            <GuidelineUploadField
+              value={guidelineFile}
+              onChange={setGuidelineFile}
+              disabled={isCreating || isUploading}
+            />
 
             <View style={styles.formGroup}>
               <Text style={styles.label}>Audio Source (Dosya veya URL)</Text>

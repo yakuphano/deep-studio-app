@@ -175,6 +175,8 @@ export default function VideoTasksScreen() {
                 subtitle={item.language ? getLanguageLabel(item.language) : null}
                 ctaLabel={t('tasks.startTask')}
                 style={[styles.cardSlot, { width: cardSlotWidth }]}
+                guidelineUrl={(item as { guideline_url?: string }).guideline_url}
+                guidelineFileName={(item as { guideline_file_name?: string }).guideline_file_name}
                 onPress={() => router.push(`/dashboard/video/${item.id}`)}
               />
             )}

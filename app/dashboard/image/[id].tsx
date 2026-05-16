@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAnnotationTaskNav } from '@/contexts/AnnotationTaskNavContext';
@@ -441,12 +442,14 @@ export default function ImageTaskDetailScreen() {
         <View style={{
           flexDirection: 'row',
           alignItems: 'center',
+          justifyContent: 'space-between',
           paddingHorizontal: 20,
-          paddingVertical: 8, // İNCELTİLDİ
+          paddingVertical: 8,
           marginBottom: 4,
-          backgroundColor: '#0f172a', // SAYFA RENGİ
-          height: 40, // İNCELTİLDİ
+          backgroundColor: '#0f172a',
+          minHeight: 40,
           zIndex: 1000,
+          gap: 12,
         }}>
           <TouchableOpacity 
             style={{
@@ -456,13 +459,17 @@ export default function ImageTaskDetailScreen() {
               paddingHorizontal: 12,
               borderRadius: 8,
               backgroundColor: 'rgba(59, 130, 246, 0.1)',
-              marginRight: 15,
             }} 
             onPress={navigateBackFromDetail}
           >
             <Ionicons name="arrow-back" size={20} color="#3b82f6" />
             <Text style={{ fontSize: 16, fontWeight: '600', color: '#3b82f6', marginLeft: 8 }}>Back</Text>
           </TouchableOpacity>
+          <GuidelineOpenButton
+            variant="header"
+            guidelineUrl={(task as { guideline_url?: string | null })?.guideline_url}
+            guidelineFileName={(task as { guideline_file_name?: string | null })?.guideline_file_name}
+          />
         </View>
         
         {/* Task Info Overlay */}
@@ -688,6 +695,11 @@ export default function ImageTaskDetailScreen() {
           <Text style={styles.backText}>{t('taskDetail.back')}</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('common.taskDetail')}</Text>
+        <GuidelineOpenButton
+          variant="header"
+          guidelineUrl={(task as { guideline_url?: string | null }).guideline_url}
+          guidelineFileName={(task as { guideline_file_name?: string | null }).guideline_file_name}
+        />
       </View>
 
       <ScrollView style={styles.content}>
@@ -910,15 +922,18 @@ const styles = StyleSheet.create({
     borderTopColor: '#334155',
   },
   
-  // Task info bar
+  // Task info bar (sola hizalı — sağ üstteki Guideline ile çakışmasın)
   taskInfoBar: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    zIndex: 1000,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'flex-start',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    paddingRight: 168,
+    backgroundColor: '#1e293b',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
   },
   taskInfoType: {
     fontSize: 12,
@@ -1133,6 +1148,9 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#0f172a',

@@ -18,6 +18,11 @@ export interface TaskData {
   transcription: string;
   annotation_data: any;
   language: string | null;
+  /** Görev yapım kılavuzu (PDF, Word, metin vb.) */
+  guideline_url?: string | null;
+  guideline_storage_path?: string | null;
+  guideline_file_name?: string | null;
+  description?: string | null;
 }
 
 export interface Annotation {

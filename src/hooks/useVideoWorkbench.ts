@@ -302,6 +302,9 @@ export const useVideoWorkbench = (taskId: string) => {
       transcription: data.transcription ?? '',
       annotation_data: data.annotation_data ?? null,
       language: data.language ?? null,
+      guideline_url: data.guideline_url ?? null,
+      guideline_storage_path: data.guideline_storage_path ?? null,
+      guideline_file_name: data.guideline_file_name ?? null,
     };
 
     setTask(taskData);

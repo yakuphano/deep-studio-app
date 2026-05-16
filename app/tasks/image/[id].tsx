@@ -890,15 +890,17 @@ const styles = StyleSheet.create({
     borderTopColor: '#334155',
   },
   
-  // Task info bar
   taskInfoBar: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    zIndex: 1000,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'flex-start',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    paddingRight: 168,
+    backgroundColor: '#1e293b',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
   },
   taskInfoType: {
     fontSize: 12,

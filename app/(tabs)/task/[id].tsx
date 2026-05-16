@@ -228,7 +228,14 @@ export default function TaskDetailScreen() {
     }
     return (
       <View style={taskDetailStyles.container}>
-        <TaskHeader title={task?.title || ''} price={task?.price} taskTypeLabel={taskTypeLabel} onBack={handleExit} />
+        <TaskHeader
+          title={task?.title || ''}
+          price={task?.price}
+          taskTypeLabel={taskTypeLabel}
+          onBack={handleExit}
+          guidelineUrl={task?.guideline_url}
+          guidelineFileName={task?.guideline_file_name}
+        />
         <ScrollView style={taskDetailStyles.scroll} contentContainerStyle={taskDetailStyles.scrollContent}>
           <TaskMediaView
             ref={imageCanvasRef}
@@ -268,7 +275,14 @@ export default function TaskDetailScreen() {
   if (isImageTask) {
     return (
       <View style={taskDetailStyles.container}>
-        <TaskHeader title={task?.title || ''} price={task?.price} taskTypeLabel={taskTypeLabel} onBack={handleExit} />
+        <TaskHeader
+          title={task?.title || ''}
+          price={task?.price}
+          taskTypeLabel={taskTypeLabel}
+          onBack={handleExit}
+          guidelineUrl={task?.guideline_url}
+          guidelineFileName={task?.guideline_file_name}
+        />
 
         <View style={{ flex: 1, minHeight: 0 }}>
           <ImageAnnotationThreeColumn
@@ -335,7 +349,14 @@ export default function TaskDetailScreen() {
   if (isAudioLike) {
     return (
       <View style={taskDetailStyles.container}>
-        <TaskHeader title={task?.title || ''} price={task?.price} taskTypeLabel={taskTypeLabel} onBack={handleExit} />
+        <TaskHeader
+          title={task?.title || ''}
+          price={task?.price}
+          taskTypeLabel={taskTypeLabel}
+          onBack={handleExit}
+          guidelineUrl={task?.guideline_url}
+          guidelineFileName={task?.guideline_file_name}
+        />
         
         <ScrollView style={taskDetailStyles.scroll} contentContainerStyle={taskDetailStyles.scrollContent}>
           <TaskMediaView
@@ -383,8 +404,15 @@ export default function TaskDetailScreen() {
   // Default
   return (
     <View style={taskDetailStyles.container}>
-      <TaskHeader title={task?.title || ''} price={task?.price} taskTypeLabel={taskTypeLabel} onBack={handleExit} />
-      
+      <TaskHeader
+        title={task?.title || ''}
+        price={task?.price}
+        taskTypeLabel={taskTypeLabel}
+        onBack={handleExit}
+        guidelineUrl={task?.guideline_url}
+        guidelineFileName={task?.guideline_file_name}
+      />
+
       <View style={{ flex: 1, minHeight: 0 }}>
         <TaskMediaView
           task={task}

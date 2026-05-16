@@ -11,6 +11,9 @@ export type ZipTaskTemplate = {
   price: number;
   language?: string;
   annotation_type?: string;
+  guideline_url?: string;
+  guideline_storage_path?: string;
+  guideline_file_name?: string;
 };
 
 const MAX_ZIP_BYTES = 1024 * 1024 * 1024; // 1 GB (Content-Length / tampon üst sınırı)
@@ -101,6 +104,11 @@ function buildTaskRow(
     status: 'pending',
     assigned_to: null,
     is_pool_task: true,
+    ...(tpl.guideline_url ? { guideline_url: tpl.guideline_url } : {}),
+    ...(tpl.guideline_storage_path
+      ? { guideline_storage_path: tpl.guideline_storage_path }
+      : {}),
+    ...(tpl.guideline_file_name ? { guideline_file_name: tpl.guideline_file_name } : {}),
   };
 
   if (media === 'image') {

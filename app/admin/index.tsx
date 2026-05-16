@@ -18,6 +18,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProfile } from '@/hooks/useProfile';
+import {
+  getFormatOptionsForTaskType,
+  buildAdminExportFile,
+  downloadExportBlob,
+  type ExportTaskType,
+  type ExportTaskRow,
+  type ExportFormatKey,
+} from '@/lib/adminTaskExport';
 
 type User = {
   id: string;
@@ -28,26 +36,6 @@ type User = {
   languages?: string[];
   created_at: string;
 };
-
-type ExportTaskType = 'audio' | 'image' | 'video';
-
-function getFormatOptionsForTaskType(exportTaskType: ExportTaskType) {
-  if (exportTaskType === 'audio') {
-    return [
-      { key: 'json', label: 'JSON' },
-      { key: 'csv', label: 'CSV' },
-      { key: 'txt', label: 'TXT' },
-      { key: 'srt', label: 'SRT' },
-    ];
-  }
-  return [
-    { key: 'yolo', label: 'YOLO' },
-    { key: 'coco', label: 'COCO' },
-    { key: 'pascalvoc', label: 'Pascal VOC' },
-    { key: 'json', label: 'JSON' },
-    { key: 'csv', label: 'CSV' },
-  ];
-}
 
 function ActionCard({
   icon,
@@ -91,7 +79,7 @@ export default function AdminPanelScreen() {
   // });
   
   // Export states
-  const [exportTaskType, setExportTaskType] = useState<'audio' | 'image' | 'video'>('audio');
+  const [exportTaskType, setExportTaskType] = useState<ExportTaskType>('audio');
   const [exportClient, setExportClient] = useState('');
   /** Görevlerde geçen company_name listesi (yeniden eskiye); chip ile seçim */
   const [exportCompanyOptions, setExportCompanyOptions] = useState<string[]>([]);
@@ -295,7 +283,7 @@ export default function AdminPanelScreen() {
     setExporting(true);
     try {
       const cols =
-        'id, title, status, price, language, category, audio_url, image_url, transcription, annotation_data, created_at, updated_at, client_name, company_name, assigned_to, is_pool_task';
+        'id, title, type, status, price, language, category, audio_url, image_url, video_url, transcription, annotation_data, created_at, updated_at, client_name, company_name, assigned_to, is_pool_task';
 
       let query = supabase.from('tasks').select(cols).eq('status', 'completed');
 
@@ -337,113 +325,15 @@ export default function AdminPanelScreen() {
         return;
       }
 
-      // Process data based on export format
-      let processedData: any;
-      let fileName: string;
-      let mimeType: string;
+      const { blob, fileName } = await buildAdminExportFile(
+        data as ExportTaskRow[],
+        exportTaskType,
+        exportFormat as ExportFormatKey,
+        exportClient.trim()
+      );
+      downloadExportBlob(blob, fileName);
 
-      if (exportFormat === 'yolo') {
-        processedData = data.map(task => ({
-          filename: task.title.replace(/[^a-zA-Z0-9]/g, '_'),
-          width: 640,
-          height: 480,
-          class: task.category || 'object',
-          xmin: 0,
-          ymin: 0,
-          xmax: 100,
-          ymax: 100,
-        }));
-        fileName = `yolo_export_${exportClient}_${new Date().toISOString().split('T')[0]}.txt`;
-        mimeType = 'text/plain';
-      } else if (exportFormat === 'coco') {
-        processedData = {
-          images: data.map((task, index) => ({
-            id: index + 1,
-            width: 640,
-            height: 480,
-            file_name: task.title.replace(/[^a-zA-Z0-9]/g, '_'),
-          })),
-          annotations: data.map((task, index) => ({
-            id: index + 1,
-            image_id: index + 1,
-            category_id: 1,
-            bbox: [0, 0, 100, 100],
-            area: 10000,
-          })),
-        };
-        fileName = `coco_export_${exportClient}_${new Date().toISOString().split('T')[0]}.json`;
-        mimeType = 'application/json';
-      } else if (exportFormat === 'pascalvoc') {
-        processedData = data.map(task => {
-          const xml = `<annotation>
-  <folder>images</folder>
-  <filename>${task.title.replace(/[^a-zA-Z0-9]/g, '_')}</filename>
-  <size>
-    <width>640</width>
-    <height>480</height>
-    <depth>3</depth>
-  </size>
-  <object>
-    <name>${task.category || 'object'}</name>
-    <pose>Unspecified</pose>
-    <truncated>0</truncated>
-    <difficult>0</difficult>
-    <bndbox>
-      <xmin>0</xmin>
-      <ymin>0</ymin>
-      <xmax>100</xmax>
-      <ymax>100</ymax>
-    </bndbox>
-  </object>
-</annotation>`;
-          return { filename: task.title, xml };
-        });
-        fileName = `pascalvoc_export_${exportClient}_${new Date().toISOString().split('T')[0]}.zip`;
-        mimeType = 'application/zip';
-      } else if (exportFormat === 'srt') {
-        processedData = data.map((task, index) => {
-          const startTime = new Date(task.created_at);
-          const endTime = new Date(startTime.getTime() + 5000); // 5 seconds per task
-          const start = startTime.toISOString().substr(11, 12);
-          const end = endTime.toISOString().substr(11, 12);
-          return `${index + 1}\n${start} --> ${end}\n${task.transcription || task.title}\n\n`;
-        }).join('');
-        fileName = `srt_export_${exportClient}_${new Date().toISOString().split('T')[0]}.srt`;
-        mimeType = 'text/plain';
-      } else if (exportFormat === 'csv') {
-        const headers = Object.keys(data[0]).join(',');
-        const rows = data.map(task => 
-          Object.values(task).map(val => `"${val}"`).join(',')
-        ).join('\n');
-        processedData = `${headers}\n${rows}`;
-        fileName = `csv_export_${exportClient}_${new Date().toISOString().split('T')[0]}.csv`;
-        mimeType = 'text/csv';
-      } else if (exportFormat === 'txt') {
-        processedData = data.map(task => 
-          `${task.title}\n${task.transcription || 'No transcription available'}\n---\n`
-        ).join('\n');
-        fileName = `txt_export_${exportClient}_${new Date().toISOString().split('T')[0]}.txt`;
-        mimeType = 'text/plain';
-      } else {
-        // JSON (default)
-        processedData = JSON.stringify(data, null, 2);
-        fileName = `json_export_${exportClient}_${new Date().toISOString().split('T')[0]}.json`;
-        mimeType = 'application/json';
-      }
-
-      // Create download
-      const blob = new Blob([processedData], { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      console.log('Exporting data for:', exportClient, 'Format:', exportFormat);
-      Alert.alert('Success', `${data.length} tasks exported successfully as ${exportFormat.toUpperCase()}.`);
+      Alert.alert('Success', `${data.length} tasks exported as ${exportFormat.toUpperCase()}.`);
 
     } catch (error) {
       console.error('Export Error:', error);
@@ -547,6 +437,18 @@ export default function AdminPanelScreen() {
                 onPress={() => setExportTaskType('video')}
               >
                 <Text style={[styles.exportChipText, exportTaskType === 'video' && styles.exportChipTextActive]}>Video</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.exportChip, exportTaskType === 'medical' && styles.exportChipActive]} 
+                onPress={() => setExportTaskType('medical')}
+              >
+                <Text style={[styles.exportChipText, exportTaskType === 'medical' && styles.exportChipTextActive]}>Medical</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.exportChip, exportTaskType === 'lidar' && styles.exportChipActive]} 
+                onPress={() => setExportTaskType('lidar')}
+              >
+                <Text style={[styles.exportChipText, exportTaskType === 'lidar' && styles.exportChipTextActive]}>LiDAR</Text>
               </TouchableOpacity>
             </View>
             
@@ -887,6 +789,7 @@ const styles = StyleSheet.create({
   },
   exportTaskTypeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 16,
   },

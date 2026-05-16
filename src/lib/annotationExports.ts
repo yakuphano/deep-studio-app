@@ -5,9 +5,9 @@
 import type { Annotation } from '@/types/annotations';
 import { ANNOTATION_LABELS } from '@/constants/annotationLabels';
 
-function labelToClassId(label: string): number {
-  const idx = ANNOTATION_LABELS.indexOf(label as (typeof ANNOTATION_LABELS)[number]);
-  return idx >= 0 ? idx : ANNOTATION_LABELS.length;
+function labelToClassId(label: string, labelNames: readonly string[]): number {
+  const idx = labelNames.indexOf(label as (typeof labelNames)[number]);
+  return idx >= 0 ? idx : labelNames.length;
 }
 
 export interface ExportContext {
@@ -15,15 +15,22 @@ export interface ExportContext {
   imageWidth: number;
   imageHeight: number;
   imageFileName: string;
+  /** Varsayılan: ANNOTATION_LABELS (medical export için MEDICAL_ANNOTATION_LABELS geçin). */
+  labelNames?: readonly string[];
+}
+
+function resolveLabels(ctx: ExportContext): readonly string[] {
+  return ctx.labelNames ?? ANNOTATION_LABELS;
 }
 
 /** YOLO: Normalized [class_id x_center y_center width height] per line. Coordinates 0-1. */
 export function toYOLO(ctx: ExportContext): string {
   const { annotations, imageWidth, imageHeight } = ctx;
+  const labelNames = resolveLabels(ctx);
   if (imageWidth <= 0 || imageHeight <= 0) return '';
   const lines: string[] = [];
   for (const a of annotations) {
-    const cid = labelToClassId(a.label);
+    const cid = labelToClassId(a.label, labelNames);
     if (a.type === 'bbox') {
       const cx = (a.x + a.width / 2) / imageWidth;
       const cy = (a.y + a.height / 2) / imageHeight;
@@ -51,7 +58,8 @@ export function toYOLO(ctx: ExportContext): string {
 /** COCO: Single JSON with images, annotations, categories arrays */
 export function toCOCO(ctx: ExportContext): object {
   const { annotations, imageWidth, imageHeight, imageFileName } = ctx;
-  const categories = ANNOTATION_LABELS.map((name, id) => ({ id: id + 1, name, supercategory: 'object' }));
+  const labelNames = resolveLabels(ctx);
+  const categories = labelNames.map((name, id) => ({ id: id + 1, name, supercategory: 'object' }));
   const images = [{ id: 1, file_name: imageFileName, width: imageWidth, height: imageHeight }];
   const cocoAnnotations: Array<{
     id: number;
@@ -64,7 +72,7 @@ export function toCOCO(ctx: ExportContext): object {
   }> = [];
   let annId = 1;
   for (const a of annotations) {
-    const cid = labelToClassId(a.label) + 1;
+    const cid = labelToClassId(a.label, labelNames) + 1;
     if (a.type === 'bbox') {
       cocoAnnotations.push({
         id: annId++,
@@ -119,6 +127,37 @@ export function toCOCO(ctx: ExportContext): object {
 }
 
 /** Pascal VOC: XML with xmin, ymin, xmax, ymax per object */
+export function inferImageDimensions(annotations: Annotation[]): { width: number; height: number } {
+  let maxX = 640;
+  let maxY = 480;
+  for (const a of annotations) {
+    if (a.type === 'bbox') {
+      maxX = Math.max(maxX, a.x + a.width);
+      maxY = Math.max(maxY, a.y + a.height);
+    } else if (a.type === 'cuboid') {
+      maxX = Math.max(maxX, a.x + a.width);
+      maxY = Math.max(maxY, a.y + a.height);
+    } else if (a.type === 'ellipse') {
+      maxX = Math.max(maxX, a.cx + a.rx);
+      maxY = Math.max(maxY, a.cy + a.ry);
+    } else {
+      const pts =
+        a.type === 'cuboid_wire' && a.corners.length === 8
+          ? a.corners
+          : 'points' in a && Array.isArray(a.points)
+            ? a.points
+            : null;
+      if (pts?.length) {
+        for (const p of pts) {
+          maxX = Math.max(maxX, p.x);
+          maxY = Math.max(maxY, p.y);
+        }
+      }
+    }
+  }
+  return { width: Math.ceil(maxX), height: Math.ceil(maxY) };
+}
+
 export function toPascalVOC(ctx: ExportContext): string {
   const { annotations, imageWidth, imageHeight, imageFileName } = ctx;
   const objects = annotations.flatMap((a) => {

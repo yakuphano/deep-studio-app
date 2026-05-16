@@ -128,7 +128,7 @@ export default function DashboardHubScreen() {
     } else if (type === 'image') {
       router.push('/dashboard/image');
     } else if (type === 'video') {
-      router.push('/(tabs)/video-tasks');
+      router.push('/dashboard/video');
     } else if (type === 'medical') {
       router.push('/dashboard/medical');
     } else if (type === 'lidar') {

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { resetAdminUserIdCache } from '../lib/messages';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type UserProfile = {
@@ -59,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(newSession?.user ?? null);
 
       if (newSession?.user) {
+        resetAdminUserIdCache();
         const userProfile = await fetchUserProfile(newSession.user.id);
         if (userProfile) {
           setProfile(userProfile);

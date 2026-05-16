@@ -497,6 +497,7 @@ export default function AdminPanelScreen() {
         {/* Quick Actions */}
         <View style={styles.actionsRow}>
           <ActionCard icon="add-circle" iconColor="#3b82f6" label="Create New Task" onPress={() => router.push('/admin/tasks/create')} />
+          <ActionCard icon="mail" iconColor="#06b6d4" label={t('admin.messagesAction')} onPress={() => router.push('/admin/messages')} />
           <ActionCard icon="refresh" iconColor="#10b981" label="Refresh Analytics" onPress={fetchDashboardStats} />
           <ActionCard icon="list-outline" iconColor="#8b5cf6" label="Recent Tasks" onPress={() => router.push('/admin/tasks')} />
           <ActionCard icon="download" iconColor="#f59e0b" label="Export Data" onPress={() => {}} />

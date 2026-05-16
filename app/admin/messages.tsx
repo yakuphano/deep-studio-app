@@ -17,7 +17,16 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { sendMessageAsAdmin, getAdminUserId } from '@/lib/messages';
+import {
+  sendMessageAsAdmin,
+  sendBroadcastToUsers,
+  fetchAllUsersForAdmin,
+  fetchConversationPartners,
+  fetchThreadMessages,
+  markThreadReadForAdmin,
+  displayUserLabel,
+  type ConversationPartner,
+} from '@/lib/messages';
 
 type Message = {
   id: string;
@@ -28,7 +37,8 @@ type Message = {
   created_at: string;
 };
 
-type ChatUser = { id: string; email?: string; full_name?: string };
+type ChatUser = ConversationPartner;
+type AdminMode = 'chat' | 'broadcast';
 
 export default function AdminMessagesScreen() {
   const { t } = useTranslation();
@@ -40,95 +50,129 @@ export default function AdminMessagesScreen() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [adminId, setAdminId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [mode, setMode] = useState<AdminMode>('chat');
+  const [broadcastSubject, setBroadcastSubject] = useState('');
+  const [broadcastContent, setBroadcastContent] = useState('');
+  const [broadcastSending, setBroadcastSending] = useState(false);
+  const [userCount, setUserCount] = useState(0);
   const flatListRef = useRef<FlatList>(null);
+  const didAutoSelectUser = useRef(false);
 
-  const userId = user?.id ?? '';
-  const filteredUsers = users.filter((u) =>
-    (u.email ?? '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const adminAuthId = user?.id ?? '';
+  const filteredUsers = users.filter((u) => {
+    const label = displayUserLabel(u).toLowerCase();
+    const q = searchQuery.toLowerCase();
+    return label.includes(q) || u.id.toLowerCase().includes(q);
+  });
 
   useEffect(() => {
     if (user && !isAdmin) router.replace('/dashboard');
   }, [user, isAdmin]);
 
-  useEffect(() => {
-    getAdminUserId().then(setAdminId);
-  }, []);
+  const loadUsers = useCallback(async () => {
+    if (!adminAuthId) return;
+    const [partners, allUsers] = await Promise.all([
+      fetchConversationPartners(adminAuthId),
+      fetchAllUsersForAdmin(adminAuthId),
+    ]);
+    const partnerIds = new Set(partners.map((p) => p.id));
+    const rest = allUsers.filter((u) => !partnerIds.has(u.id));
+    const merged = [...partners, ...rest];
+    setUsers(merged);
+    setUserCount(allUsers.length);
 
-  const fetchConversationUsers = useCallback(async () => {
-    if (!adminId) return;
-    const { data } = await supabase
-      .from('messages')
-      .select('sender_id, receiver_id');
-    const ids = new Set<string>();
-    (data ?? []).forEach((m) => {
-      if (m.sender_id && m.sender_id !== adminId) ids.add(m.sender_id);
-      if (m.receiver_id && m.receiver_id !== adminId) ids.add(m.receiver_id);
-    });
-    if (ids.size === 0) {
-      setUsers([]);
-      setLoading(false);
-      return;
+    if (!didAutoSelectUser.current && merged.length > 0) {
+      didAutoSelectUser.current = true;
+      const firstUnread = partners.find((p) => (p.unreadCount ?? 0) > 0);
+      setSelectedUser(firstUnread ?? merged[0]);
     }
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, email, full_name')
-      .in('id', Array.from(ids));
-    setUsers((profiles ?? []).map((p) => ({ id: p.id, email: p.email, full_name: p.full_name })));
+
     setLoading(false);
-  }, [adminId]);
+  }, [adminAuthId]);
 
   useEffect(() => {
-    if (adminId) fetchConversationUsers();
-  }, [adminId, fetchConversationUsers]);
+    if (adminAuthId) loadUsers();
+  }, [adminAuthId, loadUsers]);
 
   const fetchMessages = useCallback(async () => {
-    if (!selectedUser?.id || !adminId) return;
-    const { data: sent } = await supabase
-      .from('messages')
-      .select('id, sender_id, receiver_id, content, is_read, created_at')
-      .eq('sender_id', adminId)
-      .eq('receiver_id', selectedUser.id)
-      .order('created_at', { ascending: true });
-    const { data: received } = await supabase
-      .from('messages')
-      .select('id, sender_id, receiver_id, content, is_read, created_at')
-      .eq('sender_id', selectedUser.id)
-      .eq('receiver_id', adminId)
-      .order('created_at', { ascending: true });
-    const merged = [...(sent ?? []), ...(received ?? [])].sort(
-      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    if (!selectedUser?.id || !adminAuthId) return;
+    const thread = await fetchThreadMessages(adminAuthId, selectedUser.id);
+    setMessages(thread as Message[]);
+    await markThreadReadForAdmin(adminAuthId, selectedUser.id);
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.id === selectedUser.id ? { ...u, unreadCount: 0 } : u
+      )
     );
-    setMessages(merged as Message[]);
-  }, [selectedUser?.id, adminId]);
+  }, [selectedUser?.id, adminAuthId]);
 
   useEffect(() => {
     fetchMessages();
   }, [fetchMessages]);
 
   useEffect(() => {
-    if (!selectedUser?.id || !adminId) return;
+    if (!selectedUser?.id || !adminAuthId) return;
     const channel = supabase
       .channel('admin-messages-realtime')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages' },
-        () => fetchMessages()
+        { event: '*', schema: 'public', table: 'messages' },
+        () => {
+          fetchMessages();
+          loadUsers();
+        }
       )
       .subscribe();
     return () => supabase.removeChannel(channel);
-  }, [selectedUser?.id, adminId, fetchMessages]);
+  }, [selectedUser?.id, adminAuthId, fetchMessages, loadUsers]);
+
+  const handleBroadcast = async () => {
+    const content = broadcastContent.trim();
+    if (!adminAuthId || !content || broadcastSending) return;
+
+    const confirmed =
+      Platform.OS === 'web'
+        ? window.confirm(t('admin.broadcastConfirm', { count: userCount }))
+        : await new Promise<boolean>((resolve) => {
+            Alert.alert(
+              t('admin.broadcastTitle'),
+              t('admin.broadcastConfirm', { count: userCount }),
+              [
+                { text: t('login.cancel'), style: 'cancel', onPress: () => resolve(false) },
+                { text: t('admin.broadcastSend'), onPress: () => resolve(true) },
+              ]
+            );
+          });
+    if (!confirmed) return;
+
+    setBroadcastSending(true);
+    try {
+      const { sent, error } = await sendBroadcastToUsers({
+        adminId: adminAuthId,
+        subject: broadcastSubject,
+        content,
+      });
+      if (error) throw error;
+      setBroadcastSubject('');
+      setBroadcastContent('');
+      Alert.alert(t('admin.broadcastTitle'), t('admin.broadcastSuccess', { count: sent }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      Alert.alert(t('login.errorTitle') || 'Hata', msg);
+    } finally {
+      setBroadcastSending(false);
+    }
+  };
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || !adminId || !selectedUser?.id || sending) return;
+    if (!text || !adminAuthId || !selectedUser?.id || sending) return;
 
     setSending(true);
     try {
       const { error } = await sendMessageAsAdmin({
-        adminId,
+        adminId: adminAuthId,
         receiverId: selectedUser.id,
         content: text,
       });
@@ -152,7 +196,7 @@ export default function AdminMessagesScreen() {
     return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   };
 
-  const isFromCurrentUser = (m: Message) => m.sender_id === userId;
+  const isFromCurrentUser = (m: Message) => m.sender_id === adminAuthId;
 
   if (!user || !isAdmin) {
     return (
@@ -169,6 +213,68 @@ export default function AdminMessagesScreen() {
         <Text style={styles.backBtnText}>{t('admin.userList')}</Text>
       </TouchableOpacity>
 
+      <View style={styles.modeRow}>
+        <TouchableOpacity
+          style={[styles.modeBtn, mode === 'chat' && styles.modeBtnActive]}
+          onPress={() => setMode('chat')}
+        >
+          <Ionicons name="chatbubbles-outline" size={18} color={mode === 'chat' ? '#fff' : '#94a3b8'} />
+          <Text style={[styles.modeBtnText, mode === 'chat' && styles.modeBtnTextActive]}>
+            {t('admin.messagesChatMode')}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeBtn, mode === 'broadcast' && styles.modeBtnActive]}
+          onPress={() => setMode('broadcast')}
+        >
+          <Ionicons name="megaphone-outline" size={18} color={mode === 'broadcast' ? '#fff' : '#94a3b8'} />
+          <Text style={[styles.modeBtnText, mode === 'broadcast' && styles.modeBtnTextActive]}>
+            {t('admin.messagesBroadcastMode')}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {mode === 'broadcast' ? (
+        <ScrollView style={styles.broadcastPanel} contentContainerStyle={styles.broadcastContent}>
+          <Text style={styles.broadcastHeading}>{t('admin.broadcastTitle')}</Text>
+          <Text style={styles.broadcastHint}>
+            {t('admin.broadcastHint', { count: userCount })}
+          </Text>
+          <Text style={styles.fieldLabel}>{t('admin.broadcastSubjectLabel')}</Text>
+          <TextInput
+            style={styles.broadcastInput}
+            placeholder={t('admin.broadcastSubjectPlaceholder')}
+            placeholderTextColor="#64748b"
+            value={broadcastSubject}
+            onChangeText={setBroadcastSubject}
+            maxLength={200}
+          />
+          <Text style={styles.fieldLabel}>{t('admin.broadcastBodyLabel')}</Text>
+          <TextInput
+            style={[styles.broadcastInput, styles.broadcastBody]}
+            placeholder={t('messages.placeholder')}
+            placeholderTextColor="#64748b"
+            value={broadcastContent}
+            onChangeText={setBroadcastContent}
+            multiline
+            maxLength={5000}
+          />
+          <TouchableOpacity
+            style={[styles.broadcastSendBtn, broadcastSending && styles.sendBtnDisabled]}
+            onPress={handleBroadcast}
+            disabled={broadcastSending || !broadcastContent.trim() || userCount === 0}
+          >
+            {broadcastSending ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="send" size={20} color="#fff" />
+                <Text style={styles.broadcastSendText}>{t('admin.broadcastSend')}</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </ScrollView>
+      ) : (
       <View style={styles.main}>
         <View style={styles.userList}>
           <View style={styles.searchWrap}>
@@ -196,9 +302,18 @@ export default function AdminMessagesScreen() {
                   style={[styles.userItem, selectedUser?.id === u.id && styles.userItemActive]}
                   onPress={() => setSelectedUser(u)}
                 >
-                  <Text style={styles.userItemText} numberOfLines={1}>
-                    {u.email || u.full_name || u.id}
-                  </Text>
+                  <View style={styles.userItemRow}>
+                    <Text style={styles.userItemText} numberOfLines={1}>
+                      {displayUserLabel(u)}
+                    </Text>
+                    {(u.unreadCount ?? 0) > 0 && (
+                      <View style={styles.unreadDot}>
+                        <Text style={styles.unreadDotText}>
+                          {(u.unreadCount ?? 0) > 9 ? '9+' : u.unreadCount}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -257,6 +372,7 @@ export default function AdminMessagesScreen() {
           )}
         </View>
       </View>
+      )}
     </View>
   );
 }
@@ -300,7 +416,23 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   userItemActive: { backgroundColor: 'rgba(59, 130, 246, 0.2)' },
-  userItemText: { fontSize: 14, color: '#f1f5f9' },
+  userItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  userItemText: { fontSize: 14, color: '#f1f5f9', flex: 1 },
+  unreadDot: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  unreadDotText: { fontSize: 11, fontWeight: '700', color: '#fff' },
   emptyUsers: { fontSize: 14, color: '#64748b', marginTop: 20 },
   chatArea: { flex: 1 },
   chatFlex: { flex: 1 },
@@ -364,4 +496,51 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendBtnDisabled: { opacity: 0.5 },
+  modeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  modeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#1e293b',
+  },
+  modeBtnActive: { backgroundColor: '#3b82f6' },
+  modeBtnText: { fontSize: 14, fontWeight: '600', color: '#94a3b8' },
+  modeBtnTextActive: { color: '#fff' },
+  broadcastPanel: { flex: 1 },
+  broadcastContent: { padding: 20, paddingBottom: 40, maxWidth: 720, alignSelf: 'center', width: '100%' },
+  broadcastHeading: { fontSize: 20, fontWeight: '700', color: '#f8fafc', marginBottom: 8 },
+  broadcastHint: { fontSize: 14, color: '#94a3b8', marginBottom: 20, lineHeight: 20 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#94a3b8', marginBottom: 8 },
+  broadcastInput: {
+    backgroundColor: '#1e293b',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 16,
+  },
+  broadcastBody: { minHeight: 160, textAlignVertical: 'top' },
+  broadcastSendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#3b82f6',
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  broadcastSendText: { fontSize: 16, fontWeight: '700', color: '#fff' },
 });

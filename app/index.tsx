@@ -40,8 +40,7 @@ export default function LoginScreen() {
     if (!navigatorReady) return;
     
     if (user) {
-      // Kullanıcı giriş yapmışsa, tabs sayfasına yönlendir
-      navigation.replace('/(tabs)');
+      navigation.replace('/dashboard');
       return;
     }
   }, [navigatorReady, user]);

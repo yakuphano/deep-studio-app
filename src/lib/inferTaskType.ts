@@ -3,6 +3,9 @@
  */
 export function inferTaskTypeFromRow(data: Record<string, unknown>): string {
   const cat = String(data.category ?? '').toLowerCase();
+  const typ = String(data.type ?? '').toLowerCase().trim();
+  if (typ === 'medical' || cat === 'medical') return 'medical';
+  if (typ === 'lidar' || cat === 'lidar') return 'lidar';
   const imageUrl = data.image_url ?? data.imageUrl;
   const videoUrl = data.video_url ?? data.videoUrl;
   const audioUrl = data.audio_url ?? data.audioUrl ?? data.content_url;

@@ -4,6 +4,8 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform }
 import { useTranslation } from 'react-i18next';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProfile } from '@/hooks/useProfile';
+import { canAccessReviewQueue } from '@/lib/userRoles';
 import { TASK_LANGUAGES, type TaskLanguageCode } from '@/constants/taskLanguages';
 
 export default function ProfileScreen() {
@@ -11,6 +13,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
   const { user, signOut, isAdmin } = useAuth();
+  const { appRole } = useProfile();
 
   const navigatorReady = rootNavigationState?.key != null;
 
@@ -119,6 +122,10 @@ export default function ProfileScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.label}>{t('profile.email')}</Text>
       <Text style={styles.email}>{user?.email ?? '-'}</Text>
+      <Text style={[styles.label, { marginTop: 16 }]}>{t('profile.role')}</Text>
+      <View style={styles.rolePill}>
+        <Text style={styles.rolePillText}>{t(`roles.${appRole}`)}</Text>
+      </View>
       <Text style={[styles.label, { marginTop: 24 }]}>{t('profile.languagesExpertise')}</Text>
       <Text style={styles.hint}>{t('profile.languagesExpertiseHint')}</Text>
       <View style={styles.chips}>
@@ -134,6 +141,14 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         ))}
       </View>
+      {canAccessReviewQueue(appRole) && (
+        <TouchableOpacity style={styles.secondaryLink} onPress={() => router.push('/review')}>
+          <Text style={styles.secondaryLinkText}>{t('nav.qaReview')}</Text>
+        </TouchableOpacity>
+      )}
+      <TouchableOpacity style={styles.secondaryLink} onPress={() => router.push('/revisions')}>
+        <Text style={styles.secondaryLinkText}>{t('nav.revisions')}</Text>
+      </TouchableOpacity>
       <TouchableOpacity
         style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
         onPress={save}
@@ -170,6 +185,17 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 40 },
   label: { fontSize: 14, fontWeight: '600', color: '#94a3b8', marginBottom: 8 },
   email: { fontSize: 16, color: '#f1f5f9', marginBottom: 8 },
+  rolePill: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginBottom: 8,
+  },
+  rolePillText: { color: '#7dd3fc', fontWeight: '700', fontSize: 14 },
+  secondaryLink: { paddingVertical: 10, marginBottom: 4 },
+  secondaryLinkText: { color: '#60a5fa', fontSize: 15, fontWeight: '600' },
   hint: { fontSize: 13, color: '#64748b', marginBottom: 16 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 },
   chip: {

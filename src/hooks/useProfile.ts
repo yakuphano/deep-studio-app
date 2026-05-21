@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { normalizeProfileRole, type AppRole } from '../lib/userRoles';
 
 type UserProfile = {
   id: string;
@@ -17,6 +18,7 @@ export function useProfile() {
   const [isBlocked, setIsBlocked] = useState(false);
   const [languages, setLanguages] = useState<string[]>(['tr', 'en']);
   const [loading, setLoading] = useState(false);
+  const [appRole, setAppRole] = useState<AppRole>('annotator');
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -36,11 +38,14 @@ export function useProfile() {
             
             // Admin kontrolü
             const isDevAdmin = user.email === 'yakup.hano@deepannotation.ai';
-            setIsAdmin(data.role === 'admin' || isDevAdmin);
+            const admin = data.role === 'admin' || isDevAdmin;
+            setIsAdmin(admin);
+            setAppRole(normalizeProfileRole(data.role, admin));
           } else {
             setProfile(null);
             setIsBlocked(false);
             setIsAdmin(false);
+            setAppRole('annotator');
             setLanguages(['tr', 'en']);
           }
         } catch (error) {
@@ -48,6 +53,7 @@ export function useProfile() {
           setProfile(null);
           setIsBlocked(false);
           setIsAdmin(false);
+          setAppRole('annotator');
           setLanguages(['tr', 'en']);
         } finally {
           setLoading(false);
@@ -56,6 +62,7 @@ export function useProfile() {
         setProfile(null);
         setIsBlocked(false);
         setIsAdmin(false);
+        setAppRole('annotator');
         setLanguages(['tr', 'en']);
       }
     };
@@ -63,11 +70,15 @@ export function useProfile() {
     fetchProfile();
   }, [user]);
 
+  const isReviewer = appRole === 'reviewer';
+
   return {
     profile,
     isAdmin,
+    isReviewer,
+    appRole,
     isBlocked,
     languages,
-    loading
+    loading,
   };
 }

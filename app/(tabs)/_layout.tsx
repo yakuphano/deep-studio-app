@@ -14,6 +14,7 @@ export default function MainLayout() {
       <Stack.Screen name="earnings/daily" />
       <Stack.Screen name="earnings/total" />
       <Stack.Screen name="messages" />
+      <Stack.Screen name="revisions" />
       <Stack.Screen name="faq" />
       <Stack.Screen name="profile" />
       <Stack.Screen name="task/[id]" />

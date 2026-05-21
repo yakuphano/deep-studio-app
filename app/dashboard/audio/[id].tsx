@@ -201,6 +201,7 @@ export default function AudioTaskDetailScreen() {
           .is('is_pool_task', true)
           .neq('status', 'submitted')
           .neq('status', 'completed')
+          .neq('status', 'rejected')
           .neq('id', id)
           .order('created_at', { ascending: false })
           .limit(1)

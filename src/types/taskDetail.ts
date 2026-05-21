@@ -1,7 +1,7 @@
 export interface TaskData {
   id: string;
   title: string;
-  status: 'pending' | 'in_progress' | 'submitted' | 'completed';
+  status: 'pending' | 'in_progress' | 'submitted' | 'completed' | 'rejected';
   price: number;
   type: 'audio' | 'image' | 'video' | 'transcription' | string;
   category: string | null;
@@ -51,7 +51,7 @@ export interface VideoAnnotation {
 
 export type TaskType = 'audio' | 'image' | 'video' | 'transcription' | string;
 
-export type TaskStatus = 'pending' | 'in_progress' | 'submitted' | 'completed';
+export type TaskStatus = 'pending' | 'in_progress' | 'submitted' | 'completed' | 'rejected';
 
 export type Tool =
   | 'pan'

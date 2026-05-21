@@ -334,6 +334,7 @@ export const useTaskWorkbench = (taskId: string | undefined, userId: string | un
           .is('is_pool_task', true)
           .neq('status', 'submitted')
           .neq('status', 'completed')
+          .neq('status', 'rejected')
           .neq('id', taskId)
           .order('created_at', { ascending: false })
           .limit(1)

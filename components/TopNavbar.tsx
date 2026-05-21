@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,9 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnreadMessagesCount } from '@/hooks/useUnreadMessagesCount';
+import { useProfile } from '@/hooks/useProfile';
 import { supabase } from '@/lib/supabase';
+import { canAccessReviewQueue, postLoginPathForRole } from '@/lib/userRoles';
 
 const NAV_ITEMS = [
   { href: '/dashboard', labelKey: 'nav.dashboard' },
@@ -29,6 +31,7 @@ export default function TopNavbar() {
   const router = useRouter();
   const pathname = usePathname();
   const { user, session, signOut, isAdmin } = useAuth();
+  const { appRole } = useProfile();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -37,6 +40,27 @@ export default function TopNavbar() {
   const isMobile = width < 768;
   const currentLang = (i18n.language || 'tr').split('-')[0];
   const unreadCount = useUnreadMessagesCount(user?.id);
+
+  // Fallback admin check - force show Management button for specific email
+  const isFallbackAdmin = user?.email === 'yakup.hano@deepannotation.ai';
+  // While isAdmin is still null, do not show admin link yet (avoids flash + keeps hooks stable)
+  const showAdminLink = Boolean(isAdmin) || isFallbackAdmin;
+
+  const navLinks = useMemo(() => {
+    const [dash, ...rest] = NAV_ITEMS;
+    const out: { href: string; labelKey: string; isAdminLink?: boolean; isReviewLink?: boolean }[] = [
+      { ...dash },
+      ...(canAccessReviewQueue(appRole)
+        ? [{ href: '/review', labelKey: 'nav.qaReview', isReviewLink: true as const }]
+        : []),
+      { href: '/revisions', labelKey: 'nav.revisions' },
+      ...rest.map((x) => ({ ...x })),
+    ];
+    if (showAdminLink) {
+      out.push({ href: '/admin', labelKey: 'nav.management', isAdminLink: true });
+    }
+    return out;
+  }, [showAdminLink, appRole]);
 
   const setLang = (lang: 'tr' | 'en') => {
     i18n.changeLanguage(lang);
@@ -49,10 +73,7 @@ export default function TopNavbar() {
     setLangDropdownOpen(false);
   };
 
-  // Fallback admin check - force show Management button for specific email
-  const isFallbackAdmin = user?.email === 'yakup.hano@deepannotation.ai';
-
-  // Show loading state while admin status is being determined
+  // Show loading state while admin status is being determined (must be after all hooks)
   if (isAdmin === null) {
     return (
       <View style={[styles.container, Platform.OS === 'web' && styles.containerWeb, { paddingTop: insets.top + 8 }]}>
@@ -68,13 +89,6 @@ export default function TopNavbar() {
       </View>
     );
   }
-  
-  const showAdminLink = isAdmin || isFallbackAdmin;
-
-  const navLinks = [
-    ...NAV_ITEMS,
-    ...(showAdminLink ? [{ href: '/admin', labelKey: 'nav.management', isAdminLink: true }] : []),
-  ].map((x) => ({ ...x, isAdminLink: (x as { isAdminLink?: boolean }).isAdminLink ?? false }));
 
   const handleLogout = async () => {
     console.log('Emergency logout initiated');
@@ -102,7 +116,7 @@ export default function TopNavbar() {
   const goHome = () => {
     if (session) {
       try {
-        navigate(isAdmin ? '/admin' : '/dashboard');
+        navigate(postLoginPathForRole(appRole));
       } catch (_) {}
     }
   };
@@ -145,8 +159,11 @@ export default function TopNavbar() {
                 pathname === item.href ||
                 pathname?.startsWith(item.href + '/') ||
                 (item.href === '/earnings/total' && pathname?.includes('earnings/total')) ||
-                (item.href === '/dashboard' && Boolean(pathname?.includes('video-tasks')));
+                (item.href === '/dashboard' && Boolean(pathname?.includes('video-tasks'))) ||
+                (item.href === '/review' && pathname?.startsWith('/review')) ||
+                (item.href === '/revisions' && pathname?.startsWith('/revisions'));
               const isAdminLink = (item as any).isAdminLink;
+              const isReviewLink = (item as any).isReviewLink;
               return (
                 <TouchableOpacity
                   key={item.href}
@@ -155,12 +172,14 @@ export default function TopNavbar() {
                     isActive && styles.navItemActive,
                     isAdminLink && styles.navItemAdmin,
                     isAdminLink && isActive && styles.navItemAdminActive,
+                    isReviewLink && styles.navItemReview,
+                    isReviewLink && isActive && styles.navItemReviewActive,
                   ]}
                   onPress={() => navigate(item.href)}
                   activeOpacity={0.8}
                 >
                   <View style={styles.navItemInner}>
-                    <Text style={[styles.navText, isAdminLink && styles.navTextAdmin, isAdminLink && isActive && styles.navTextAdminActive]}>
+                    <Text style={[styles.navText, isAdminLink && styles.navTextAdmin, isAdminLink && isActive && styles.navTextAdminActive, isReviewLink && styles.navTextReview, isReviewLink && isActive && styles.navTextReviewActive]}>
                       {t(item.labelKey)}
                     </Text>
                     {item.href === '/messages' && unreadCount > 0 && (
@@ -204,8 +223,11 @@ export default function TopNavbar() {
               pathname === item.href ||
               pathname?.startsWith(item.href + '/') ||
               (item.href === '/earnings/daily' && pathname?.includes('earnings')) ||
-              (item.href === '/dashboard' && Boolean(pathname?.includes('video-tasks')));
+              (item.href === '/dashboard' && Boolean(pathname?.includes('video-tasks'))) ||
+              (item.href === '/review' && pathname?.startsWith('/review')) ||
+              (item.href === '/revisions' && pathname?.startsWith('/revisions'));
             const isAdminLink = (item as any).isAdminLink;
+            const isReviewLink = (item as any).isReviewLink;
             return (
               <TouchableOpacity
                 key={item.href}
@@ -213,11 +235,12 @@ export default function TopNavbar() {
                   styles.dropdownItem,
                   isActive && styles.dropdownItemActive,
                   isAdminLink && styles.dropdownItemAdmin,
+                  isReviewLink && styles.dropdownItemReview,
                 ]}
                 onPress={() => navigate(item.href)}
               >
                 <View style={styles.dropdownItemInner}>
-                  <Text style={[styles.dropdownText, isActive && styles.dropdownTextActive, isAdminLink && styles.dropdownTextAdmin]}>{t(item.labelKey)}</Text>
+                  <Text style={[styles.dropdownText, isActive && styles.dropdownTextActive, isAdminLink && styles.dropdownTextAdmin, isReviewLink && isActive && styles.dropdownTextReviewActive]}>{t(item.labelKey)}</Text>
                   {item.href === '/messages' && unreadCount > 0 && (
                     <View style={styles.badge}>
                       <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
@@ -306,6 +329,12 @@ const styles = StyleSheet.create({
   navItemAdminActive: {
     backgroundColor: 'rgba(239, 68, 68, 0.35)',
   },
+  navItemReview: {
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+  },
+  navItemReviewActive: {
+    backgroundColor: 'rgba(56, 189, 248, 0.28)',
+  },
   navItemInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   navText: {
     fontSize: 14,
@@ -333,6 +362,14 @@ const styles = StyleSheet.create({
   },
   navTextAdminActive: {
     color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  navTextReview: {
+    color: '#7dd3fc',
+    fontWeight: '600',
+  },
+  navTextReviewActive: {
+    color: '#f0f9ff',
     fontWeight: '700',
   },
   langDropdownWrap: {
@@ -436,8 +473,15 @@ const styles = StyleSheet.create({
   dropdownItemAdmin: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
   },
+  dropdownItemReview: {
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+  },
   dropdownTextAdmin: {
     color: '#ef4444',
     fontWeight: '600',
+  },
+  dropdownTextReviewActive: {
+    color: '#7dd3fc',
+    fontWeight: '700',
   },
 });

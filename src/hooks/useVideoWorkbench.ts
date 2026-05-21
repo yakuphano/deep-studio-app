@@ -317,7 +317,7 @@ export const useVideoWorkbench = (taskId: string) => {
 
     /** Yalnızca gönderilmiş / tamamlanmış görevlerde sunucudaki anotasyonu göster (taslak DB kaydı yok). */
     const st = String(taskData.status ?? '').toLowerCase();
-    const useServerAnnotations = st === 'submitted' || st === 'completed';
+    const useServerAnnotations = st === 'submitted' || st === 'completed' || st === 'rejected';
     if (
       useServerAnnotations &&
       taskData.annotation_data &&
@@ -557,6 +557,7 @@ export const useVideoWorkbench = (taskId: string) => {
           .is('is_pool_task', true)
           .neq('status', 'submitted')
           .neq('status', 'completed')
+          .neq('status', 'rejected')
           .neq('id', taskId)
           .order('created_at', { ascending: false })
           .limit(1)

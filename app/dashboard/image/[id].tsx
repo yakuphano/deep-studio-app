@@ -281,6 +281,7 @@ export default function ImageTaskDetailScreen() {
           .is('is_pool_task', true)
           .neq('status', 'submitted')
           .neq('status', 'completed')
+          .neq('status', 'rejected')
           .neq('id', id);
         if (annotationNav.poolTypeFilter) {
           claimQuery = claimQuery.eq('type', annotationNav.poolTypeFilter);

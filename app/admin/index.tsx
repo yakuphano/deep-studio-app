@@ -388,6 +388,12 @@ export default function AdminPanelScreen() {
         <View style={styles.actionsRow}>
           <ActionCard icon="add-circle" iconColor="#3b82f6" label="Create New Task" onPress={() => router.push('/admin/tasks/create')} />
           <ActionCard icon="mail" iconColor="#06b6d4" label={t('admin.messagesAction')} onPress={() => router.push('/admin/messages')} />
+          <ActionCard
+            icon="shield-checkmark"
+            iconColor="#38bdf8"
+            label={t('admin.qaReviewAction')}
+            onPress={() => router.push('/review')}
+          />
           <ActionCard icon="refresh" iconColor="#10b981" label="Refresh Analytics" onPress={fetchDashboardStats} />
           <ActionCard icon="list-outline" iconColor="#8b5cf6" label="Recent Tasks" onPress={() => router.push('/admin/tasks')} />
           <ActionCard icon="download" iconColor="#f59e0b" label="Export Data" onPress={() => {}} />
@@ -397,17 +403,36 @@ export default function AdminPanelScreen() {
         <View style={styles.userManagementSection}>
           <View style={styles.sectionHeader}>
             <Ionicons name="people" size={20} color="#3b82f6" />
-            <Text style={styles.sectionTitle}>User Management</Text>
+            <Text style={styles.sectionTitle}>{t('admin.userManagement')}</Text>
           </View>
-          <TouchableOpacity 
-            style={styles.manageAllUsersButton} 
-            onPress={() => {
-              router.push('/admin/users');
-            }}
-          >
-            <Ionicons name="people" size={20} color="#ffffff" />
-            <Text style={styles.manageAllUsersButtonText}>Manage All Users</Text>
-          </TouchableOpacity>
+          <Text style={styles.userManagementHintText}>{t('admin.userManagementHint')}</Text>
+          <View style={styles.userManagementActions}>
+            <TouchableOpacity
+              style={styles.manageAllUsersButton}
+              onPress={() => {
+                router.push('/admin/users' as any);
+              }}
+            >
+              <Ionicons name="list" size={20} color="#ffffff" />
+              <Text style={styles.manageAllUsersButtonText}>{t('adminUsers.openList')}</Text>
+            </TouchableOpacity>
+            <View style={styles.userActionsRow}>
+              <TouchableOpacity
+                style={[styles.userManagementButton, styles.userManagementButtonAnnotator]}
+                onPress={() => router.push('/admin/users?tab=create-annotator' as any)}
+              >
+                <Ionicons name="person-add" size={18} color="#ffffff" />
+                <Text style={styles.userManagementButtonText}>{t('adminUsers.addAnnotator')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.userManagementButton, styles.userManagementButtonReviewer]}
+                onPress={() => router.push('/admin/users?tab=create-reviewer' as any)}
+              >
+                <Ionicons name="shield-checkmark" size={18} color="#ffffff" />
+                <Text style={styles.userManagementButtonText}>{t('adminUsers.addReviewer')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
 
         {/* Export Data Section */}
@@ -695,6 +720,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#f8fafc',
   },
+  userManagementHintText: {
+    fontSize: 13,
+    color: '#94a3b8',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  userManagementActions: {
+    gap: 12,
+  },
   userActionsRow: {
     flexDirection: 'row',
     gap: 12,
@@ -705,10 +739,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#3b82f6',
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     borderRadius: 10,
+  },
+  userManagementButtonAnnotator: {
+    backgroundColor: '#2563eb',
+  },
+  userManagementButtonReviewer: {
+    backgroundColor: '#a855f7',
   },
   userManagementButtonText: {
     color: '#ffffff',

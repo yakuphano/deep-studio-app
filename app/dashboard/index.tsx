@@ -10,8 +10,63 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProfile } from '@/hooks/useProfile';
+import { supabase } from '@/lib/supabase';
 
 type TaskType = 'transcription' | 'image' | 'video' | 'medical' | 'lidar';
+
+function RevisionBanner() {
+  const { t } = useTranslation();
+  const router = useRouter();
+  const { user } = useAuth();
+  const { appRole } = useProfile();
+  const [count, setCount] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!user?.id || appRole === 'admin') return;
+    let cancelled = false;
+    (async () => {
+      const { count: c } = await supabase
+        .from('tasks')
+        .select('id', { count: 'exact', head: true })
+        .eq('assigned_to', user.id)
+        .eq('status', 'rejected');
+      if (!cancelled) setCount(c ?? 0);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, appRole]);
+
+  if (appRole === 'admin' || count === 0) return null;
+
+  return (
+    <TouchableOpacity
+      style={{
+        marginHorizontal: 24,
+        marginTop: 16,
+        marginBottom: 8,
+        padding: 14,
+        borderRadius: 12,
+        backgroundColor: 'rgba(251, 191, 36, 0.12)',
+        borderWidth: 1,
+        borderColor: 'rgba(251, 191, 36, 0.35)',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+      }}
+      onPress={() => router.push('/revisions' as any)}
+      activeOpacity={0.85}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: '#fde68a', fontWeight: '800', fontSize: 15 }}>{t('annotatorHome.revisionBannerTitle')}</Text>
+        <Text style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>{t('annotatorHome.revisionBannerBody', { count })}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={22} color="#fbbf24" />
+    </TouchableOpacity>
+  );
+}
 
 function TaskSelectionCards({
   onSelect,
@@ -138,6 +193,7 @@ export default function DashboardHubScreen() {
 
   return (
     <View style={styles.container}>
+      <RevisionBanner />
       <TaskSelectionCards onSelect={setTypeAndNavigate} t={t} />
     </View>
   );

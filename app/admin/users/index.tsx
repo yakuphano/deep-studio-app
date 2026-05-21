@@ -13,7 +13,7 @@ import {
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
@@ -24,20 +24,53 @@ type User = {
   email: string;
   username?: string;
   role: string;
+  is_admin?: boolean;
   is_blocked: boolean;
   languages?: string[];
+  languages_expertise?: string[] | string | null;
   created_at: string;
 };
+
+function roleBadgeBackground(role: string | undefined, isAdmin?: boolean): string {
+  const r = (role ?? '').toLowerCase();
+  if (r === 'admin' || isAdmin === true) return '#ef4444';
+  if (r === 'reviewer') return '#a855f7';
+  return '#3b82f6';
+}
+
+function canonicalAccountRole(role: string | undefined, isAdmin?: boolean): 'admin' | 'reviewer' | 'annotator' {
+  const r = (role ?? '').toLowerCase();
+  if (r === 'admin' || isAdmin === true) return 'admin';
+  if (r === 'reviewer') return 'reviewer';
+  return 'annotator';
+}
 
 export default function AdminUsersPage() {
   const { t } = useTranslation();
   const router = useRouter();
+  const { tab } = useLocalSearchParams<{ tab?: string | string[] }>();
+  const tabParam = Array.isArray(tab) ? tab[0] : tab;
+  const activeTab: 'list' | 'create-annotator' | 'create-reviewer' =
+    tabParam === 'create-annotator' || tabParam === 'create-reviewer' ? tabParam : 'list';
+
+  const goTab = useCallback(
+    (next: 'list' | 'create-annotator' | 'create-reviewer') => {
+      if (next === 'list') {
+        router.replace('/admin/users' as any);
+      } else {
+        router.replace(`/admin/users?tab=${next}` as any);
+      }
+    },
+    [router],
+  );
+
   const { user } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+  const [showRoleModal, setShowRoleModal] = useState(false);
+  const [roleModalUser, setRoleModalUser] = useState<User | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -51,6 +84,7 @@ export default function AdminUsersPage() {
     email: '',
     password: '',
     languages: [] as string[],
+    accountRole: 'annotator' as 'annotator' | 'reviewer',
   });
 
   const availableLanguages = [
@@ -62,7 +96,7 @@ export default function AdminUsersPage() {
 
   const fetchUsers = useCallback(async () => {
     console.log('FETCH START: fetchUsers');
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     
     try {
       setLoading(true);
@@ -108,7 +142,7 @@ export default function AdminUsersPage() {
       setUsers([]);
     } finally {
       // Clear timeout
-      if (timeoutId) clearTimeout(timeoutId);
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
       
       // CRITICAL: Always set loading to false AFTER data is set
       console.log('FETCH END: fetchUsers');
@@ -119,6 +153,21 @@ export default function AdminUsersPage() {
   useEffect(() => {
     fetchUsers();
   }, []); // Remove fetchUsers from dependencies to prevent infinite loop
+
+  useEffect(() => {
+    if (activeTab === 'create-reviewer') {
+      setFormData((prev) => ({ ...prev, accountRole: 'reviewer' }));
+    } else if (activeTab === 'create-annotator') {
+      setFormData((prev) => ({ ...prev, accountRole: 'annotator' }));
+    }
+  }, [activeTab]);
+
+  const formatRoleLabel = (row: User) => {
+    const key = canonicalAccountRole(row.role, row.is_admin);
+    if (key === 'admin') return t('adminUsers.roleAdmin');
+    if (key === 'reviewer') return t('adminUsers.roleReviewer');
+    return t('adminUsers.roleAnnotator');
+  };
 
   const handleBlockUser = async (userId: string, isBlocked: boolean) => {
     try {
@@ -134,12 +183,47 @@ export default function AdminUsersPage() {
       ));
 
       Alert.alert(
-        'Success',
-        `User ${!isBlocked ? 'blocked' : 'unblocked'} successfully`
+        t('adminUsers.statusUpdated'),
+        !isBlocked ? t('adminUsers.annotatorBlocked') : t('adminUsers.annotatorUnblocked')
       );
     } catch (error) {
       console.error('Error blocking user:', error);
-      Alert.alert('Error', 'Failed to update user status');
+      Alert.alert(t('login.errorTitle'), t('adminUsers.statusUpdateError'));
+    }
+  };
+
+  const handleOpenRoleModal = (u: User) => {
+    if (u.id === user?.id) {
+      Alert.alert(t('adminUsers.changeRoleTitle'), t('adminUsers.cannotChangeOwnRole'));
+      return;
+    }
+    setRoleModalUser(u);
+    setShowRoleModal(true);
+  };
+
+  const handleApplyRole = async (newRole: 'admin' | 'reviewer' | 'annotator') => {
+    if (!roleModalUser) return;
+    try {
+      const isAdmin = newRole === 'admin';
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: newRole, is_admin: isAdmin })
+        .eq('id', roleModalUser.id);
+      if (error) throw error;
+      setUsers((prev) =>
+        prev.map((row) =>
+          row.id === roleModalUser.id ? { ...row, role: newRole, is_admin: isAdmin } : row
+        )
+      );
+      Alert.alert(t('adminUsers.roleUpdated'));
+      setShowRoleModal(false);
+      setRoleModalUser(null);
+    } catch (error) {
+      console.error('Error updating role:', error);
+      Alert.alert(
+        t('adminUsers.roleUpdateError'),
+        error instanceof Error ? error.message : String(error)
+      );
     }
   };
 
@@ -174,11 +258,10 @@ export default function AdminUsersPage() {
     }
   };
 
-  const handleCreateAnnotator = async () => {
-    setLoading(true);
-    
+  const handleCreateAccount = async () => {
+    if (isCreating) return;
+    setIsCreating(true);
     try {
-      // Create auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -186,56 +269,41 @@ export default function AdminUsersPage() {
 
       if (authError) {
         console.error(`ERROR: ${authError.message}`);
+        Alert.alert(t('login.errorTitle'), authError.message);
         return;
       }
 
       if (authData.user) {
-        // GUARANTEED SUCCESS ALERT - Show immediately after auth success
-        console.log('SUCCESS: User Created!');
-        
-        // CRITICAL: IMMEDIATELY insert into profiles table
-        console.log('Inserting into profiles table...');
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            id: authData.user.id,
-            username: formData.username,
-            email: formData.email,
-            role: 'annotator',
-            languages: formData.languages,
-          });
-
-        console.log('Profile insert result:', { profileError });
+        const role = formData.accountRole === 'reviewer' ? 'reviewer' : 'annotator';
+        const { error: profileError } = await supabase.from('profiles').insert({
+          id: authData.user.id,
+          username: formData.username,
+          email: formData.email,
+          role,
+          is_admin: false,
+          languages: formData.languages,
+        });
 
         if (profileError) {
           console.error('Profile insert failed:', profileError);
-          if (typeof window !== 'undefined') {
-            window.alert(`ERROR: Profile insert failed: ${profileError.message}`);
-          } else {
-            Alert.alert('Error', `Error: Profile insert failed: ${profileError.message}`);
-          }
+          Alert.alert(t('login.errorTitle'), profileError.message);
         } else {
-          console.log('Profile inserted successfully!');
+          goTab('list');
+          setFormData({
+            username: '',
+            email: '',
+            password: '',
+            languages: [],
+            accountRole: 'annotator',
+          });
+          fetchUsers();
         }
-        
-        // Close modal immediately
-        setShowModal(false);
-        
-        // Reset form
-        setFormData({
-          username: '',
-          email: '',
-          password: '',
-          languages: [],
-        });
-        
-        // Refresh list
-        fetchUsers();
       }
-    } catch (error: any) {
-      console.error(`ERROR: ${error.message || error}`);
+    } catch (error: unknown) {
+      console.error(`ERROR: ${error instanceof Error ? error.message : error}`);
+      Alert.alert(t('login.errorTitle'), error instanceof Error ? error.message : String(error));
     } finally {
-      setLoading(false);
+      setIsCreating(false);
     }
   };
 
@@ -250,12 +318,12 @@ export default function AdminUsersPage() {
 
   const handleDeleteUser = async (userId: string) => {
     Alert.alert(
-      'Delete User',
-      'Are you sure you want to delete this user? This action cannot be undone.',
+      t('adminUsers.deleteAccountTitle'),
+      t('adminUsers.deleteAccountConfirm'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('login.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('adminUsers.deleteConfirm'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -266,14 +334,14 @@ export default function AdminUsersPage() {
 
               if (error) {
                 console.error('Delete error:', error);
-                Alert.alert('Error', 'Failed to delete user');
+                Alert.alert(t('login.errorTitle'), t('adminUsers.roleUpdateError'));
               } else {
-                Alert.alert('Success', 'User deleted successfully');
+                Alert.alert(t('adminUsers.statusUpdated'));
                 fetchUsers();
               }
             } catch (error) {
               console.error('Delete user error:', error);
-              Alert.alert('Error', 'Failed to delete user');
+              Alert.alert(t('login.errorTitle'), t('adminUsers.roleUpdateError'));
             }
           },
         },
@@ -282,97 +350,97 @@ export default function AdminUsersPage() {
   };
 
   const renderUserItem = ({ item }: { item: User }) => (
-    <View style={styles.tableRow}>
-      <View style={styles.tableCell}>
-        <Text style={styles.tableText}>{item.username || 'N/A'}</Text>
-      </View>
-      <View style={styles.tableCell}>
-        <Text style={styles.tableText}>{item.email}</Text>
-      </View>
-      <View style={styles.tableCell}>
-        <View style={[
-          styles.roleBadge,
-          { backgroundColor: item.role === 'admin' ? '#ef4444' : '#3b82f6' }
-        ]}>
-          <Text style={styles.roleText}>{item.role || 'N/A'}</Text>
+    <View style={styles.userRowWrap}>
+      <View style={styles.tableRow}>
+        <View style={styles.tableCell}>
+          <Text style={styles.tableText}>{item.username || 'N/A'}</Text>
         </View>
-      </View>
-      <View style={styles.tableCell}>
-        <Text style={styles.tableText}>
-          {(() => {
-            // Check languages column first, then languages_expertise
-            const languagesData = item.languages || item.languages_expertise;
-            console.log('Language data for user', item.username, ':', languagesData);
-            
-            if (languagesData && Array.isArray(languagesData) && languagesData.length > 0) {
-              // Convert language codes to full names
-              const languageNames = languagesData.map(code => {
-                const lang = availableLanguages.find(l => l.code === code);
-                return lang ? lang.name : code;
-              });
-              const display = languageNames.join(', ');
-              console.log('Full languages for user', item.username, ':', display);
-              return display;
-            } else if (typeof languagesData === 'string' && languagesData.trim()) {
-              // Handle case where languages are stored as JSON string
-              try {
-                const parsed = JSON.parse(languagesData);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  const languageNames = parsed.map(code => {
-                    const lang = availableLanguages.find(l => l.code === code);
-                    return lang ? lang.name : code;
-                  });
-                  const display = languageNames.join(', ');
-                  console.log('Parsed full languages for user', item.username, ':', display);
-                  return display;
-                }
-              } catch (e) {
-                console.log('Failed to parse languages for user', item.username, ':', languagesData);
-                return languagesData;
+        <View style={styles.tableCell}>
+          <Text style={styles.tableText}>{item.email}</Text>
+        </View>
+        <View style={styles.tableCell}>
+          <View
+            style={[
+              styles.roleBadge,
+              { backgroundColor: roleBadgeBackground(item.role, item.is_admin) },
+            ]}
+          >
+            <Text style={styles.roleText}>{formatRoleLabel(item)}</Text>
+          </View>
+        </View>
+        <View style={styles.tableCell}>
+          <Text style={styles.tableText}>
+            {(() => {
+              const languagesData = item.languages || item.languages_expertise;
+
+              if (languagesData && Array.isArray(languagesData) && languagesData.length > 0) {
+                const languageNames = languagesData.map((code) => {
+                  const lang = availableLanguages.find((l) => l.code === code);
+                  return lang ? lang.name : code;
+                });
+                return languageNames.join(', ');
               }
-            }
-            console.log('No languages found for user', item.username);
-            return <Text style={styles.noLanguagesText}>Not Selected</Text>;
-          })()}
-        </Text>
-      </View>
-      <View style={styles.tableCell}>
-        <View style={[
-          styles.statusBadge,
-          { backgroundColor: item.is_blocked ? '#ef4444' : '#10b981' }
-        ]}>
-          <Text style={styles.statusText}>
-            {item.is_blocked ? 'Blocked' : 'Active'}
+              if (typeof languagesData === 'string' && languagesData.trim()) {
+                try {
+                  const parsed = JSON.parse(languagesData);
+                  if (Array.isArray(parsed) && parsed.length > 0) {
+                    const languageNames = parsed.map((code: string) => {
+                      const lang = availableLanguages.find((l) => l.code === code);
+                      return lang ? lang.name : code;
+                    });
+                    return languageNames.join(', ');
+                  }
+                } catch {
+                  return languagesData;
+                }
+              }
+              return <Text style={styles.noLanguagesText}>{t('adminUsers.languagesNone')}</Text>;
+            })()}
           </Text>
         </View>
-      </View>
-      <View style={styles.tableCell}>
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => handleResetPassword(item)}
+        <View style={styles.tableCell}>
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: item.is_blocked ? '#ef4444' : '#10b981' },
+            ]}
           >
-            <Ionicons name="key" size={16} color="#f59e0b" />
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => handleBlockUser(item.id, item.is_blocked)}
-          >
-            <Ionicons 
-              name={item.is_blocked ? 'checkmark-circle' : 'close-circle'} 
-              size={16} 
-              color={item.is_blocked ? '#10b981' : '#ef4444'}
-            />
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => handleDeleteUser(item.id)}
-          >
-            <Ionicons name="trash" size={16} color="#ef4444" />
-          </TouchableOpacity>
+            <Text style={styles.statusText}>
+              {item.is_blocked ? 'Blocked' : 'Active'}
+            </Text>
+          </View>
         </View>
+      </View>
+      <View style={styles.actionToolbar}>
+        <TouchableOpacity
+          style={styles.toolbarBtn}
+          onPress={() => handleOpenRoleModal(item)}
+          accessibilityLabel={t('adminUsers.changeRole')}
+        >
+          <Ionicons name="shield-checkmark" size={18} color="#e9d5ff" />
+          <Text style={styles.toolbarBtnText}>{t('adminUsers.changeRole')}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.toolbarBtn} onPress={() => handleResetPassword(item)}>
+          <Ionicons name="key" size={18} color="#fde68a" />
+          <Text style={styles.toolbarBtnText}>{t('adminUsers.toolbarPassword')}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.toolbarBtn}
+          onPress={() => handleBlockUser(item.id, item.is_blocked)}
+        >
+          <Ionicons
+            name={item.is_blocked ? 'checkmark-circle' : 'close-circle'}
+            size={18}
+            color={item.is_blocked ? '#86efac' : '#fecaca'}
+          />
+          <Text style={styles.toolbarBtnText}>
+            {item.is_blocked ? t('adminUsers.toolbarUnblock') : t('adminUsers.toolbarBlock')}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.toolbarBtn} onPress={() => handleDeleteUser(item.id)}>
+          <Ionicons name="trash" size={18} color="#fecaca" />
+          <Text style={styles.toolbarBtnText}>{t('adminUsers.deleteConfirm')}</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -389,18 +457,18 @@ export default function AdminUsersPage() {
             <Text style={styles.backButtonText}>Back to Admin</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity 
-            style={styles.addUserButton} 
-            onPress={() => setShowModal(true)}
+          <TouchableOpacity
+            style={styles.addUserButton}
+            onPress={() => goTab('create-annotator')}
           >
             <Ionicons name="person-add" size={16} color="#ffffff" />
-            <Text style={styles.addUserButtonText}>+ Add New Annotator</Text>
+            <Text style={styles.addUserButtonText}>+ {t('adminUsers.addAccount')}</Text>
           </TouchableOpacity>
         </View>
         
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#3b82f6" />
-          <Text style={styles.loadingText}>Loading users...</Text>
+          <Text style={styles.loadingText}>{t('adminUsers.loadingAccounts')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -417,86 +485,147 @@ export default function AdminUsersPage() {
           <Text style={styles.backButtonText}>Back to Admin</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity 
-          style={styles.addUserButton} 
-          onPress={() => setShowModal(true)}
+        <TouchableOpacity
+          style={styles.addUserButton}
+          onPress={() => goTab('create-annotator')}
         >
           <Ionicons name="person-add" size={16} color="#ffffff" />
-          <Text style={styles.addUserButtonText}>+ Add New Annotator</Text>
+          <Text style={styles.addUserButtonText}>+ {t('adminUsers.addAccount')}</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.content}>
         <View style={styles.headerRow}>
-          <Text style={styles.pageTitle}>Manage Users</Text>
-          <TouchableOpacity 
-            style={styles.refreshButton} 
-            onPress={() => {
-              console.log('Manual refresh triggered for users');
-              fetchUsers();
-            }}
-          >
+          <View style={styles.titleBlock}>
+            <Text style={styles.pageTitle}>{t('adminUsers.pageTitle')}</Text>
+            {activeTab === 'list' ? (
+              <Text style={styles.pageHint}>{t('adminUsers.roleToolbarHint')}</Text>
+            ) : null}
+          </View>
+          <TouchableOpacity style={styles.refreshButton} onPress={() => fetchUsers()}>
             <Ionicons name="refresh" size={16} color="#ffffff" />
             <Text style={styles.refreshButtonText}>Refresh</Text>
           </TouchableOpacity>
         </View>
-        
-        {/* Table Header */}
-        <View style={styles.tableHeader}>
-          <View style={styles.tableHeaderCell}>
-            <Text style={styles.tableHeaderText}>Username</Text>
-          </View>
-          <View style={styles.tableHeaderCell}>
-            <Text style={styles.tableHeaderText}>Email</Text>
-          </View>
-          <View style={styles.tableHeaderCell}>
-            <Text style={styles.tableHeaderText}>Role</Text>
-          </View>
-          <View style={styles.tableHeaderCell}>
-            <Text style={styles.tableHeaderText}>Languages</Text>
-          </View>
-          <View style={styles.tableHeaderCell}>
-            <Text style={styles.tableHeaderText}>Status</Text>
-          </View>
-          <View style={styles.tableHeaderCell}>
-            <Text style={styles.tableHeaderText}>Actions</Text>
-          </View>
+
+        <View style={styles.tabBar}>
+          <TouchableOpacity
+            style={[styles.tabPill, activeTab === 'list' && styles.tabPillActive]}
+            onPress={() => goTab('list')}
+          >
+            <Ionicons name="list" size={16} color={activeTab === 'list' ? '#e0f2fe' : '#64748b'} />
+            <Text style={[styles.tabPillText, activeTab === 'list' && styles.tabPillTextActive]}>
+              {t('adminUsers.tabList')}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.tabPill,
+              styles.tabPillAnnotator,
+              activeTab === 'create-annotator' && styles.tabPillAnnotatorActive,
+            ]}
+            onPress={() => goTab('create-annotator')}
+          >
+            <Ionicons
+              name="person-add"
+              size={16}
+              color={activeTab === 'create-annotator' ? '#fff' : '#93c5fd'}
+            />
+            <Text
+              style={[
+                styles.tabPillText,
+                activeTab === 'create-annotator' && styles.tabPillTextOnAccent,
+              ]}
+            >
+              {t('adminUsers.tabCreateAnnotator')}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.tabPill,
+              styles.tabPillReviewer,
+              activeTab === 'create-reviewer' && styles.tabPillReviewerActive,
+            ]}
+            onPress={() => goTab('create-reviewer')}
+          >
+            <Ionicons
+              name="shield-checkmark"
+              size={16}
+              color={activeTab === 'create-reviewer' ? '#fff' : '#e9d5ff'}
+            />
+            <Text
+              style={[
+                styles.tabPillText,
+                activeTab === 'create-reviewer' && styles.tabPillTextOnAccent,
+              ]}
+            >
+              {t('adminUsers.tabCreateReviewer')}
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {/* User List */}
-        <FlatList
-          data={users}
-          renderItem={renderUserItem}
-          keyExtractor={(item) => item.id}
-          style={styles.tableContainer}
-          refreshing={refreshing}
-          onRefresh={fetchUsers}
-          showsVerticalScrollIndicator={false}
-        />
-      </View>
+        {activeTab === 'list' ? (
+          <>
+            <View style={styles.tableHeader}>
+              <View style={styles.tableHeaderCell}>
+                <Text style={styles.tableHeaderText}>Username</Text>
+              </View>
+              <View style={styles.tableHeaderCell}>
+                <Text style={styles.tableHeaderText}>Email</Text>
+              </View>
+              <View style={styles.tableHeaderCell}>
+                <Text style={styles.tableHeaderText}>Role</Text>
+              </View>
+              <View style={styles.tableHeaderCell}>
+                <Text style={styles.tableHeaderText}>Languages</Text>
+              </View>
+              <View style={styles.tableHeaderCell}>
+                <Text style={styles.tableHeaderText}>Status</Text>
+              </View>
+            </View>
 
-      {/* Add User Modal */}
-      <Modal
-        visible={showModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowModal(false)}>
-              <Ionicons name="close" size={24} color="#64748b" />
+            <FlatList
+              data={users}
+              renderItem={renderUserItem}
+              keyExtractor={(item) => item.id}
+              style={styles.tableContainer}
+              refreshing={refreshing}
+              onRefresh={fetchUsers}
+              showsVerticalScrollIndicator={false}
+            />
+          </>
+        ) : (
+          <ScrollView
+            style={styles.createScroll}
+            contentContainerStyle={styles.createScrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View
+              style={
+                activeTab === 'create-annotator'
+                  ? styles.createRoleBannerAnnotator
+                  : styles.createRoleBannerReviewer
+              }
+            >
+              <Text style={styles.createScreenTitle}>
+                {activeTab === 'create-annotator'
+                  ? t('adminUsers.createAnnotatorTitle')
+                  : t('adminUsers.createReviewerTitle')}
+              </Text>
+              <Text style={styles.createScreenSubtitle}>{t('adminUsers.createScreenHint')}</Text>
+            </View>
+
+            <TouchableOpacity style={styles.backToListBtn} onPress={() => goTab('list')}>
+              <Ionicons name="arrow-back" size={18} color="#94a3b8" />
+              <Text style={styles.backToListText}>{t('adminUsers.backToList')}</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Add New Annotator</Text>
-            <View style={{ width: 24 }} />
-          </View>
 
-          <ScrollView style={styles.modalContent}>
             <View style={styles.formGroup}>
               <Text style={styles.label}>Username</Text>
               <TextInput
                 style={styles.input}
                 value={formData.username}
-                onChangeText={(text) => setFormData(prev => ({ ...prev, username: text }))}
+                onChangeText={(text) => setFormData((prev) => ({ ...prev, username: text }))}
                 placeholder="Enter username"
                 placeholderTextColor="#64748b"
               />
@@ -507,7 +636,7 @@ export default function AdminUsersPage() {
               <TextInput
                 style={styles.input}
                 value={formData.email}
-                onChangeText={(text) => setFormData(prev => ({ ...prev, email: text }))}
+                onChangeText={(text) => setFormData((prev) => ({ ...prev, email: text }))}
                 placeholder="Enter email"
                 placeholderTextColor="#64748b"
                 keyboardType="email-address"
@@ -521,7 +650,7 @@ export default function AdminUsersPage() {
                 <TextInput
                   style={styles.passwordInput}
                   value={formData.password}
-                  onChangeText={(text) => setFormData(prev => ({ ...prev, password: text }))}
+                  onChangeText={(text) => setFormData((prev) => ({ ...prev, password: text }))}
                   placeholder="Enter password"
                   placeholderTextColor="#64748b"
                   secureTextEntry={!showPassword}
@@ -530,11 +659,7 @@ export default function AdminUsersPage() {
                   style={styles.passwordToggle}
                   onPress={() => setShowPassword(!showPassword)}
                 >
-                  <Ionicons
-                    name={showPassword ? 'eye-off' : 'eye'}
-                    size={20}
-                    color="#64748b"
-                  />
+                  <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color="#64748b" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -542,7 +667,7 @@ export default function AdminUsersPage() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Languages</Text>
               <View style={styles.languagesContainer}>
-                {availableLanguages.map(lang => (
+                {availableLanguages.map((lang) => (
                   <TouchableOpacity
                     key={lang.code}
                     style={[
@@ -551,32 +676,86 @@ export default function AdminUsersPage() {
                     ]}
                     onPress={() => toggleLanguage(lang.code)}
                   >
-                    <Text style={[
-                      styles.languageOptionText,
-                      formData.languages.includes(lang.code) && styles.languageOptionTextSelected,
-                    ]}>
+                    <Text
+                      style={[
+                        styles.languageOptionText,
+                        formData.languages.includes(lang.code) && styles.languageOptionTextSelected,
+                      ]}
+                    >
                       {lang.name}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
-          </ScrollView>
 
-          <View style={styles.modalActions}>
-            <TouchableOpacity style={styles.cancelButton} onPress={() => setShowModal(false)}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.createButton, isCreating && styles.createButtonDisabled]} 
-              onPress={handleCreateAnnotator}
-              disabled={isCreating}
+            <View style={styles.createActionsRow}>
+              <TouchableOpacity style={styles.cancelButton} onPress={() => goTab('list')}>
+                <Text style={styles.cancelButtonText}>{t('login.cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.createButton, isCreating && styles.createButtonDisabled]}
+                onPress={handleCreateAccount}
+                disabled={isCreating}
+              >
+                <Text style={styles.createButtonText}>
+                  {isCreating ? t('adminUsers.creatingAccount') : t('adminUsers.createAccount')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        )}
+      </View>
+
+      <Modal visible={showRoleModal} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              onPress={() => {
+                setShowRoleModal(false);
+                setRoleModalUser(null);
+              }}
             >
-              <Text style={styles.createButtonText}>
-                {isCreating ? 'Creating...' : 'Create Annotator'}
-              </Text>
+              <Ionicons name="close" size={24} color="#64748b" />
             </TouchableOpacity>
+            <Text style={styles.modalTitle}>{t('adminUsers.changeRoleTitle')}</Text>
+            <View style={{ width: 24 }} />
           </View>
+          <ScrollView style={styles.modalContent}>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>{roleModalUser?.email}</Text>
+              <Text style={styles.metaHint}>
+                {(roleModalUser?.username || '—') +
+                  ' · ' +
+                  (roleModalUser ? formatRoleLabel(roleModalUser) : '—')}
+              </Text>
+            </View>
+            {(['admin', 'reviewer', 'annotator'] as const).map((r) => (
+              <TouchableOpacity
+                key={r}
+                style={[
+                  styles.roleOption,
+                  roleModalUser &&
+                    canonicalAccountRole(roleModalUser.role, roleModalUser.is_admin) === r &&
+                    styles.roleOptionSelected,
+                ]}
+                onPress={() => handleApplyRole(r)}
+              >
+                <Ionicons
+                  name={r === 'admin' ? 'shield' : r === 'reviewer' ? 'eye' : 'person'}
+                  size={20}
+                  color={r === 'admin' ? '#ef4444' : r === 'reviewer' ? '#a855f7' : '#3b82f6'}
+                />
+                <Text style={styles.roleOptionText}>
+                  {r === 'admin'
+                    ? t('adminUsers.roleAdmin')
+                    : r === 'reviewer'
+                      ? t('adminUsers.roleReviewer')
+                      : t('adminUsers.roleAnnotator')}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </SafeAreaView>
       </Modal>
 
@@ -597,7 +776,7 @@ export default function AdminUsersPage() {
 
           <ScrollView style={styles.modalContent}>
             <View style={styles.formGroup}>
-              <Text style={styles.label}>User Email</Text>
+              <Text style={styles.label}>{t('adminUsers.emailLabel')}</Text>
               <TextInput
                 style={styles.input}
                 value={selectedUser?.email || ''}
@@ -681,8 +860,19 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 20,
+    gap: 12,
+  },
+  titleBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  pageHint: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 6,
+    lineHeight: 17,
   },
   pageTitle: {
     fontSize: 24,
@@ -748,16 +938,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#f8fafc',
   },
-  roleBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  roleText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
   email: {
     fontSize: 14,
     color: '#94a3b8',
@@ -789,10 +969,6 @@ const styles = StyleSheet.create({
   moreLanguagesText: {
     color: '#64748b',
     fontSize: 10,
-  },
-  actionButtons: {
-    flexDirection: 'column',
-    gap: 8,
   },
   resetPasswordButton: {
     flexDirection: 'row',
@@ -945,6 +1121,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
+  userRowWrap: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
   tableHeader: {
     flexDirection: 'row',
     backgroundColor: 'rgba(15, 23, 42, 0.8)',
@@ -965,8 +1145,6 @@ const styles = StyleSheet.create({
   },
   tableRow: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
@@ -1031,5 +1209,187 @@ const styles = StyleSheet.create({
   createButtonDisabled: {
     backgroundColor: '#94a3b8',
     opacity: 0.6,
+  },
+  metaHint: {
+    fontSize: 13,
+    color: '#94a3b8',
+    marginTop: 4,
+  },
+  roleOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    marginBottom: 10,
+  },
+  roleOptionSelected: {
+    borderColor: 'rgba(168, 85, 247, 0.6)',
+    backgroundColor: 'rgba(168, 85, 247, 0.12)',
+  },
+  roleOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#f8fafc',
+  },
+  accountRoleRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  accountRoleChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+  },
+  accountRoleChipSelected: {
+    borderColor: '#3b82f6',
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+  },
+  accountRoleChipSelectedReviewer: {
+    borderColor: '#a855f7',
+    backgroundColor: 'rgba(168, 85, 247, 0.22)',
+  },
+  accountRoleChipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  accountRoleChipTextSelected: {
+    color: '#f8fafc',
+  },
+  actionToolbar: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    paddingTop: 0,
+  },
+  toolbarBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(168, 85, 247, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.45)',
+  },
+  toolbarBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#e9d5ff',
+  },
+  tabBar: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  tabPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(30, 41, 59, 0.8)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  tabPillActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.35)',
+    borderColor: 'rgba(59, 130, 246, 0.6)',
+  },
+  tabPillAnnotator: {
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+  },
+  tabPillAnnotatorActive: {
+    backgroundColor: '#2563eb',
+    borderColor: '#3b82f6',
+  },
+  tabPillReviewer: {
+    borderColor: 'rgba(168, 85, 247, 0.35)',
+  },
+  tabPillReviewerActive: {
+    backgroundColor: '#a855f7',
+    borderColor: '#c084fc',
+  },
+  tabPillText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  tabPillTextActive: {
+    color: '#e0f2fe',
+  },
+  tabPillTextOnAccent: {
+    color: '#ffffff',
+  },
+  createScroll: {
+    flex: 1,
+    minHeight: 200,
+  },
+  createScrollContent: {
+    paddingBottom: 32,
+  },
+  createRoleBannerAnnotator: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    backgroundColor: 'rgba(37, 99, 235, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.45)',
+  },
+  createRoleBannerReviewer: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    backgroundColor: 'rgba(168, 85, 247, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.5)',
+  },
+  createScreenTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#f8fafc',
+    marginBottom: 8,
+  },
+  createScreenSubtitle: {
+    fontSize: 14,
+    color: '#94a3b8',
+    lineHeight: 20,
+  },
+  backToListBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 20,
+    alignSelf: 'flex-start',
+  },
+  backToListText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  createActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 8,
+    paddingTop: 8,
   },
 });

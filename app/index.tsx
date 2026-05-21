@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { normalizeProfileRole, postLoginPathForRole } from '@/lib/userRoles';
 
 export default function LoginScreen() {
   const { t } = useTranslation();
@@ -37,13 +38,35 @@ export default function LoginScreen() {
 
   // KRITIK: Authentication kontrolü - donma sorununu engelle
   useEffect(() => {
-    if (!navigatorReady) return;
-    
-    if (user) {
-      navigation.replace('/dashboard');
-      return;
-    }
-  }, [navigatorReady, user]);
+    if (!navigatorReady || rootNavigationState?.key == null) return;
+
+    if (!user) return;
+
+    let cancelled = false;
+    (async () => {
+      const isDevAdmin = user.email === 'yakup.hano@deepannotation.ai';
+      const { data } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
+      if (cancelled) return;
+      const admin = data?.role === 'admin' || isDevAdmin;
+      const role = normalizeProfileRole(data?.role ?? null, admin);
+      const path = postLoginPathForRole(role) as any;
+      // Defer replace until after root layout / navigator is fully mounted (avoids expo-router race on web)
+      setTimeout(() => {
+        if (cancelled) return;
+        try {
+          navigation.replace(path);
+        } catch {
+          if (typeof window !== 'undefined') {
+            window.location.assign(path);
+          }
+        }
+      }, 0);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigatorReady, rootNavigationState?.key, user, navigation]);
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {

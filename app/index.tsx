@@ -17,7 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { normalizeProfileRole, postLoginPathForRole } from '@/lib/userRoles';
+import { normalizeProfileRole, postLoginPathForRole, pickAuthUserEmail } from '@/lib/userRoles';
 
 export default function LoginScreen() {
   const { t } = useTranslation();
@@ -44,11 +44,11 @@ export default function LoginScreen() {
 
     let cancelled = false;
     (async () => {
-      const isDevAdmin = user.email === 'yakup.hano@deepannotation.ai';
+      const isDevAdmin = pickAuthUserEmail(user) === 'yakup.hano@deepannotation.ai';
       const { data } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
       if (cancelled) return;
       const admin = data?.role === 'admin' || isDevAdmin;
-      const role = normalizeProfileRole(data?.role ?? null, admin);
+      const role = normalizeProfileRole(data?.role ?? null, admin, pickAuthUserEmail(user));
       const path = postLoginPathForRole(role) as any;
       // Defer replace until after root layout / navigator is fully mounted (avoids expo-router race on web)
       setTimeout(() => {

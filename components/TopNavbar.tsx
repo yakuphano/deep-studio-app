@@ -14,7 +14,6 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnreadMessagesCount } from '@/hooks/useUnreadMessagesCount';
-import { useProfile } from '@/hooks/useProfile';
 import { supabase } from '@/lib/supabase';
 import { canAccessReviewQueue, postLoginPathForRole } from '@/lib/userRoles';
 
@@ -30,8 +29,7 @@ export default function TopNavbar() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
-  const { user, session, signOut, isAdmin } = useAuth();
-  const { appRole } = useProfile();
+  const { user, session, signOut, isAdmin, appRole } = useAuth();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -48,10 +46,10 @@ export default function TopNavbar() {
 
   const navLinks = useMemo(() => {
     const [dash, ...rest] = NAV_ITEMS;
-    const out: { href: string; labelKey: string; isAdminLink?: boolean; isReviewLink?: boolean }[] = [
+    const out: { href: string; labelKey: string; isAdminLink?: boolean }[] = [
       { ...dash },
       ...(canAccessReviewQueue(appRole)
-        ? [{ href: '/review', labelKey: 'nav.qaReview', isReviewLink: true as const }]
+        ? [{ href: '/review', labelKey: 'nav.qaReview' }]
         : []),
       { href: '/revisions', labelKey: 'nav.revisions' },
       ...rest.map((x) => ({ ...x })),
@@ -163,7 +161,6 @@ export default function TopNavbar() {
                 (item.href === '/review' && pathname?.startsWith('/review')) ||
                 (item.href === '/revisions' && pathname?.startsWith('/revisions'));
               const isAdminLink = (item as any).isAdminLink;
-              const isReviewLink = (item as any).isReviewLink;
               return (
                 <TouchableOpacity
                   key={item.href}
@@ -172,14 +169,12 @@ export default function TopNavbar() {
                     isActive && styles.navItemActive,
                     isAdminLink && styles.navItemAdmin,
                     isAdminLink && isActive && styles.navItemAdminActive,
-                    isReviewLink && styles.navItemReview,
-                    isReviewLink && isActive && styles.navItemReviewActive,
                   ]}
                   onPress={() => navigate(item.href)}
                   activeOpacity={0.8}
                 >
                   <View style={styles.navItemInner}>
-                    <Text style={[styles.navText, isAdminLink && styles.navTextAdmin, isAdminLink && isActive && styles.navTextAdminActive, isReviewLink && styles.navTextReview, isReviewLink && isActive && styles.navTextReviewActive]}>
+                    <Text style={[styles.navText, isAdminLink && styles.navTextAdmin, isAdminLink && isActive && styles.navTextAdminActive]}>
                       {t(item.labelKey)}
                     </Text>
                     {item.href === '/messages' && unreadCount > 0 && (
@@ -227,7 +222,6 @@ export default function TopNavbar() {
               (item.href === '/review' && pathname?.startsWith('/review')) ||
               (item.href === '/revisions' && pathname?.startsWith('/revisions'));
             const isAdminLink = (item as any).isAdminLink;
-            const isReviewLink = (item as any).isReviewLink;
             return (
               <TouchableOpacity
                 key={item.href}
@@ -235,12 +229,11 @@ export default function TopNavbar() {
                   styles.dropdownItem,
                   isActive && styles.dropdownItemActive,
                   isAdminLink && styles.dropdownItemAdmin,
-                  isReviewLink && styles.dropdownItemReview,
                 ]}
                 onPress={() => navigate(item.href)}
               >
                 <View style={styles.dropdownItemInner}>
-                  <Text style={[styles.dropdownText, isActive && styles.dropdownTextActive, isAdminLink && styles.dropdownTextAdmin, isReviewLink && isActive && styles.dropdownTextReviewActive]}>{t(item.labelKey)}</Text>
+                  <Text style={[styles.dropdownText, isActive && styles.dropdownTextActive, isAdminLink && styles.dropdownTextAdmin]}>{t(item.labelKey)}</Text>
                   {item.href === '/messages' && unreadCount > 0 && (
                     <View style={styles.badge}>
                       <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
@@ -329,12 +322,6 @@ const styles = StyleSheet.create({
   navItemAdminActive: {
     backgroundColor: 'rgba(239, 68, 68, 0.35)',
   },
-  navItemReview: {
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
-  },
-  navItemReviewActive: {
-    backgroundColor: 'rgba(56, 189, 248, 0.28)',
-  },
   navItemInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   navText: {
     fontSize: 14,
@@ -362,14 +349,6 @@ const styles = StyleSheet.create({
   },
   navTextAdminActive: {
     color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  navTextReview: {
-    color: '#7dd3fc',
-    fontWeight: '600',
-  },
-  navTextReviewActive: {
-    color: '#f0f9ff',
     fontWeight: '700',
   },
   langDropdownWrap: {
@@ -473,15 +452,8 @@ const styles = StyleSheet.create({
   dropdownItemAdmin: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
   },
-  dropdownItemReview: {
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
-  },
   dropdownTextAdmin: {
     color: '#ef4444',
     fontWeight: '600',
-  },
-  dropdownTextReviewActive: {
-    color: '#7dd3fc',
-    fontWeight: '700',
   },
 });

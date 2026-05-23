@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,15 +10,22 @@ import {
   Modal,
   Alert,
   Platform,
+  Image,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { useProfile } from '@/hooks/useProfile';
 import { canAccessReviewQueue } from '@/lib/userRoles';
 import { getWorkbenchPathForTask, resolveTaskWorkbenchType } from '@/lib/taskWorkbenchPath';
+import { resolvePlaybackAudioUrl, resolveTaskImageUrl } from '@/lib/audioUrl';
+import AudioPlayer from '@/components/AudioPlayer';
+import VideoPlayer from '@/components/VideoPlayer';
+
+/** Annotator Revisions’da göreceği metin; çok kısa “red” mesajlarını engeller. */
+const REJECT_REASON_MIN_LENGTH = 30;
+const REJECT_REASON_MAX_LENGTH = 2000;
 
 type Row = {
   id: string;
@@ -30,16 +37,26 @@ type Row = {
   annotation_data: unknown;
   assigned_to: string | null;
   qa_comment?: string | null;
+  image_url?: string | null;
+  video_url?: string | null;
+  audio_url?: string | null;
+  file_url?: string | null;
 };
 
+function useTaskIdParam(): string | undefined {
+  const { id: raw } = useLocalSearchParams<{ id?: string | string[] }>();
+  if (raw == null) return undefined;
+  return Array.isArray(raw) ? raw[0] : raw;
+}
+
 export default function ReviewTaskDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const id = useTaskIdParam();
   const router = useRouter();
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const { appRole, loading: profileLoading } = useProfile();
+  const { user, loading: authLoading, appRole } = useAuth();
   const [task, setTask] = useState<Row | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -49,11 +66,18 @@ export default function ReviewTaskDetailScreen() {
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
+    setFetchError(null);
     try {
       const { data, error } = await supabase.from('tasks').select('*').eq('id', id).maybeSingle();
-      if (error) throw error;
+      if (error) {
+        setFetchError(error.message);
+        setTask(null);
+        return;
+      }
       setTask(data as Row);
-    } catch {
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setFetchError(msg);
       setTask(null);
     } finally {
       setLoading(false);
@@ -61,13 +85,58 @@ export default function ReviewTaskDetailScreen() {
   }, [id]);
 
   useEffect(() => {
-    if (profileLoading) return;
+    if (authLoading) return;
+    if (!user?.id) return;
     if (!allowed) {
       router.replace('/dashboard');
       return;
     }
     load();
-  }, [profileLoading, allowed, load, router]);
+  }, [authLoading, allowed, load, router, user?.id]);
+
+  const rowRecord = useMemo(() => (task ? (task as unknown as Record<string, unknown>) : null), [task]);
+  const workbenchKind = task && rowRecord ? resolveTaskWorkbenchType(rowRecord) : '';
+
+  const imagePreviewUrl = useMemo(() => {
+    if (!task) return null;
+    const raw = task.image_url ?? task.file_url ?? null;
+    return resolveTaskImageUrl(raw);
+  }, [task]);
+
+  const audioPreviewUrl = useMemo(() => {
+    if (!task) return null;
+    return resolvePlaybackAudioUrl(task.audio_url);
+  }, [task]);
+
+  const videoPreviewUrl = useMemo(() => {
+    if (!task) return null;
+    return resolvePlaybackAudioUrl(task.video_url);
+  }, [task]);
+
+  const kindLower = workbenchKind.toLowerCase();
+  const hasVideoUrl = Boolean(videoPreviewUrl);
+  const hasAudioUrl = Boolean(audioPreviewUrl);
+  const hasImageUrl = Boolean(imagePreviewUrl);
+
+  const mediaBlock = useMemo(() => {
+    if (hasVideoUrl || kindLower === 'video') {
+      if (hasVideoUrl) {
+        return (
+          <View style={styles.mediaInner}>
+            <VideoPlayer videoUrl={videoPreviewUrl!} />
+          </View>
+        );
+      }
+      return <Text style={styles.mediaHint}>{t('qaReview.openWorkbench')}</Text>;
+    }
+    if ((kindLower === 'audio' || kindLower === 'transcription') && hasAudioUrl) {
+      return <AudioPlayer uri={audioPreviewUrl!} />;
+    }
+    if (hasImageUrl) {
+      return <Image source={{ uri: imagePreviewUrl! }} style={styles.previewImage} resizeMode="contain" />;
+    }
+    return <Text style={styles.mediaHint}>{t('qaReview.openWorkbench')}</Text>;
+  }, [hasVideoUrl, hasAudioUrl, hasImageUrl, kindLower, videoPreviewUrl, audioPreviewUrl, imagePreviewUrl, t]);
 
   const annotationPreview = () => {
     const raw = task?.annotation_data;
@@ -86,7 +155,8 @@ export default function ReviewTaskDetailScreen() {
     router.push(path as any);
   };
 
-  const workbenchKind = task ? resolveTaskWorkbenchType(task as unknown as Record<string, unknown>) : '';
+  const canAct = task?.status === 'submitted';
+  const readOnlyReviewed = task?.status === 'completed' || task?.status === 'rejected';
 
   const approve = async () => {
     if (!task?.id || !user?.id || acting) return;
@@ -119,6 +189,10 @@ export default function ReviewTaskDetailScreen() {
       Alert.alert(t('login.errorTitle'), t('qaReview.rejectReasonRequired'));
       return;
     }
+    if (reason.length < REJECT_REASON_MIN_LENGTH) {
+      Alert.alert(t('login.errorTitle'), t('qaReview.rejectReasonTooShort', { min: REJECT_REASON_MIN_LENGTH }));
+      return;
+    }
     if (!task?.id || !user?.id || acting) return;
     setActing(true);
     try {
@@ -135,6 +209,7 @@ export default function ReviewTaskDetailScreen() {
         .eq('status', 'submitted');
       if (error) throw error;
       setRejectOpen(false);
+      setRejectReason('');
       Alert.alert(t('qaReview.rejectedTitle'), t('qaReview.rejectedBody'));
       router.replace('/review');
     } catch (e) {
@@ -144,10 +219,21 @@ export default function ReviewTaskDetailScreen() {
     }
   };
 
-  if (profileLoading || loading) {
+  if (authLoading || loading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#38bdf8" />
+      </View>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <View style={styles.container}>
+        <TouchableOpacity style={styles.back} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={22} color="#f8fafc" />
+        </TouchableOpacity>
+        <Text style={styles.error}>{t('qaReview.loadError', { message: fetchError })}</Text>
       </View>
     );
   }
@@ -163,7 +249,7 @@ export default function ReviewTaskDetailScreen() {
     );
   }
 
-  if (task.status !== 'submitted') {
+  if (!['submitted', 'completed', 'rejected'].includes(task.status)) {
     return (
       <View style={styles.container}>
         <TouchableOpacity style={styles.back} onPress={() => router.back()}>
@@ -186,10 +272,20 @@ export default function ReviewTaskDetailScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
+        {readOnlyReviewed ? (
+          <View style={styles.infoBanner}>
+            <Ionicons name="information-circle-outline" size={20} color="#7dd3fc" />
+            <Text style={styles.infoBannerText}>{t('qaReview.alreadyReviewed')}</Text>
+          </View>
+        ) : null}
+
         <View style={styles.badgeRow}>
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{workbenchKind || task.type || '—'}</Text>
           </View>
+          <Text style={styles.statusLine}>
+            {t('qaReview.statusLabel')}: <Text style={styles.statusStrong}>{task.status}</Text>
+          </Text>
           {(task.category || task.type) && (task.category !== workbenchKind || task.type !== workbenchKind) ? (
             <Text style={styles.metaLine}>
               {t('qaReview.dbType')}: {task.type ?? '—'} · {t('qaReview.category')}: {task.category ?? '—'}
@@ -198,10 +294,20 @@ export default function ReviewTaskDetailScreen() {
           <Text style={styles.idText}>ID: {task.id.slice(0, 8)}…</Text>
         </View>
 
+        <Text style={styles.blockTitle}>{t('qaReview.mediaPreview')}</Text>
+        <View style={styles.mediaBox}>{mediaBlock}</View>
+
         {task.transcription ? (
           <View style={styles.block}>
             <Text style={styles.blockTitle}>{t('qaReview.transcription')}</Text>
             <Text style={styles.blockBody}>{task.transcription}</Text>
+          </View>
+        ) : null}
+
+        {task.qa_comment ? (
+          <View style={styles.block}>
+            <Text style={styles.blockTitle}>{t('qaReview.reviewNotes')}</Text>
+            <Text style={styles.blockBody}>{task.qa_comment}</Text>
           </View>
         ) : null}
 
@@ -215,39 +321,42 @@ export default function ReviewTaskDetailScreen() {
           <Text style={styles.secondaryBtnText}>{t('qaReview.openWorkbench')}</Text>
         </TouchableOpacity>
 
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.approveBtn, acting && styles.btnDisabled]}
-            onPress={() => {
-              if (Platform.OS === 'web') {
-                if (typeof window !== 'undefined' && window.confirm(t('qaReview.confirmApprove'))) approve();
-              } else {
-                Alert.alert(t('qaReview.confirmApproveTitle'), t('qaReview.confirmApprove'), [
-                  { text: t('login.cancel'), style: 'cancel' },
-                  { text: t('qaReview.approve'), onPress: approve },
-                ]);
-              }
-            }}
-            disabled={acting}
-          >
-            <Ionicons name="checkmark-circle" size={22} color="#fff" />
-            <Text style={styles.approveBtnText}>{t('qaReview.approve')}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.rejectBtn, acting && styles.btnDisabled]}
-            onPress={() => setRejectOpen(true)}
-            disabled={acting}
-          >
-            <Ionicons name="close-circle" size={22} color="#fff" />
-            <Text style={styles.rejectBtnText}>{t('qaReview.reject')}</Text>
-          </TouchableOpacity>
-        </View>
+        {canAct ? (
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.approveBtn, acting && styles.btnDisabled]}
+              onPress={() => {
+                if (Platform.OS === 'web') {
+                  if (typeof window !== 'undefined' && window.confirm(t('qaReview.confirmApprove'))) approve();
+                } else {
+                  Alert.alert(t('qaReview.confirmApproveTitle'), t('qaReview.confirmApprove'), [
+                    { text: t('login.cancel'), style: 'cancel' },
+                    { text: t('qaReview.approve'), onPress: approve },
+                  ]);
+                }
+              }}
+              disabled={acting}
+            >
+              <Ionicons name="checkmark-circle" size={22} color="#fff" />
+              <Text style={styles.approveBtnText}>{t('qaReview.approve')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.rejectBtn, acting && styles.btnDisabled]}
+              onPress={() => setRejectOpen(true)}
+              disabled={acting}
+            >
+              <Ionicons name="close-circle" size={22} color="#fff" />
+              <Text style={styles.rejectBtnText}>{t('qaReview.reject')}</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </ScrollView>
 
       <Modal visible={rejectOpen} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>{t('qaReview.rejectModalTitle')}</Text>
+            <Text style={styles.modalSubtitle}>{t('qaReview.rejectModalSubtitle')}</Text>
             <TextInput
               style={styles.modalInput}
               placeholder={t('qaReview.rejectPlaceholder')}
@@ -255,13 +364,27 @@ export default function ReviewTaskDetailScreen() {
               value={rejectReason}
               onChangeText={setRejectReason}
               multiline
-              maxLength={2000}
+              maxLength={REJECT_REASON_MAX_LENGTH}
             />
+            <Text style={styles.modalCounter}>
+              {t('qaReview.rejectCharCounter', {
+                current: rejectReason.trim().length,
+                max: REJECT_REASON_MAX_LENGTH,
+                min: REJECT_REASON_MIN_LENGTH,
+              })}
+            </Text>
             <View style={styles.modalRow}>
               <TouchableOpacity style={styles.modalCancel} onPress={() => setRejectOpen(false)}>
                 <Text style={styles.modalCancelText}>{t('login.cancel')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalConfirm} onPress={reject}>
+              <TouchableOpacity
+                style={[
+                  styles.modalConfirm,
+                  (acting || rejectReason.trim().length < REJECT_REASON_MIN_LENGTH) && styles.modalConfirmDisabled,
+                ]}
+                onPress={reject}
+                disabled={acting || rejectReason.trim().length < REJECT_REASON_MIN_LENGTH}
+              >
                 <Text style={styles.modalConfirmText}>{t('qaReview.sendReject')}</Text>
               </TouchableOpacity>
             </View>
@@ -287,15 +410,41 @@ const styles = StyleSheet.create({
   topTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: '#f8fafc' },
   back: { padding: 16 },
   scroll: { padding: 16, paddingBottom: 40 },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.35)',
+    marginBottom: 16,
+  },
+  infoBannerText: { flex: 1, color: '#bae6fd', fontSize: 14, lineHeight: 20 },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' },
   badge: { backgroundColor: 'rgba(56, 189, 248, 0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   badgeText: { color: '#7dd3fc', fontWeight: '700', fontSize: 13 },
+  statusLine: { fontSize: 13, color: '#94a3b8', width: '100%' },
+  statusStrong: { color: '#e2e8f0', fontWeight: '700' },
   idText: { color: '#64748b', fontSize: 12 },
   metaLine: { fontSize: 11, color: '#94a3b8', marginTop: 6, width: '100%' },
   block: { marginBottom: 16 },
   blockTitle: { fontSize: 14, fontWeight: '700', color: '#94a3b8', marginBottom: 8 },
   blockBody: { color: '#e2e8f0', fontSize: 15, lineHeight: 22 },
   mono: { color: '#cbd5e1', fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  mediaBox: {
+    minHeight: 120,
+    marginBottom: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    overflow: 'hidden',
+  },
+  mediaInner: { width: '100%', minHeight: 200 },
+  previewImage: { width: '100%', height: 260, backgroundColor: '#0f172a' },
+  mediaHint: { color: '#94a3b8', fontSize: 14, padding: 20, textAlign: 'center' },
   secondaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -346,7 +495,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#334155',
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: '#f8fafc', marginBottom: 12 },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#f8fafc', marginBottom: 8 },
+  modalSubtitle: { fontSize: 13, color: '#94a3b8', lineHeight: 19, marginBottom: 14 },
   modalInput: {
     minHeight: 100,
     borderWidth: 1,
@@ -355,11 +505,13 @@ const styles = StyleSheet.create({
     padding: 12,
     color: '#f1f5f9',
     textAlignVertical: 'top',
-    marginBottom: 16,
+    marginBottom: 8,
   },
+  modalCounter: { fontSize: 12, color: '#64748b', marginBottom: 16 },
   modalRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
   modalCancel: { paddingVertical: 10, paddingHorizontal: 16 },
   modalCancelText: { color: '#94a3b8', fontWeight: '600' },
   modalConfirm: { backgroundColor: '#dc2626', paddingVertical: 10, paddingHorizontal: 18, borderRadius: 10 },
+  modalConfirmDisabled: { opacity: 0.45 },
   modalConfirmText: { color: '#fff', fontWeight: '700' },
 });

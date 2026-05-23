@@ -133,11 +133,6 @@ export default function VideoTaskDetailScreen() {
     fetchTask();
   }, [id]);
 
-  useEffect(() => {
-    if (!isWeb || loading || !task?.id || !isVideoTask) return;
-    router.replace(`/(tabs)/video-annotation?id=${encodeURIComponent(String(task.id))}` as any);
-  }, [isWeb, loading, task?.id, isVideoTask, router, task]);
-
   const handleSaveDraft = useCallback(async () => {
     if (!id || !user?.id) return;
     setSaving(true);

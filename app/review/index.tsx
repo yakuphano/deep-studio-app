@@ -13,7 +13,6 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { useProfile } from '@/hooks/useProfile';
 import { canAccessReviewQueue } from '@/lib/userRoles';
 import { resolveTaskWorkbenchType } from '@/lib/taskWorkbenchPath';
 
@@ -28,38 +27,53 @@ type QTask = {
   company_name?: string | null;
 };
 
+/** Supabase tek istekte çok satır; üst sınır yüksek tutuldu (QA tüm submitted görsün). */
+const SUBMITTED_QUEUE_LIMIT = 5000;
+const RECENT_REVIEW_LIMIT = 200;
+
 export default function ReviewQueueScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { user } = useAuth();
-  const { appRole, loading: profileLoading } = useProfile();
+  const { user, loading: authLoading, appRole } = useAuth();
   const [pending, setPending] = useState<QTask[]>([]);
   const [recent, setRecent] = useState<QTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'pending' | 'recent'>('pending');
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const allowed = canAccessReviewQueue(appRole);
 
   const load = useCallback(async () => {
     if (!user?.id || !allowed) return;
     setLoading(true);
+    setLoadError(null);
     try {
-      const { data: p } = await supabase
+      const { data: p, error: errP } = await supabase
         .from('tasks')
         .select('id, title, type, category, status, assigned_to, updated_at, company_name')
         .eq('status', 'submitted')
         .order('updated_at', { ascending: false })
-        .limit(100);
-      setPending((p ?? []) as QTask[]);
+        .limit(SUBMITTED_QUEUE_LIMIT);
+      if (errP) {
+        setLoadError(errP.message);
+        setPending([]);
+      } else {
+        setPending((p ?? []) as QTask[]);
+      }
 
-      const { data: r } = await supabase
+      const { data: r, error: errR } = await supabase
         .from('tasks')
         .select('id, title, type, category, status, assigned_to, updated_at, company_name')
-        .eq('status', 'completed')
+        .in('status', ['completed', 'rejected'])
         .order('updated_at', { ascending: false })
-        .limit(40);
-      setRecent((r ?? []) as QTask[]);
+        .limit(RECENT_REVIEW_LIMIT);
+      if (errR) {
+        if (!errP) setLoadError(errR.message);
+        setRecent([]);
+      } else {
+        setRecent((r ?? []) as QTask[]);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -67,15 +81,16 @@ export default function ReviewQueueScreen() {
   }, [user?.id, allowed]);
 
   useEffect(() => {
-    if (profileLoading) return;
+    if (authLoading) return;
+    if (!user?.id) return;
     if (!allowed) {
       router.replace('/dashboard');
       return;
     }
     load();
-  }, [profileLoading, allowed, load, router]);
+  }, [authLoading, allowed, load, router, user?.id]);
 
-  if (profileLoading || (!allowed && loading)) {
+  if (authLoading || (!allowed && loading)) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#38bdf8" />
@@ -113,10 +128,16 @@ export default function ReviewQueueScreen() {
           onPress={() => setTab('recent')}
         >
           <Text style={[styles.tabText, tab === 'recent' && styles.tabTextActive]}>
-            {t('qaReview.tabRecent')}
+            {t('qaReview.tabRecent')} ({recent.length})
           </Text>
         </TouchableOpacity>
       </View>
+
+      {loadError ? (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>{t('qaReview.loadError', { message: loadError })}</Text>
+        </View>
+      ) : null}
 
       {loading ? (
         <View style={styles.centered}>
@@ -146,7 +167,10 @@ export default function ReviewQueueScreen() {
               <Text style={styles.meta}>
                 {resolveTaskWorkbenchType(item as unknown as Record<string, unknown>)} · {item.company_name || '—'}
               </Text>
-              <Text style={styles.metaSmall}>{new Date(item.updated_at).toLocaleString()}</Text>
+              <View style={styles.cardMetaRow}>
+                <Text style={styles.statusPill}>{item.status}</Text>
+                <Text style={styles.metaSmall}>{new Date(item.updated_at).toLocaleString()}</Text>
+              </View>
             </TouchableOpacity>
           )}
         />
@@ -194,6 +218,35 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   cardTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: '#f1f5f9' },
   meta: { fontSize: 13, color: '#94a3b8', marginTop: 8 },
-  metaSmall: { fontSize: 11, color: '#64748b', marginTop: 4 },
+  metaSmall: { fontSize: 11, color: '#64748b' },
+  cardMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  statusPill: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#a5b4fc',
+    textTransform: 'uppercase',
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  errorBanner: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+  },
+  errorBannerText: { color: '#fecaca', fontSize: 13, lineHeight: 18 },
   empty: { textAlign: 'center', color: '#64748b', marginTop: 40, fontSize: 15 },
 });

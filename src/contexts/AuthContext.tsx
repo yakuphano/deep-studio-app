@@ -3,6 +3,7 @@ import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { resetAdminUserIdCache } from '../lib/messages';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { normalizeProfileRole, type AppRole, pickAuthUserEmail } from '../lib/userRoles';
 
 type UserProfile = {
   id: string;
@@ -17,6 +18,8 @@ type AuthContextType = {
   session: Session | null;
   loading: boolean;
   isAdmin: boolean | null;
+  /** Profil + admin bayraklarıyla hesaplanır; QA Review gibi ekranlar bunu kullanmalı (useProfile ile yarış yok). */
+  appRole: AppRole;
   languages: string[];
   profile: UserProfile | null;
   isBlocked: boolean;
@@ -33,7 +36,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isBlocked, setIsBlocked] = useState(false);
   const [languages, setLanguages] = useState<string[]>(['tr', 'en']);
-  
+  const [appRole, setAppRole] = useState<AppRole>('annotator');
+
   // DÖNGÜ KİLİT MEKANİZMASI
   const isProcessingRef = useRef(false);
 
@@ -66,16 +70,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setProfile(userProfile);
           setIsBlocked(userProfile.is_blocked);
           setLanguages(userProfile.languages || ['tr', 'en']);
-          const isDevAdmin = newSession.user.email === 'yakup.hano@deepannotation.ai';
-          setIsAdmin(userProfile.role === 'admin' || isDevAdmin);
+          const sessionEmail = pickAuthUserEmail(newSession.user);
+          const isDevAdmin = sessionEmail === 'yakup.hano@deepannotation.ai';
+          const admin = userProfile.role === 'admin' || isDevAdmin;
+          setIsAdmin(admin);
+          setAppRole(normalizeProfileRole(userProfile.role, admin, sessionEmail));
         } else {
-          setIsAdmin(false);
+          setProfile(null);
+          setIsBlocked(false);
+          const sessionEmail = pickAuthUserEmail(newSession.user);
+          const isDevAdmin = sessionEmail === 'yakup.hano@deepannotation.ai';
+          setIsAdmin(isDevAdmin);
+          setLanguages(['tr', 'en']);
+          setAppRole(normalizeProfileRole(null, isDevAdmin, sessionEmail));
         }
       } else {
         setProfile(null);
         setIsBlocked(false);
         setIsAdmin(false);
         setLanguages(['tr', 'en']);
+        setAppRole('annotator');
       }
     } finally {
       setLoading(false);
@@ -101,11 +115,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
     setUser(null);
     setProfile(null);
+    setAppRole('annotator');
     if (typeof window !== 'undefined') window.location.href = '/login';
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, isAdmin, languages, profile, isBlocked, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, isAdmin, appRole, languages, profile, isBlocked, signOut }}>
       {children}
     </AuthContext.Provider>
   );

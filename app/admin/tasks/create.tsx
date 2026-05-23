@@ -65,7 +65,15 @@ export default function CreateTaskScreen() {
   };
 
   const handleBack = () => {
-    router.replace('/dashboard');
+    try {
+      if (typeof router.canGoBack === 'function' && router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/admin');
+      }
+    } catch {
+      router.replace('/admin');
+    }
   };
 
   return (

@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useLayoutEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { normalizeProfileRole, type AppRole } from '../lib/userRoles';
+import { normalizeProfileRole, type AppRole, pickAuthUserEmail } from '../lib/userRoles';
 
 type UserProfile = {
   id: string;
@@ -20,6 +20,18 @@ export function useProfile() {
   const [loading, setLoading] = useState(false);
   const [appRole, setAppRole] = useState<AppRole>('annotator');
 
+  /**
+   * Yeni mount veya user değişiminde, async fetch başlamadan önce loading=true olsun.
+   * Aksi halde (ör. /review) ilk frame'de appRole hâlâ annotator iken useEffect yanlış redirect tetikler.
+   */
+  useLayoutEffect(() => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+  }, [user?.id]);
+
   useEffect(() => {
     const fetchProfile = async () => {
       if (user) {
@@ -36,24 +48,28 @@ export function useProfile() {
             setIsBlocked(data.is_blocked);
             setLanguages(data.languages || ['tr', 'en']);
             
-            // Admin kontrolü
-            const isDevAdmin = user.email === 'yakup.hano@deepannotation.ai';
+            const sessionEmail = pickAuthUserEmail(user);
+            const isDevAdmin = sessionEmail === 'yakup.hano@deepannotation.ai';
             const admin = data.role === 'admin' || isDevAdmin;
             setIsAdmin(admin);
-            setAppRole(normalizeProfileRole(data.role, admin));
+            setAppRole(normalizeProfileRole(data.role, admin, sessionEmail));
           } else {
             setProfile(null);
             setIsBlocked(false);
-            setIsAdmin(false);
-            setAppRole('annotator');
+            const sessionEmail = pickAuthUserEmail(user);
+            const isDevAdmin = sessionEmail === 'yakup.hano@deepannotation.ai';
+            setIsAdmin(isDevAdmin);
+            setAppRole(normalizeProfileRole(null, isDevAdmin, sessionEmail));
             setLanguages(['tr', 'en']);
           }
         } catch (error) {
           console.error('Profile fetch error:', error);
           setProfile(null);
           setIsBlocked(false);
-          setIsAdmin(false);
-          setAppRole('annotator');
+          const sessionEmail = pickAuthUserEmail(user);
+          const isDevAdmin = sessionEmail === 'yakup.hano@deepannotation.ai';
+          setIsAdmin(isDevAdmin);
+          setAppRole(normalizeProfileRole(null, isDevAdmin, sessionEmail));
           setLanguages(['tr', 'en']);
         } finally {
           setLoading(false);
@@ -64,6 +80,7 @@ export function useProfile() {
         setIsAdmin(false);
         setAppRole('annotator');
         setLanguages(['tr', 'en']);
+        setLoading(false);
       }
     };
 

@@ -10,6 +10,7 @@ import {
   Alert,
   Platform,
   Image,
+  Dimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -59,6 +60,12 @@ export default function ReviewTaskDetailScreen() {
   const [rejectReason, setRejectReason] = useState('');
 
   const allowed = canAccessReviewQueue(appRole);
+
+  /** QA görsel incelemesi: sabit 260px yerine ekranın büyük kısmı (orijinale yakın). */
+  const qaImagePreviewHeight = useMemo(() => {
+    const h = Dimensions.get('window').height;
+    return Math.min(Math.max(h * 0.62, 420), 960);
+  }, []);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -130,10 +137,26 @@ export default function ReviewTaskDetailScreen() {
       return <AudioPlayer uri={audioPreviewUrl!} />;
     }
     if (hasImageUrl) {
-      return <Image source={{ uri: imagePreviewUrl! }} style={styles.previewImage} resizeMode="contain" />;
+      return (
+        <Image
+          source={{ uri: imagePreviewUrl! }}
+          style={[styles.previewImage, { height: qaImagePreviewHeight, minHeight: qaImagePreviewHeight }]}
+          resizeMode="contain"
+        />
+      );
     }
     return <Text style={styles.mediaHint}>{t('qaReview.openWorkbench')}</Text>;
-  }, [hasVideoUrl, hasAudioUrl, hasImageUrl, kindLower, videoPreviewUrl, audioPreviewUrl, imagePreviewUrl, t]);
+  }, [
+    hasVideoUrl,
+    hasAudioUrl,
+    hasImageUrl,
+    kindLower,
+    videoPreviewUrl,
+    audioPreviewUrl,
+    imagePreviewUrl,
+    qaImagePreviewHeight,
+    t,
+  ]);
 
   const openWorkbench = () => {
     if (!task) return;
@@ -284,23 +307,7 @@ export default function ReviewTaskDetailScreen() {
           </View>
         ) : null}
 
-        <View style={styles.badgeRow}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{workbenchKind || task.type || '—'}</Text>
-          </View>
-          <Text style={styles.statusLine}>
-            {t('qaReview.statusLabel')}: <Text style={styles.statusStrong}>{task.status}</Text>
-          </Text>
-          {(task.category || task.type) && (task.category !== workbenchKind || task.type !== workbenchKind) ? (
-            <Text style={styles.metaLine}>
-              {t('qaReview.dbType')}: {task.type ?? '—'} · {t('qaReview.category')}: {task.category ?? '—'}
-            </Text>
-          ) : null}
-          <Text style={styles.idText}>ID: {task.id.slice(0, 8)}…</Text>
-        </View>
-
-        <Text style={styles.blockTitle}>{t('qaReview.mediaPreview')}</Text>
-        <View style={styles.mediaBox}>{mediaBlock}</View>
+        <View style={[styles.mediaBox, hasImageUrl ? { minHeight: qaImagePreviewHeight } : null]}>{mediaBlock}</View>
 
         {task.transcription ? (
           <View style={styles.block}>
@@ -411,13 +418,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   infoBannerText: { flex: 1, color: '#bae6fd', fontSize: 14, lineHeight: 20 },
-  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' },
-  badge: { backgroundColor: 'rgba(56, 189, 248, 0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  badgeText: { color: '#7dd3fc', fontWeight: '700', fontSize: 13 },
-  statusLine: { fontSize: 13, color: '#94a3b8', width: '100%' },
-  statusStrong: { color: '#e2e8f0', fontWeight: '700' },
-  idText: { color: '#64748b', fontSize: 12 },
-  metaLine: { fontSize: 11, color: '#94a3b8', marginTop: 6, width: '100%' },
   block: { marginBottom: 16 },
   blockTitle: { fontSize: 14, fontWeight: '700', color: '#94a3b8', marginBottom: 8 },
   blockBody: { color: '#e2e8f0', fontSize: 15, lineHeight: 22 },
@@ -431,7 +431,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   mediaInner: { width: '100%', minHeight: 200 },
-  previewImage: { width: '100%', height: 260, backgroundColor: '#0f172a' },
+  previewImage: { width: '100%', backgroundColor: '#0f172a' },
   mediaHint: { color: '#94a3b8', fontSize: 14, padding: 20, textAlign: 'center' },
   secondaryBtn: {
     flexDirection: 'row',

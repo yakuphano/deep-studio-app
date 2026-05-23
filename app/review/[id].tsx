@@ -7,7 +7,6 @@ import {
   ScrollView,
   ActivityIndicator,
   TextInput,
-  Modal,
   Alert,
   Platform,
   Image,
@@ -34,7 +33,6 @@ type Row = {
   category?: string | null;
   status: string;
   transcription: string | null;
-  annotation_data: unknown;
   assigned_to: string | null;
   qa_comment?: string | null;
   image_url?: string | null;
@@ -58,7 +56,6 @@ export default function ReviewTaskDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
-  const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
 
   const allowed = canAccessReviewQueue(appRole);
@@ -138,17 +135,6 @@ export default function ReviewTaskDetailScreen() {
     return <Text style={styles.mediaHint}>{t('qaReview.openWorkbench')}</Text>;
   }, [hasVideoUrl, hasAudioUrl, hasImageUrl, kindLower, videoPreviewUrl, audioPreviewUrl, imagePreviewUrl, t]);
 
-  const annotationPreview = () => {
-    const raw = task?.annotation_data;
-    if (raw == null) return t('qaReview.noAnnotations');
-    try {
-      const s = JSON.stringify(raw, null, 2);
-      return s.length > 4000 ? `${s.slice(0, 4000)}…` : s;
-    } catch {
-      return String(raw);
-    }
-  };
-
   const openWorkbench = () => {
     if (!task) return;
     const path = getWorkbenchPathForTask(task as unknown as Record<string, unknown>);
@@ -208,7 +194,6 @@ export default function ReviewTaskDetailScreen() {
         .eq('id', task.id)
         .eq('status', 'submitted');
       if (error) throw error;
-      setRejectOpen(false);
       setRejectReason('');
       Alert.alert(t('qaReview.rejectedTitle'), t('qaReview.rejectedBody'));
       router.replace('/review');
@@ -216,6 +201,26 @@ export default function ReviewTaskDetailScreen() {
       Alert.alert(t('login.errorTitle'), e instanceof Error ? e.message : String(e));
     } finally {
       setActing(false);
+    }
+  };
+
+  const tryReject = () => {
+    const reason = rejectReason.trim();
+    if (!reason) {
+      Alert.alert(t('login.errorTitle'), t('qaReview.rejectReasonRequired'));
+      return;
+    }
+    if (reason.length < REJECT_REASON_MIN_LENGTH) {
+      Alert.alert(t('login.errorTitle'), t('qaReview.rejectReasonTooShort', { min: REJECT_REASON_MIN_LENGTH }));
+      return;
+    }
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(t('qaReview.confirmReject'))) void reject();
+    } else {
+      Alert.alert(t('qaReview.confirmRejectTitle'), t('qaReview.confirmReject'), [
+        { text: t('login.cancel'), style: 'cancel' },
+        { text: t('qaReview.sendReject'), style: 'destructive', onPress: () => void reject() },
+      ]);
     }
   };
 
@@ -311,86 +316,70 @@ export default function ReviewTaskDetailScreen() {
           </View>
         ) : null}
 
-        <View style={styles.block}>
-          <Text style={styles.blockTitle}>{t('qaReview.annotationPreview')}</Text>
-          <Text style={styles.mono}>{annotationPreview()}</Text>
-        </View>
-
         <TouchableOpacity style={styles.secondaryBtn} onPress={openWorkbench}>
           <Ionicons name="open-outline" size={20} color="#38bdf8" />
           <Text style={styles.secondaryBtnText}>{t('qaReview.openWorkbench')}</Text>
         </TouchableOpacity>
 
         {canAct ? (
-          <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.approveBtn, acting && styles.btnDisabled]}
-              onPress={() => {
-                if (Platform.OS === 'web') {
-                  if (typeof window !== 'undefined' && window.confirm(t('qaReview.confirmApprove'))) approve();
-                } else {
-                  Alert.alert(t('qaReview.confirmApproveTitle'), t('qaReview.confirmApprove'), [
-                    { text: t('login.cancel'), style: 'cancel' },
-                    { text: t('qaReview.approve'), onPress: approve },
-                  ]);
-                }
-              }}
-              disabled={acting}
-            >
-              <Ionicons name="checkmark-circle" size={22} color="#fff" />
-              <Text style={styles.approveBtnText}>{t('qaReview.approve')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.rejectBtn, acting && styles.btnDisabled]}
-              onPress={() => setRejectOpen(true)}
-              disabled={acting}
-            >
-              <Ionicons name="close-circle" size={22} color="#fff" />
-              <Text style={styles.rejectBtnText}>{t('qaReview.reject')}</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-      </ScrollView>
-
-      <Modal visible={rejectOpen} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>{t('qaReview.rejectModalTitle')}</Text>
-            <Text style={styles.modalSubtitle}>{t('qaReview.rejectModalSubtitle')}</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder={t('qaReview.rejectPlaceholder')}
-              placeholderTextColor="#64748b"
-              value={rejectReason}
-              onChangeText={setRejectReason}
-              multiline
-              maxLength={REJECT_REASON_MAX_LENGTH}
-            />
-            <Text style={styles.modalCounter}>
-              {t('qaReview.rejectCharCounter', {
-                current: rejectReason.trim().length,
-                max: REJECT_REASON_MAX_LENGTH,
-                min: REJECT_REASON_MIN_LENGTH,
-              })}
-            </Text>
-            <View style={styles.modalRow}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setRejectOpen(false)}>
-                <Text style={styles.modalCancelText}>{t('login.cancel')}</Text>
+          <>
+            <View style={styles.rejectFeedbackBlock}>
+              <Text style={styles.rejectFeedbackTitle}>{t('qaReview.rejectModalTitle')}</Text>
+              <Text style={styles.rejectFeedbackSubtitle}>{t('qaReview.rejectModalSubtitle')}</Text>
+              <TextInput
+                style={styles.rejectFeedbackInput}
+                placeholder={t('qaReview.rejectPlaceholder')}
+                placeholderTextColor="#64748b"
+                value={rejectReason}
+                onChangeText={setRejectReason}
+                multiline
+                maxLength={REJECT_REASON_MAX_LENGTH}
+                editable={!acting}
+                textAlignVertical="top"
+                {...(Platform.OS === 'web' ? ({ autoComplete: 'off' } as object) : {})}
+              />
+              <Text style={styles.rejectFeedbackCounter}>
+                {t('qaReview.rejectCharCounter', {
+                  current: rejectReason.trim().length,
+                  max: REJECT_REASON_MAX_LENGTH,
+                  min: REJECT_REASON_MIN_LENGTH,
+                })}
+              </Text>
+            </View>
+            <View style={styles.actions}>
+              <TouchableOpacity
+                style={[styles.approveBtn, acting && styles.btnDisabled]}
+                onPress={() => {
+                  if (Platform.OS === 'web') {
+                    if (typeof window !== 'undefined' && window.confirm(t('qaReview.confirmApprove'))) approve();
+                  } else {
+                    Alert.alert(t('qaReview.confirmApproveTitle'), t('qaReview.confirmApprove'), [
+                      { text: t('login.cancel'), style: 'cancel' },
+                      { text: t('qaReview.approve'), onPress: approve },
+                    ]);
+                  }
+                }}
+                disabled={acting}
+              >
+                <Ionicons name="checkmark-circle" size={22} color="#fff" />
+                <Text style={styles.approveBtnText}>{t('qaReview.approve')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
-                  styles.modalConfirm,
-                  (acting || rejectReason.trim().length < REJECT_REASON_MIN_LENGTH) && styles.modalConfirmDisabled,
+                  styles.rejectBtn,
+                  acting && styles.btnDisabled,
+                  rejectReason.trim().length < REJECT_REASON_MIN_LENGTH && styles.rejectBtnSoftDisabled,
                 ]}
-                onPress={reject}
-                disabled={acting || rejectReason.trim().length < REJECT_REASON_MIN_LENGTH}
+                onPress={tryReject}
+                disabled={acting}
               >
-                <Text style={styles.modalConfirmText}>{t('qaReview.sendReject')}</Text>
+                <Ionicons name="close-circle" size={22} color="#fff" />
+                <Text style={styles.rejectBtnText}>{t('qaReview.reject')}</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
+          </>
+        ) : null}
+      </ScrollView>
     </View>
   );
 }
@@ -432,7 +421,6 @@ const styles = StyleSheet.create({
   block: { marginBottom: 16 },
   blockTitle: { fontSize: 14, fontWeight: '700', color: '#94a3b8', marginBottom: 8 },
   blockBody: { color: '#e2e8f0', fontSize: 15, lineHeight: 22 },
-  mono: { color: '#cbd5e1', fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
   mediaBox: {
     minHeight: 120,
     marginBottom: 20,
@@ -480,38 +468,33 @@ const styles = StyleSheet.create({
   },
   rejectBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
   btnDisabled: { opacity: 0.5 },
-  error: { color: '#f87171', padding: 24, fontSize: 16 },
-  warn: { color: '#fbbf24', padding: 24, fontSize: 15 },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  modalBox: {
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
-    padding: 20,
+  rejectBtnSoftDisabled: { opacity: 0.65 },
+  rejectFeedbackBlock: {
+    marginTop: 8,
+    marginBottom: 4,
+    padding: 16,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: 'rgba(248, 113, 113, 0.4)',
+    backgroundColor: 'rgba(127, 29, 29, 0.18)',
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: '#f8fafc', marginBottom: 8 },
-  modalSubtitle: { fontSize: 13, color: '#94a3b8', lineHeight: 19, marginBottom: 14 },
-  modalInput: {
-    minHeight: 100,
+  rejectFeedbackTitle: { fontSize: 16, fontWeight: '700', color: '#fecaca', marginBottom: 6 },
+  rejectFeedbackSubtitle: { fontSize: 13, color: '#fca5a5', lineHeight: 19, marginBottom: 12 },
+  rejectFeedbackInput: {
+    width: '100%',
+    minHeight: 120,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#475569',
     borderRadius: 10,
     padding: 12,
     color: '#f1f5f9',
+    fontSize: 15,
+    lineHeight: 22,
     textAlignVertical: 'top',
     marginBottom: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
   },
-  modalCounter: { fontSize: 12, color: '#64748b', marginBottom: 16 },
-  modalRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
-  modalCancel: { paddingVertical: 10, paddingHorizontal: 16 },
-  modalCancelText: { color: '#94a3b8', fontWeight: '600' },
-  modalConfirm: { backgroundColor: '#dc2626', paddingVertical: 10, paddingHorizontal: 18, borderRadius: 10 },
-  modalConfirmDisabled: { opacity: 0.45 },
-  modalConfirmText: { color: '#fff', fontWeight: '700' },
+  rejectFeedbackCounter: { fontSize: 12, color: '#cbd5e1' },
+  error: { color: '#f87171', padding: 24, fontSize: 16 },
+  warn: { color: '#fbbf24', padding: 24, fontSize: 15 },
 });

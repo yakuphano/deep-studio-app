@@ -118,6 +118,8 @@
     "sendReject": "Reddet ve gönder",
     "rejectReasonRequired": "Lütfen red açıklaması yazın.",
     "rejectReasonTooShort": "Açıklama en az {{min}} karakter olmalı. Annotatorun neyi ve neden düzelteceğini yazın.",
+    "confirmReject": "Bu görevi reddedip yukarıdaki açıklamayı annotatora göndermek istiyor musunuz?",
+    "confirmRejectTitle": "Görevi reddet?",
     "dbType": "Veritabanı türü",
     "category": "Kategori",
     "mediaPreview": "Medya önizleme",

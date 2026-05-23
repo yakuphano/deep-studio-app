@@ -118,6 +118,8 @@
     "sendReject": "Reject & send",
     "rejectReasonRequired": "Please enter a rejection explanation.",
     "rejectReasonTooShort": "Use at least {{min}} characters so the annotator knows what to fix and why.",
+    "confirmReject": "Reject this task and send the explanation above to the annotator?",
+    "confirmRejectTitle": "Reject task?",
     "dbType": "DB type",
     "category": "Category",
     "mediaPreview": "Media preview",

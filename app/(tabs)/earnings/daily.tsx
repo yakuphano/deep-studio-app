@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useMemo, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, Platform, Animated, Alert } from 'react-native';
@@ -8,7 +8,8 @@ import { supabase } from '@/lib/supabase';
 import { addEarningsRefreshListener } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCountUp } from '@/hooks/useCountUp';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 interface TaskItem {
   id: string;
   title: string;
@@ -18,6 +19,9 @@ interface TaskItem {
 }
 
 export default function DailyEarningsScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
@@ -230,8 +234,9 @@ export default function DailyEarningsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: themeColors.background },
   scrollContent: { padding: 20, paddingBottom: 40 },
   cardsRow: {
     flexDirection: 'row',
@@ -249,18 +254,18 @@ const styles = StyleSheet.create({
   summaryCard: {
     flex: 1,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: themeColors.surface,
     borderRadius: 16,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: themeColors.border,
     ...(Platform.OS === 'web'
-      ? { boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }
+      ? { boxShadow: '0 2px 12px rgba(15, 39, 68, 0.08)' }
       : {}),
   },
   cardLabel: {
     fontSize: 13,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     marginBottom: 8,
     fontWeight: '500',
   },
@@ -299,7 +304,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     marginBottom: 12,
   },
   taskList: { gap: 8 },
@@ -308,12 +313,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 14,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: themeColors.border,
   },
-  taskTitle: { flex: 1, fontSize: 14, color: '#f1f5f9', marginRight: 12 },
+  taskTitle: { flex: 1, fontSize: 14, color: themeColors.text, marginRight: 12 },
   taskPrice: { fontSize: 14, fontWeight: '600', color: '#22c55e' },
-  empty: { color: '#64748b', textAlign: 'center', paddingVertical: 24 },
+  empty: { color: themeColors.textMuted, textAlign: 'center', paddingVertical: 24 },
 });
+}

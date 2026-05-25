@@ -1,21 +1,35 @@
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '@/contexts/AuthContext';
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
+
+const GRID_COLUMNS = 4;
+const GRID_GAP = 10;
+/** content.paddingHorizontal 20 * 2 */
+const CONTENT_HORIZONTAL_PAD = 40;
+const GRID_MAX_WIDTH = 1040;
 
 export default function CreateTaskScreen() {
-  const { t } = useTranslation();
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const router = useRouter();
-  const { user } = useAuth();
+  const { width: windowWidth } = useWindowDimensions();
+
+  const cardWidth = useMemo(() => {
+    const gridW = Math.min(GRID_MAX_WIDTH, Math.max(280, windowWidth - CONTENT_HORIZONTAL_PAD));
+    const raw = (gridW - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
+    return Math.max(68, Math.floor(raw));
+  }, [windowWidth]);
 
   const taskTypes = [
     {
@@ -91,21 +105,25 @@ export default function CreateTaskScreen() {
           Select the type of task you want to create
         </Text>
         
-        <View style={styles.taskTypesGrid}>
+        <View style={[styles.taskTypesGrid, { maxWidth: GRID_MAX_WIDTH, gap: GRID_GAP }]}>
           {taskTypes.map((taskType) => (
             <TouchableOpacity
               key={taskType.id}
-              style={styles.taskTypeCard}
+              style={[styles.taskTypeCard, { width: cardWidth }]}
               onPress={() => handleTaskTypeSelect(taskType.route)}
               activeOpacity={0.8}
             >
               <View style={[styles.iconContainer, { backgroundColor: taskType.color + '20' }]}>
-                <Ionicons name={taskType.icon as any} size={32} color={taskType.color} />
+                <Ionicons name={taskType.icon as any} size={22} color={taskType.color} />
               </View>
-              <Text style={styles.taskTypeTitle}>{taskType.title}</Text>
-              <Text style={styles.taskTypeDescription}>{taskType.description}</Text>
+              <Text style={styles.taskTypeTitle} numberOfLines={2}>
+                {taskType.title}
+              </Text>
+              <Text style={styles.taskTypeDescription} numberOfLines={3}>
+                {taskType.description}
+              </Text>
               <View style={styles.selectButton}>
-                <Ionicons name="arrow-forward" size={16} color="#ffffff" />
+                <Ionicons name="arrow-forward" size={14} color="#ffffff" />
                 <Text style={styles.selectButtonText}>Select</Text>
               </View>
             </TouchableOpacity>
@@ -116,10 +134,11 @@ export default function CreateTaskScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   
   // Back Button
@@ -141,70 +160,75 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#94a3b8',
+    fontSize: 15,
+    color: themeColors.textMuted,
     textAlign: 'center',
-    marginBottom: 32,
+    marginBottom: 18,
+    paddingHorizontal: 8,
   },
   taskTypesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 20,
     justifyContent: 'flex-start',
     alignContent: 'flex-start',
+    alignSelf: 'center',
+    width: '100%',
   },
   taskTypeCard: {
     flexGrow: 0,
-    flexShrink: 1,
-    minWidth: 280,
-    maxWidth: 350,
-    width: 280,
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
+    flexShrink: 0,
+    flexDirection: 'column',
+    backgroundColor: themeColors.surface,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#334155',
-    padding: 24,
+    borderColor: themeColors.border,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
     alignItems: 'center',
-    minHeight: 200,
-    elevation: 4,
+    minHeight: 0,
+    elevation: 2,
   },
   iconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   taskTypeTitle: {
-    fontSize: 18,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#f1f5f9',
-    marginBottom: 8,
+    color: themeColors.text,
+    marginBottom: 4,
     textAlign: 'center',
+    width: '100%',
   },
   taskTypeDescription: {
-    fontSize: 14,
-    color: '#94a3b8',
+    fontSize: 11,
+    color: themeColors.textMuted,
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 20,
-    flex: 1,
+    lineHeight: 15,
+    marginBottom: 10,
+    width: '100%',
+    minHeight: 45,
   },
   selectButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#3b82f6',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     borderRadius: 8,
-    gap: 8,
+    gap: 6,
     elevation: 2,
+    marginTop: 6,
   },
   selectButtonText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     color: '#ffffff',
   },
 });
+}

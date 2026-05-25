@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import { colors } from '@/theme/colors';
-import { taskDetailStyles } from '../../app/(tabs)/task/styles';
+import { createTabTaskDetailStyles } from '@/theme/tabTaskDetailStyles';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
 interface TaskDetailHeaderProps {
   title: string;
@@ -20,6 +20,8 @@ export default function TaskDetailHeader({
   onBack 
 }: TaskDetailHeaderProps) {
   const router = useRouter();
+  const themeColors = useThemeColors();
+  const taskDetailStyles = useMemo(() => createTabTaskDetailStyles(themeColors), [themeColors]);
 
   return (
     <View>

@@ -1,16 +1,10 @@
-export const colors = {
-  background: '#020617',
-  surface: '#0f172a',
-  surfaceElevated: '#1e293b',
-  border: '#334155',
-  borderLight: '#475569',
-  text: '#f8fafc',
-  textMuted: '#94a3b8',
-  textSecondary: '#e2e8f0',
-  accent: '#3b82f6',
-  accentPurple: '#8b5cf6',
-  success: '#22c55e',
-  warning: '#eab308',
-  info: '#3b82f6',
-  error: '#ef4444',
-};
+/**
+ * Geriye dönük: `colors` yalnızca light palet (statik).
+ * Tema destekli ekranlarda `useThemeColors()` kullanın.
+ */
+export type { AppColors, ThemePreference } from './palettes';
+export { lightPalette, darkPalette } from './palettes';
+
+import { lightPalette } from './palettes';
+
+export const colors = lightPalette;

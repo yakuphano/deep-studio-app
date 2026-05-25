@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useMemo, useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   useWindowDimensions,
   Pressable,
+  Alert,
 } from 'react-native';
 import { useRouter, useRootNavigationState, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -16,7 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type TaskType = 'transcription' | 'image';
 
 type Task = {
@@ -40,10 +42,12 @@ function AudioTaskCard({
   item,
   onPress,
   t,
+  styles,
 }: {
   item: Task;
   onPress: (id: string) => void;
   t: (k: string) => string;
+  styles: ReturnType<typeof createStyles>;
 }) {
   const duration = useAudioDuration(item.audio_url);
   return (
@@ -107,13 +111,16 @@ function formatDuration(ms: number | null): string {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-function getLanguageLabel(code: string) {
+function getLanguageLabel(code: string, t: (k: string) => string) {
   const key = `languages.${code}`;
   const label = t(key);
   return label !== key ? label : code;
 }
 
 export default function AudioTasksScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
@@ -222,28 +229,22 @@ export default function AudioTasksScreen() {
     router.push(`/task/${taskId}`);
   }, [userId, audioTasks, fetchAudioTasks]);
 
-  const getLanguageLabel = (code: string) => {
-    const key = `languages.${code}`;
-    const label = t(key);
-    return label !== key ? label : code;
-  };
-
   return (
     <View style={styles.container}>
       {/* Standart Geri Butonu */}
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={20} color="#3b82f6" />
+          <Ionicons name="chevron-back" size={20} color={themeColors.accent} />
         </TouchableOpacity>
       </View>
 
       <Text style={styles.pageTitle}>{t('tasks.pageTitleTranscription')}</Text>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 40 }} />
+        <ActivityIndicator size="large" color={themeColors.accent} style={{ marginTop: 40 }} />
       ) : audioTasks.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="mic-outline" size={80} color="#475569" style={styles.emptyIcon} />
+          <Ionicons name="mic-outline" size={80} color={themeColors.textMuted} style={styles.emptyIcon} />
           <Text style={styles.emptyTitle}>No Audio Tasks</Text>
           <TouchableOpacity style={styles.coloredRefreshButton} onPress={() => fetchAudioTasks(true)} activeOpacity={0.8}>
             <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
@@ -254,7 +255,7 @@ export default function AudioTasksScreen() {
         <FlatList
           data={audioTasks}
           renderItem={({ item }) => (
-            <AudioTaskCard item={item} onPress={handleClaim} t={t} />
+            <AudioTaskCard item={item} onPress={handleClaim} t={t} styles={styles} />
           )}
           keyExtractor={(item) => item.id}
           numColumns={numColumns}
@@ -266,43 +267,44 @@ export default function AudioTasksScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a', padding: 20 },
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: themeColors.background, padding: 20 },
   headerRow: { marginBottom: 8 },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-start',
     padding: 10,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    backgroundColor: themeColors.accentMuted,
     borderWidth: 1,
-    borderColor: '#1e293b',
+    borderColor: themeColors.border,
     borderRadius: 10,
     alignSelf: 'flex-start',
     marginLeft: 20,
   },
-  pageTitle: { fontSize: 22, fontWeight: '700', color: '#f8fafc', marginBottom: 32 },
+  pageTitle: { fontSize: 22, fontWeight: '700', color: themeColors.text, marginBottom: 32 },
   listContainer: { gap: 15 },
   columnWrapper: { justifyContent: 'space-between' },
   card: {
     flex: 1,
     margin: 4,
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: themeColors.border,
     padding: 16,
     minHeight: 180,
   },
-  poolCard: { borderColor: 'rgba(59, 130, 246, 0.3)', borderLeftWidth: 4 },
+  poolCard: { borderColor: 'rgba(59, 130, 246, 0.35)', borderLeftWidth: 4 },
   cardHeader: { marginBottom: 12 },
-  cardTitle: { fontSize: 16, fontWeight: '600', color: '#f1f5f9', marginBottom: 8 },
+  cardTitle: { fontSize: 16, fontWeight: '600', color: themeColors.text, marginBottom: 8 },
   cardMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardPrice: { fontSize: 14, fontWeight: '700', color: '#22c55e' },
-  cardLang: { fontSize: 12, color: '#94a3b8', backgroundColor: 'rgba(148, 163, 184, 0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  cardLang: { fontSize: 12, color: '#94a3b8', backgroundColor: 'rgba(148, 163, 184, 0.12)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   cardBody: { flex: 1 },
   cardDuration: { fontSize: 12, color: '#64748b', marginBottom: 8 },
-  cardDescription: { fontSize: 14, color: '#cbd5e1', lineHeight: 20 },
+  cardDescription: { fontSize: 14, color: '#475569', lineHeight: 20 },
   detailBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -329,7 +331,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#f8fafc',
+    color: themeColors.text,
     marginTop: 20,
     textAlign: 'center',
   },
@@ -354,3 +356,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
+}

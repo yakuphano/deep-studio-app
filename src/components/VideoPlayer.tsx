@@ -1,9 +1,9 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useMemo, useRef, useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Video } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '@/theme/colors';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 /** Tam kontrollü kullanım (parent state) veya yalnızca `videoUrl` ile basit oynatma */
 export type VideoPlayerProps = {
   videoUrl: string | null;
@@ -25,6 +25,9 @@ export type VideoPlayerProps = {
 };
 
 export default function VideoPlayer(props: VideoPlayerProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const {
     videoUrl,
     isPlaying: isPlayingProp,
@@ -149,7 +152,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
       <View style={styles.controlsContainer}>
         <TouchableOpacity style={styles.playButton} onPress={togglePlay}>
-          <Ionicons name={isPlaying ? 'pause' : 'play'} size={24} color={colors.text} />
+          <Ionicons name={isPlaying ? 'pause' : 'play'} size={24} color={themeColors.text} />
         </TouchableOpacity>
 
         <View style={styles.progressContainer}>
@@ -176,11 +179,11 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
         <View style={styles.speedContainer}>
           <TouchableOpacity style={styles.speedButton} onPress={speedDown}>
-            <Ionicons name="remove" size={16} color={colors.text} />
+            <Ionicons name="remove" size={16} color={themeColors.text} />
           </TouchableOpacity>
           <Text style={styles.speedText}>{playbackSpeed}x</Text>
           <TouchableOpacity style={styles.speedButton} onPress={speedUp}>
-            <Ionicons name="add" size={16} color={colors.text} />
+            <Ionicons name="add" size={16} color={themeColors.text} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.resetButton} onPress={resetSpeed}>
             <Text style={styles.resetButtonText}>1x</Text>
@@ -191,14 +194,15 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: themeColors.background,
   },
   videoContainer: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: themeColors.surface,
     borderRadius: 8,
     overflow: 'hidden',
   },
@@ -208,16 +212,16 @@ const styles = StyleSheet.create({
   controlsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceElevated,
+    backgroundColor: themeColors.surfaceElevated,
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: themeColors.border,
   },
   playButton: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: colors.accentPurple,
+    backgroundColor: themeColors.accentPurple,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 16,
@@ -234,18 +238,18 @@ const styles = StyleSheet.create({
   progressBackground: {
     flex: 1,
     height: '100%',
-    backgroundColor: colors.border,
+    backgroundColor: themeColors.border,
     borderRadius: 4,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: colors.accentPurple,
+    backgroundColor: themeColors.accentPurple,
     borderRadius: 4,
   },
   timeText: {
     fontSize: 12,
-    color: colors.textMuted,
+    color: themeColors.textMuted,
     textAlign: 'center',
   },
   speedContainer: {
@@ -258,36 +262,37 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.surface,
+    backgroundColor: themeColors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: themeColors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   speedText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.text,
+    color: themeColors.text,
     minWidth: 40,
     textAlign: 'center',
   },
   resetButton: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    backgroundColor: colors.surface,
+    backgroundColor: themeColors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: themeColors.border,
     borderRadius: 4,
   },
   resetButtonText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.textMuted,
+    color: themeColors.textMuted,
   },
   noVideoText: {
     fontSize: 16,
-    color: colors.textMuted,
+    color: themeColors.textMuted,
     textAlign: 'center',
     marginTop: 100,
   },
 });
+}

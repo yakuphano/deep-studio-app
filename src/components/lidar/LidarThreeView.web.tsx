@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
@@ -6,6 +6,7 @@ import { lidarClassColorHex } from '@/constants/lidarClassColors';
 import type { LidarCuboidAnnotation } from '@/types/lidarAnnotation';
 import type { LidarGizmoMode, LidarPointColorMode, LidarThreeTool, LidarThreeViewProps } from './types';
 import { buildClassicPointCloudBuffers } from '@/lib/lidar/lidarPointCloudGpu';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
 type TcGizmo = TransformControls & {
   _gizmo: { gizmo: Record<string, THREE.Object3D>; picker: Record<string, THREE.Object3D> };
@@ -108,6 +109,49 @@ export default function LidarThreeView({
   onDeleteCuboid,
   onCuboidTransform,
 }: LidarThreeViewProps) {
+  const themeChrome = useThemeColors();
+  const styles = useMemo(
+    () => ({
+      wrap: {
+        position: 'relative' as const,
+        width: '100%',
+        flex: 1,
+        minHeight: 420,
+        borderRadius: 8,
+        overflow: 'hidden' as const,
+        border: `1px solid ${themeChrome.border}`,
+        background: themeChrome.background,
+      },
+      canvasHost: {
+        position: 'absolute' as const,
+        inset: 0,
+      },
+      resetCam: {
+        position: 'absolute' as const,
+        top: 10,
+        right: 10,
+        zIndex: 5,
+        padding: '6px 10px',
+        fontSize: 11,
+        fontWeight: 600,
+        color: themeChrome.text,
+        background: themeChrome.surface,
+        border: `1px solid ${themeChrome.border}`,
+        borderRadius: 8,
+        cursor: 'pointer',
+      },
+      cornerAxes: {
+        position: 'absolute' as const,
+        bottom: 10,
+        left: 10,
+        zIndex: 4,
+        pointerEvents: 'none' as const,
+        opacity: 0.95,
+      },
+    }),
+    [themeChrome]
+  );
+
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const toolRef = useRef(tool);
   const cuboidsRef = useRef(cuboids);
@@ -817,42 +861,3 @@ export default function LidarThreeView({
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  wrap: {
-    position: 'relative',
-    width: '100%',
-    flex: 1,
-    minHeight: 420,
-    borderRadius: 8,
-    overflow: 'hidden',
-    border: '1px solid #334155',
-    background: '#0f172a',
-  },
-  canvasHost: {
-    position: 'absolute',
-    inset: 0,
-  },
-  resetCam: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    zIndex: 5,
-    padding: '6px 10px',
-    fontSize: 11,
-    fontWeight: 600,
-    color: '#e2e8f0',
-    background: 'rgba(30, 41, 59, 0.92)',
-    border: '1px solid #475569',
-    borderRadius: 8,
-    cursor: 'pointer',
-  },
-  cornerAxes: {
-    position: 'absolute',
-    bottom: 10,
-    left: 10,
-    zIndex: 4,
-    pointerEvents: 'none',
-    opacity: 0.95,
-  },
-};

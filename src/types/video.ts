@@ -11,6 +11,11 @@ export interface TaskData {
   transcription?: string;
   annotation_data?: unknown;
   language?: string | null;
+  guideline_url?: string | null;
+  guideline_storage_path?: string | null;
+  guideline_file_name?: string | null;
+  discarded_at?: string | null;
+  discarded_by?: string | null;
 }
 
 export interface VideoAnnotation {

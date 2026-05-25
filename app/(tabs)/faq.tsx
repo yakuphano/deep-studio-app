@@ -1,10 +1,14 @@
-import React, { useEffect } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 export default function FAQScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
@@ -38,19 +42,21 @@ export default function FAQScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: themeColors.background },
   content: { padding: 20, paddingBottom: 40 },
-  title: { fontSize: 24, fontWeight: '700', color: '#f8fafc', marginBottom: 4 },
-  subtitle: { fontSize: 14, color: '#94a3b8', marginBottom: 24 },
+  title: { fontSize: 24, fontWeight: '700', color: themeColors.text, marginBottom: 4 },
+  subtitle: { fontSize: 14, color: themeColors.textMuted, marginBottom: 24 },
   faqCard: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 18,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
-  faqQ: { fontSize: 16, fontWeight: '600', color: '#f1f5f9', marginBottom: 8 },
-  faqA: { fontSize: 15, color: '#94a3b8', lineHeight: 24 },
+  faqQ: { fontSize: 16, fontWeight: '600', color: themeColors.text, marginBottom: 8 },
+  faqA: { fontSize: 15, color: themeColors.textMuted, lineHeight: 24 },
 });
+}

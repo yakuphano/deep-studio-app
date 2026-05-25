@@ -4,6 +4,7 @@ import { Stack } from 'expo-router';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { GuidelineDrawerProvider } from '@/contexts/GuidelineDrawerContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 import TopNavbar from '../components/TopNavbar';
 
 /** Web: TopNavbar is position:fixed — reserve space so routes are not hidden under it. */
@@ -36,11 +37,13 @@ function RootLayoutNav() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <GuidelineDrawerProvider>
-          <RootLayoutNav />
-        </GuidelineDrawerProvider>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <GuidelineDrawerProvider>
+            <RootLayoutNav />
+          </GuidelineDrawerProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }

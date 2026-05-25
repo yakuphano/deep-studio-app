@@ -22,6 +22,9 @@ export interface TaskData {
   guideline_url?: string | null;
   guideline_storage_path?: string | null;
   guideline_file_name?: string | null;
+  /** İşçi bozuk / açılmayan görevi işaretledi */
+  discarded_at?: string | null;
+  discarded_by?: string | null;
   description?: string | null;
 }
 

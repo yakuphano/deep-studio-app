@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnreadMessagesCount } from '@/hooks/useUnreadMessagesCount';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 const navItems = [
   { href: '/dashboard', labelKey: 'nav.dashboard' },
   { href: '/earnings/daily', labelKey: 'nav.earnings' },
@@ -15,6 +16,9 @@ const navItems = [
 ];
 
 export default function NavBar() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
@@ -69,17 +73,20 @@ export default function NavBar() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     paddingTop: 48,
     paddingHorizontal: 16,
+    borderRightWidth: 1,
+    borderRightColor: themeColors.border,
   },
   title: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: themeColors.text,
     marginBottom: 24,
     paddingHorizontal: 8,
   },
@@ -101,16 +108,16 @@ const styles = StyleSheet.create({
   },
   badgeText: { fontSize: 11, color: '#fff', fontWeight: '700' },
   itemActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+    backgroundColor: themeColors.accentMuted,
     borderLeftWidth: 3,
-    borderLeftColor: '#3b82f6',
+    borderLeftColor: themeColors.accent,
   },
   itemText: {
     fontSize: 16,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
   },
   itemTextActive: {
-    color: '#f1f5f9',
+    color: themeColors.accent,
     fontWeight: '600',
   },
   logoutBtn: {
@@ -118,7 +125,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 16,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: themeColors.border,
   },
   logoutText: {
     fontSize: 16,
@@ -126,3 +133,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+}

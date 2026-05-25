@@ -7,6 +7,7 @@ import AnnotationCanvas, { type Annotation, type Tool } from '@/components/Annot
 import { ANNOTATION_LABELS, LABEL_COLORS } from '@/constants/annotationLabels';
 import { videoWorkbenchStyles } from '@/theme/videoWorkbenchStyles';
 import { useVideoWorkbench } from '@/hooks/useVideoWorkbench';
+import { useAuth } from '@/contexts/AuthContext';
 import { VideoSidebar } from '@/components/video/VideoSidebar';
 import { TranscriptionEditor } from '@/components/video/TranscriptionEditor';
 import { VideoHeader } from '@/components/video/VideoHeader';
@@ -17,6 +18,7 @@ const styles = videoWorkbenchStyles;
 function VideoAnnotationMobile({ taskId }: { taskId?: string }) {
   const router = useRouter();
   const { t } = useTranslation();
+  const { user } = useAuth();
   const [activeTool, setActiveTool] = useState<
     'pan' | 'select' | 'bbox' | 'polygon' | 'points' | 'ellipse' | 'cuboid' | 'polyline' | 'semantic' | 'brush' | 'magic_wand'
   >('pan');
@@ -46,6 +48,7 @@ function VideoAnnotationMobile({ taskId }: { taskId?: string }) {
     setAnnotations,
     setSelectedAnnotationId,
     setTranscription,
+    applyDiscard,
   } = useVideoWorkbench(taskId ?? '');
 
   useEffect(() => {
@@ -78,7 +81,13 @@ function VideoAnnotationMobile({ taskId }: { taskId?: string }) {
 
   return (
     <View style={styles.container}>
-      <VideoHeader task={task} isSubmitted={isSubmitted} handleExit={handleExit} />
+      <VideoHeader
+        task={task}
+        isSubmitted={isSubmitted}
+        handleExit={handleExit}
+        userId={user?.id}
+        onPersistDiscard={applyDiscard}
+      />
 
       <View style={styles.annotationLayout}>
         <VideoSidebar

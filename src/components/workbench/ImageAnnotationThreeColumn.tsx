@@ -8,7 +8,8 @@ import {
   customLabelDefinitionsToMap,
   type CustomLabelDefinition,
 } from '@/constants/annotationLabels';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 export type ToolId = WorkbenchDrawingToolId;
 
 export interface ImageAnnotationThreeColumnProps {
@@ -46,6 +47,9 @@ export default function ImageAnnotationThreeColumn({
   builtInChipLabels,
   children,
 }: ImageAnnotationThreeColumnProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const [brushColor, setBrushColor] = useState(DEFAULT_BRUSH_COLOR);
   const [brushPaletteOpen, setBrushPaletteOpen] = useState(false);
 
@@ -111,20 +115,21 @@ export default function ImageAnnotationThreeColumn({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   row: {
     flex: 1,
     flexDirection: 'row',
     minHeight: 0,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   leftScroll: {
     width: 120,
     maxWidth: 120,
     minWidth: 120,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     borderRightWidth: 1,
-    borderRightColor: '#334155',
+    borderRightColor: themeColors.border,
   },
   leftScrollContent: {
     paddingVertical: 10,
@@ -136,15 +141,16 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     minHeight: 0,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   rightCol: {
     width: 280,
     minWidth: 280,
     maxWidth: 280,
     flexShrink: 0,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderLeftWidth: 1,
-    borderLeftColor: '#334155',
+    borderLeftColor: themeColors.border,
   },
 });
+}

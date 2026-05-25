@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useMemo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -28,10 +28,14 @@ import {
   markBroadcastsRead,
   type MessageRow,
 } from '@/lib/messages';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type TabKey = 'inbox' | 'support';
 
 export default function MessagesScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const { user } = useAuth();
@@ -155,7 +159,7 @@ export default function MessagesScreen() {
   if (!user || isAdmin === true) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 40 }} />
+        <ActivityIndicator size="large" color={themeColors.accent} style={{ marginTop: 40 }} />
       </View>
     );
   }
@@ -166,7 +170,7 @@ export default function MessagesScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={100}
     >
-      <LinearGradient colors={['#0f172a', '#0f172a']} style={StyleSheet.absoluteFill} pointerEvents="none" />
+      <LinearGradient colors={[themeColors.background, themeColors.background]} style={StyleSheet.absoluteFill} pointerEvents="none" />
 
       <View style={styles.centerWrapper}>
         <View style={styles.header}>
@@ -176,7 +180,7 @@ export default function MessagesScreen() {
               style={[styles.tabBtn, tab === 'inbox' && styles.tabBtnActive]}
               onPress={() => setTab('inbox')}
             >
-              <Ionicons name="mail-outline" size={18} color={tab === 'inbox' ? '#fff' : '#94a3b8'} />
+              <Ionicons name="mail-outline" size={18} color={tab === 'inbox' ? '#fff' : themeColors.textMuted} />
               <Text style={[styles.tabBtnText, tab === 'inbox' && styles.tabBtnTextActive]}>
                 {t('messages.inboxTab')}
               </Text>
@@ -190,7 +194,7 @@ export default function MessagesScreen() {
               style={[styles.tabBtn, tab === 'support' && styles.tabBtnActive]}
               onPress={() => setTab('support')}
             >
-              <Ionicons name="chatbubbles-outline" size={18} color={tab === 'support' ? '#fff' : '#94a3b8'} />
+              <Ionicons name="chatbubbles-outline" size={18} color={tab === 'support' ? '#fff' : themeColors.textMuted} />
               <Text style={[styles.tabBtnText, tab === 'support' && styles.tabBtnTextActive]}>
                 {t('messages.supportTab')}
               </Text>
@@ -200,7 +204,7 @@ export default function MessagesScreen() {
 
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#3b82f6" />
+            <ActivityIndicator size="large" color={themeColors.accent} />
           </View>
         ) : tab === 'inbox' ? (
           <FlatList
@@ -209,7 +213,7 @@ export default function MessagesScreen() {
             contentContainerStyle={inbox.length === 0 ? styles.emptyList : styles.inboxList}
             ListEmptyComponent={
               <View style={styles.emptyState}>
-                <Ionicons name="mail-open-outline" size={48} color="#475569" />
+                <Ionicons name="mail-open-outline" size={48} color={themeColors.textMuted} />
                 <Text style={styles.emptyTitle}>{t('messages.inboxEmpty')}</Text>
                 <Text style={styles.emptyHint}>{t('messages.inboxEmptyHint')}</Text>
               </View>
@@ -291,7 +295,7 @@ export default function MessagesScreen() {
               <TextInput
                 style={styles.input}
                 placeholder={t('messages.placeholder')}
-                placeholderTextColor="#64748b"
+                placeholderTextColor={themeColors.textMuted}
                 value={input}
                 onChangeText={setInput}
                 multiline
@@ -313,22 +317,23 @@ export default function MessagesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: themeColors.background },
   centerWrapper: {
     flex: 1,
     width: '100%',
     maxWidth: 800,
     alignSelf: 'center',
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
   },
   header: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: 'rgba(30, 41, 59, 0.5)',
+    borderBottomColor: themeColors.border,
+    backgroundColor: themeColors.surfaceElevated,
   },
-  headerTitle: { fontSize: 16, fontWeight: '600', color: '#94a3b8', marginBottom: 12 },
+  headerTitle: { fontSize: 16, fontWeight: '600', color: themeColors.textMuted, marginBottom: 12 },
   tabRow: { flexDirection: 'row', gap: 8 },
   tabBtn: {
     flex: 1,
@@ -338,10 +343,12 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: themeColors.background,
+    borderWidth: 1,
+    borderColor: themeColors.border,
   },
-  tabBtnActive: { backgroundColor: '#3b82f6' },
-  tabBtnText: { fontSize: 14, fontWeight: '600', color: '#94a3b8' },
+  tabBtnActive: { backgroundColor: themeColors.accent, borderColor: themeColors.accent },
+  tabBtnText: { fontSize: 14, fontWeight: '600', color: themeColors.textMuted },
   tabBtnTextActive: { color: '#fff' },
   badge: {
     minWidth: 18,
@@ -358,17 +365,17 @@ const styles = StyleSheet.create({
   inboxList: { padding: 12, paddingBottom: 24 },
   emptyList: { flexGrow: 1, justifyContent: 'center', padding: 24 },
   emptyState: { alignItems: 'center', gap: 8 },
-  emptyTitle: { fontSize: 16, fontWeight: '600', color: '#94a3b8', marginTop: 8 },
-  emptyHint: { fontSize: 14, color: '#64748b', textAlign: 'center' },
+  emptyTitle: { fontSize: 16, fontWeight: '600', color: themeColors.textMuted, marginTop: 8 },
+  emptyHint: { fontSize: 14, color: themeColors.textMuted, textAlign: 'center' },
   inboxCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    backgroundColor: themeColors.surfaceElevated,
     borderRadius: 12,
     padding: 14,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: themeColors.border,
   },
-  inboxCardUnread: { borderColor: 'rgba(59, 130, 246, 0.45)', backgroundColor: 'rgba(59, 130, 246, 0.08)' },
+  inboxCardUnread: { borderColor: 'rgba(59, 130, 246, 0.45)', backgroundColor: themeColors.accentMuted },
   inboxCardHead: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 10 },
   inboxIcon: {
     width: 36,
@@ -379,34 +386,34 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   inboxMeta: { flex: 1 },
-  inboxSubject: { fontSize: 15, fontWeight: '700', color: '#f8fafc' },
-  inboxFrom: { fontSize: 12, color: '#64748b', marginTop: 2 },
-  inboxTime: { fontSize: 11, color: '#64748b' },
-  inboxPreview: { fontSize: 14, color: '#cbd5e1', lineHeight: 20 },
+  inboxSubject: { fontSize: 15, fontWeight: '700', color: themeColors.text },
+  inboxFrom: { fontSize: 12, color: themeColors.textMuted, marginTop: 2 },
+  inboxTime: { fontSize: 11, color: themeColors.textMuted },
+  inboxPreview: { fontSize: 14, color: themeColors.textSecondary, lineHeight: 20 },
   supportBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     padding: 14,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: themeColors.border,
   },
   avatar: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#3b82f6',
+    backgroundColor: themeColors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  supportTitle: { fontSize: 16, fontWeight: '700', color: '#f8fafc' },
-  supportEmail: { fontSize: 12, color: '#64748b', marginTop: 2 },
+  supportTitle: { fontSize: 16, fontWeight: '700', color: themeColors.text },
+  supportEmail: { fontSize: 12, color: themeColors.textMuted, marginTop: 2 },
   list: { padding: 16, paddingBottom: 100 },
-  emptyChat: { textAlign: 'center', color: '#64748b', marginTop: 40, fontSize: 14 },
+  emptyChat: { textAlign: 'center', color: themeColors.textMuted, marginTop: 40, fontSize: 14 },
   bubbleWrap: { width: '100%', marginBottom: 10 },
   bubbleLeft: { alignItems: 'flex-start' },
   bubbleRight: { alignItems: 'flex-end' },
-  bubbleLabel: { fontSize: 11, fontWeight: '600', color: '#94a3b8', marginBottom: 4 },
+  bubbleLabel: { fontSize: 11, fontWeight: '600', color: themeColors.textMuted, marginBottom: 4 },
   bubble: {
     maxWidth: '70%',
     paddingVertical: 10,
@@ -415,41 +422,44 @@ const styles = StyleSheet.create({
   },
   bubbleUser: { borderBottomRightRadius: 4 },
   bubbleAdmin: {
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.surfaceElevated,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: themeColors.border,
     borderBottomLeftRadius: 4,
   },
   bubbleTextUser: { fontSize: 15, color: '#ffffff', lineHeight: 22 },
-  bubbleTextAdmin: { fontSize: 15, color: '#e2e8f0', lineHeight: 22 },
-  bubbleTime: { fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 6, alignSelf: 'flex-end' },
+  bubbleTextAdmin: { fontSize: 15, color: themeColors.text, lineHeight: 22 },
+  bubbleTime: { fontSize: 10, color: themeColors.textMuted, marginTop: 6, alignSelf: 'flex-end' },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     padding: 12,
     paddingBottom: 24,
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    backgroundColor: themeColors.surface,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopColor: themeColors.border,
   },
   input: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: themeColors.background,
     borderRadius: 25,
     paddingHorizontal: 20,
     paddingVertical: 14,
     fontSize: 15,
-    color: '#f1f5f9',
+    color: themeColors.text,
     maxHeight: 120,
+    borderWidth: 1,
+    borderColor: themeColors.border,
   },
   sendBtn: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#3b82f6',
+    backgroundColor: themeColors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 10,
   },
   sendBtnDisabled: { opacity: 0.5 },
 });
+}

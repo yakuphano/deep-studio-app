@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import AnnotationCanvas, { type Annotation, type Tool } from '@/components/AnnotationCanvas';
 import AudioPlayer from "@/components/AudioPlayer";
 import { supabase } from '@/lib/supabase';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 interface MediaViewProps {
   task: {
     id: string;
@@ -34,6 +35,9 @@ export default function MediaView({
   canvasRef,
   isWeb 
 }: MediaViewProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   
   const [processedAudioUrl, setProcessedAudioUrl] = useState<string | null>(null);
   const [audioLoading, setAudioLoading] = useState(true);
@@ -162,41 +166,42 @@ export default function MediaView({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   canvasContainer: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   audioContainer: {
     flex: 1,
     padding: 20,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     justifyContent: 'center',
   },
   audioLabel: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#f1f5f9',
+    color: themeColors.text,
     marginBottom: 20,
     textAlign: 'center',
   },
   audioPlayerWrapper: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
   audioPlaceholder: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 40,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     alignItems: 'center',
   },
   placeholderText: {
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     fontSize: 16,
     textAlign: 'center',
     marginTop: 10,
@@ -211,6 +216,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
 });
+}

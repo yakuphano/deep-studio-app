@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, createElement } from 'react';
+import React, { useMemo, useRef, useCallback, createElement } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,9 @@ import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { useTranslation } from 'react-i18next';
 import type { GuidelineFileSelection } from '@/lib/uploadTaskGuideline';
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
+import { getAdminCreateTaskFormStyles } from '@/theme/adminCreateTaskForm';
 
 const WEB_ACCEPT =
   '.pdf,.doc,.docx,.txt,.md,.rtf,.png,.jpg,.jpeg,.webp,.gif,application/pdf,text/*,image/*';
@@ -34,6 +37,10 @@ type Props = {
 };
 
 export default function GuidelineUploadField({ value, onChange, disabled }: Props) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+  const acf = useMemo(() => getAdminCreateTaskFormStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const webInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -83,7 +90,7 @@ export default function GuidelineUploadField({ value, onChange, disabled }: Prop
   );
 
   return (
-    <View style={styles.wrap}>
+    <View style={acf.formGroup}>
       {Platform.OS === 'web'
         ? createElement('input', {
             ref: webInputRef,
@@ -94,8 +101,8 @@ export default function GuidelineUploadField({ value, onChange, disabled }: Prop
           })
         : null}
 
-      <Text style={styles.label}>{t('adminCreate.guidelineLabel')}</Text>
-      <Text style={styles.hint}>{t('adminCreate.guidelineHint')}</Text>
+      <Text style={acf.label}>{t('adminCreate.guidelineLabel')}</Text>
+      <Text style={acf.fieldHint}>{t('adminCreate.guidelineHint')}</Text>
 
       <TouchableOpacity
         style={[styles.uploadButton, disabled && styles.uploadDisabled]}
@@ -127,42 +134,29 @@ export default function GuidelineUploadField({ value, onChange, disabled }: Prop
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 6,
-  },
-  hint: {
-    fontSize: 13,
-    color: '#94a3b8',
-    marginBottom: 10,
-    lineHeight: 18,
-  },
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   uploadButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1f2937',
+    backgroundColor: themeColors.surface,
     borderWidth: 2,
-    borderColor: '#4c1d95',
+    borderColor: themeColors.border,
     borderStyle: 'dashed',
-    borderRadius: 12,
-    padding: 16,
-    gap: 10,
+    borderRadius: 10,
+    padding: 10,
+    gap: 8,
   },
   uploadDisabled: {
     opacity: 0.5,
   },
   uploadText: {
     fontSize: 15,
-    color: '#e2e8f0',
+    color: themeColors.text,
     fontWeight: '500',
     flexShrink: 1,
+    backgroundColor: 'transparent',
   },
   row: {
     flexDirection: 'row',
@@ -174,6 +168,8 @@ const styles = StyleSheet.create({
   fileMeta: {
     flex: 1,
     fontSize: 13,
-    color: '#a78bfa',
+    color: themeColors.textMuted,
+    backgroundColor: 'transparent',
   },
 });
+}

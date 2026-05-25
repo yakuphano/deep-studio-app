@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 interface AudioAreaProps {
   audioUrl: string | null;
   transcription: string;
@@ -46,6 +47,9 @@ export default function AudioArea({
   onAITranscription,
   onAIFix
 }: AudioAreaProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   return (
     <View style={styles.audioSection}>
       <Text style={styles.sectionLabel}>Audio Label</Text>
@@ -207,22 +211,23 @@ const formatTime = (seconds: number): string => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   audioSection: {
     marginBottom: 10,
   },
   sectionLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     marginBottom: 4,
   },
   audioCard: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 8,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
   playerContent: {
     flexDirection: 'row',
@@ -247,7 +252,7 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: 6,
-    backgroundColor: '#334155',
+    backgroundColor: themeColors.surfaceElevated,
     borderRadius: 3,
     overflow: 'hidden',
   },
@@ -258,7 +263,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     fontSize: 11,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     marginTop: 4,
   },
   noAudioText: {
@@ -269,11 +274,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: themeColors.border,
   },
   speedLabel: {
     fontSize: 11,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     marginBottom: 6,
   },
   speedControlRow: {
@@ -286,7 +291,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 8,
-    backgroundColor: '#334155',
+    backgroundColor: themeColors.surfaceElevated,
     borderWidth: 1,
     borderColor: '#475569',
     justifyContent: 'center',
@@ -297,7 +302,7 @@ const styles = StyleSheet.create({
   },
   speedBtnText: {
     fontSize: 18,
-    color: '#f1f5f9',
+    color: themeColors.text,
     fontWeight: '600',
   },
   speedValue: {
@@ -342,11 +347,11 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   transcriptionCard: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 8,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
   transcriptionInput: {
     color: '#e2e8f0',
@@ -355,3 +360,4 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
 });
+}

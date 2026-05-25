@@ -22,7 +22,8 @@ import { getWorkbenchPathForTask, resolveTaskWorkbenchType } from '@/lib/taskWor
 import { resolvePlaybackAudioUrl, resolveTaskImageUrl } from '@/lib/audioUrl';
 import AudioPlayer from '@/components/AudioPlayer';
 import VideoPlayer from '@/components/VideoPlayer';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 /** Annotator Revisions’da göreceği metin; çok kısa “red” mesajlarını engeller. */
 const REJECT_REASON_MIN_LENGTH = 30;
 const REJECT_REASON_MAX_LENGTH = 2000;
@@ -49,6 +50,9 @@ function useTaskIdParam(): string | undefined {
 }
 
 export default function ReviewTaskDetailScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const id = useTaskIdParam();
   const router = useRouter();
   const { t } = useTranslation();
@@ -259,7 +263,7 @@ export default function ReviewTaskDetailScreen() {
     return (
       <View style={styles.container}>
         <TouchableOpacity style={styles.back} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={22} color="#f8fafc" />
+          <Ionicons name="arrow-back" size={22} color={themeColors.text} />
         </TouchableOpacity>
         <Text style={styles.error}>{t('qaReview.loadError', { message: fetchError })}</Text>
       </View>
@@ -270,7 +274,7 @@ export default function ReviewTaskDetailScreen() {
     return (
       <View style={styles.container}>
         <TouchableOpacity style={styles.back} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={22} color="#f8fafc" />
+          <Ionicons name="arrow-back" size={22} color={themeColors.text} />
         </TouchableOpacity>
         <Text style={styles.error}>{t('qaReview.taskNotFound')}</Text>
       </View>
@@ -281,7 +285,7 @@ export default function ReviewTaskDetailScreen() {
     return (
       <View style={styles.container}>
         <TouchableOpacity style={styles.back} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={22} color="#f8fafc" />
+          <Ionicons name="arrow-back" size={22} color={themeColors.text} />
         </TouchableOpacity>
         <Text style={styles.warn}>{t('qaReview.notInQueue', { status: task.status })}</Text>
       </View>
@@ -292,7 +296,7 @@ export default function ReviewTaskDetailScreen() {
     <View style={styles.container}>
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={22} color="#f8fafc" />
+          <Ionicons name="arrow-back" size={22} color={themeColors.text} />
         </TouchableOpacity>
         <Text style={styles.topTitle} numberOfLines={1}>
           {task.title}
@@ -391,8 +395,9 @@ export default function ReviewTaskDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: themeColors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   topBar: {
     flexDirection: 'row',
@@ -401,9 +406,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: themeColors.border,
+    backgroundColor: themeColors.surface,
   },
-  topTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: '#f8fafc' },
+  topTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: themeColors.text },
   back: { padding: 16 },
   scroll: { padding: 16, paddingBottom: 40 },
   infoBanner: {
@@ -417,22 +423,22 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(56, 189, 248, 0.35)',
     marginBottom: 16,
   },
-  infoBannerText: { flex: 1, color: '#bae6fd', fontSize: 14, lineHeight: 20 },
+  infoBannerText: { flex: 1, color: '#0369a1', fontSize: 14, lineHeight: 20 },
   block: { marginBottom: 16 },
-  blockTitle: { fontSize: 14, fontWeight: '700', color: '#94a3b8', marginBottom: 8 },
-  blockBody: { color: '#e2e8f0', fontSize: 15, lineHeight: 22 },
+  blockTitle: { fontSize: 14, fontWeight: '700', color: themeColors.textMuted, marginBottom: 8 },
+  blockBody: { color: themeColors.text, fontSize: 15, lineHeight: 22 },
   mediaBox: {
     minHeight: 120,
     marginBottom: 20,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    borderColor: themeColors.border,
+    backgroundColor: themeColors.surface,
     overflow: 'hidden',
   },
   mediaInner: { width: '100%', minHeight: 200 },
-  previewImage: { width: '100%', backgroundColor: '#0f172a' },
-  mediaHint: { color: '#94a3b8', fontSize: 14, padding: 20, textAlign: 'center' },
+  previewImage: { width: '100%', backgroundColor: themeColors.canvasMuted },
+  mediaHint: { color: themeColors.textMuted, fontSize: 14, padding: 20, textAlign: 'center' },
   secondaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -445,7 +451,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(56, 189, 248, 0.4)',
     marginBottom: 24,
   },
-  secondaryBtnText: { color: '#38bdf8', fontWeight: '700', fontSize: 15 },
+  secondaryBtnText: { color: '#0284c7', fontWeight: '700', fontSize: 15 },
   actions: { gap: 12, marginTop: 8 },
   approveBtn: {
     flexDirection: 'row',
@@ -476,25 +482,26 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(248, 113, 113, 0.4)',
-    backgroundColor: 'rgba(127, 29, 29, 0.18)',
+    backgroundColor: 'rgba(127, 29, 29, 0.12)',
   },
-  rejectFeedbackTitle: { fontSize: 16, fontWeight: '700', color: '#fecaca', marginBottom: 6 },
-  rejectFeedbackSubtitle: { fontSize: 13, color: '#fca5a5', lineHeight: 19, marginBottom: 12 },
+  rejectFeedbackTitle: { fontSize: 16, fontWeight: '700', color: '#b91c1c', marginBottom: 6 },
+  rejectFeedbackSubtitle: { fontSize: 13, color: '#dc2626', lineHeight: 19, marginBottom: 12 },
   rejectFeedbackInput: {
     width: '100%',
     minHeight: 120,
     borderWidth: 1,
-    borderColor: '#475569',
+    borderColor: themeColors.border,
     borderRadius: 10,
     padding: 12,
-    color: '#f1f5f9',
+    color: themeColors.text,
     fontSize: 15,
     lineHeight: 22,
     textAlignVertical: 'top',
     marginBottom: 8,
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    backgroundColor: themeColors.surface,
   },
-  rejectFeedbackCounter: { fontSize: 12, color: '#cbd5e1' },
+  rejectFeedbackCounter: { fontSize: 12, color: themeColors.textMuted },
   error: { color: '#f87171', padding: 24, fontSize: 16 },
   warn: { color: '#fbbf24', padding: 24, fontSize: 15 },
 });
+}

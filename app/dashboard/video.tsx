@@ -19,7 +19,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { TaskListCard } from '@/components/tasks/TaskListCard';
 import { taskListGridColumnCount, taskListCardSlotWidth } from '@/lib/taskListGrid';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type Task = {
   id: string;
   title: string;
@@ -48,6 +49,9 @@ function getLanguageLabel(code: string) {
 }
 
 export default function VideoTasksScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
@@ -198,20 +202,22 @@ export default function VideoTasksScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   authLoading: {
     flex: 1,
+    backgroundColor: themeColors.background,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
   },
   authLoadingText: {
-    color: '#f8fafc',
+    color: themeColors.text,
     fontSize: 15,
   },
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   breadcrumbRow: {
     flexDirection: 'row',
@@ -232,10 +238,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(139, 92, 246, 0.35)',
   },
   backText: { color: '#c4b5fd', fontSize: 14, fontWeight: '600' },
-  breadcrumbText: { color: '#4b5563', fontSize: 12 },
+  breadcrumbText: { color: themeColors.textMuted, fontSize: 12 },
   pageHeader: { alignItems: 'center', marginTop: 10, marginBottom: 15 },
   pageTitle: {
-    color: '#ffffff',
+    color: themeColors.text,
     fontSize: 24,
     fontWeight: 'bold',
     letterSpacing: 0.5,
@@ -268,10 +274,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   emptyTitle: {
-    color: '#f8fafc',
+    color: themeColors.text,
     fontSize: 22,
     fontWeight: 'bold',
     marginTop: 16,
@@ -293,3 +299,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
+}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,8 @@ import {
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type Tool = 'pan' | 'bbox' | 'polygon' | 'point' | 'ellipse' | 'cuboid' | 'polyline' | 'skeleton' | 'magic_wand';
 
 interface ToolbarProps {
@@ -31,6 +32,9 @@ const tools: { name: string; icon: string; type: Tool }[] = [
 ];
 
 export default function Toolbar({ activeTool, onToolChange, selectedAnnotationId, onDeleteSelected, onUndo, isWeb }: ToolbarProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   return (
     <View style={styles.imageToolbar}>
       {tools.map((tool) => (
@@ -41,7 +45,7 @@ export default function Toolbar({ activeTool, onToolChange, selectedAnnotationId
           activeOpacity={0.8}
           {...(isWeb ? { accessibilityLabel: tool.name, title: tool.name } as any : {})}
         >
-          <Ionicons name={tool.icon as any} size={16} color="#f1f5f9" />
+          <Ionicons name={tool.icon as any} size={16} color={themeColors.text} />
           <Text style={styles.imageToolBtnText}>{tool.name}</Text>
         </TouchableOpacity>
       ))}
@@ -53,7 +57,7 @@ export default function Toolbar({ activeTool, onToolChange, selectedAnnotationId
         activeOpacity={0.8}
         {...(isWeb ? { accessibilityLabel: 'Undo', title: 'Undo' } as any : {})}
       >
-        <Ionicons name="arrow-undo-outline" size={16} color="#f1f5f9" />
+        <Ionicons name="arrow-undo-outline" size={16} color={themeColors.text} />
         <Text style={styles.imageToolBtnText}>Undo</Text>
       </TouchableOpacity>
       
@@ -64,17 +68,18 @@ export default function Toolbar({ activeTool, onToolChange, selectedAnnotationId
         activeOpacity={0.8}
         {...(isWeb ? { accessibilityLabel: 'Undo', title: 'Undo' } as any : {})}
       >
-        <Ionicons name="arrow-undo-outline" size={16} color="#f1f5f9" />
+        <Ionicons name="arrow-undo-outline" size={16} color={themeColors.text} />
         <Text style={styles.imageToolBtnText}>Undo</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   imageToolbar: {
     width: 60,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderTopRightRadius: 8,
     borderBottomRightRadius: 8,
     paddingVertical: 8,
@@ -87,14 +92,14 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 4,
     borderRadius: 6,
-    backgroundColor: '#334155',
+    backgroundColor: themeColors.surfaceElevated,
     minHeight: 52,
   },
   imageToolBtnActive: {
     backgroundColor: '#3b82f6',
   },
   imageToolBtnText: {
-    color: '#f1f5f9',
+    color: themeColors.text,
     fontSize: 10,
     fontWeight: '500',
     marginTop: 2,
@@ -111,3 +116,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#059669',
   },
 });
+}

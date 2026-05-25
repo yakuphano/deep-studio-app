@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useMemo, useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccessReviewQueue } from '@/lib/userRoles';
 import { resolveTaskWorkbenchType } from '@/lib/taskWorkbenchPath';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type QTask = {
   id: string;
   title: string;
@@ -32,6 +33,9 @@ const SUBMITTED_QUEUE_LIMIT = 5000;
 const RECENT_REVIEW_LIMIT = 200;
 
 export default function ReviewQueueScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const { user, loading: authLoading, appRole } = useAuth();
@@ -106,7 +110,7 @@ export default function ReviewQueueScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.back} onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={22} color="#f8fafc" />
+          <Ionicons name="arrow-back" size={22} color={themeColors.text} />
         </TouchableOpacity>
         <View style={styles.headerText}>
           <Text style={styles.title}>{t('qaReview.title')}</Text>
@@ -179,8 +183,9 @@ export default function ReviewQueueScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: themeColors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
     flexDirection: 'row',
@@ -188,37 +193,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: themeColors.border,
     gap: 12,
+    backgroundColor: themeColors.surface,
   },
   back: { padding: 4 },
   headerText: { flex: 1 },
-  title: { fontSize: 20, fontWeight: '800', color: '#f8fafc' },
-  subtitle: { fontSize: 13, color: '#94a3b8', marginTop: 4 },
+  title: { fontSize: 20, fontWeight: '800', color: themeColors.text },
+  subtitle: { fontSize: 13, color: themeColors.textMuted, marginTop: 4 },
   tabRow: { flexDirection: 'row', padding: 12, gap: 8 },
   tab: {
     flex: 1,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: themeColors.surfaceElevated,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: themeColors.border,
   },
-  tabActive: { backgroundColor: 'rgba(56, 189, 248, 0.25)' },
-  tabText: { fontSize: 14, fontWeight: '600', color: '#94a3b8' },
-  tabTextActive: { color: '#e0f2fe' },
+  tabActive: { backgroundColor: themeColors.accentMuted, borderColor: themeColors.accent },
+  tabText: { fontSize: 14, fontWeight: '600', color: themeColors.textMuted },
+  tabTextActive: { color: themeColors.accent },
   listContent: { padding: 16, paddingBottom: 40 },
   card: {
-    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: themeColors.border,
   },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  cardTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: '#f1f5f9' },
-  meta: { fontSize: 13, color: '#94a3b8', marginTop: 8 },
-  metaSmall: { fontSize: 11, color: '#64748b' },
+  cardTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: themeColors.text },
+  meta: { fontSize: 13, color: themeColors.textMuted, marginTop: 8 },
+  metaSmall: { fontSize: 11, color: themeColors.textMuted },
   cardMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -247,6 +255,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.35)',
   },
-  errorBannerText: { color: '#fecaca', fontSize: 13, lineHeight: 18 },
-  empty: { textAlign: 'center', color: '#64748b', marginTop: 40, fontSize: 15 },
+  errorBannerText: { color: '#b91c1c', fontSize: 13, lineHeight: 18 },
+  empty: { textAlign: 'center', color: themeColors.textMuted, marginTop: 40, fontSize: 15 },
 });
+}

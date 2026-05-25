@@ -1,6 +1,7 @@
-import React, { createElement } from 'react';
+import React, { useMemo, createElement } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 export const BRUSH_PRESET_COLORS: { color: string; name: string }[] = [
   { color: '#ff0000', name: 'Kırmızı' },
   { color: '#00ff00', name: 'Yeşil' },
@@ -37,6 +38,9 @@ export interface BrushColorPaletteProps {
  * Ön tanımlı renk ızgarası + web’de native renk seçici (istediğiniz renk).
  */
 export default function BrushColorPalette({ currentColor, onSelectColor, width = 100 }: BrushColorPaletteProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const hex = normalizeHex(currentColor);
 
   return (
@@ -82,9 +86,10 @@ export default function BrushColorPalette({ currentColor, onSelectColor, width =
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   wrap: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#475569',
@@ -95,7 +100,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     marginBottom: 6,
     letterSpacing: 0.5,
   },
@@ -123,7 +128,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: themeColors.border,
   },
   customLabel: {
     fontSize: 11,
@@ -131,3 +136,4 @@ const styles = StyleSheet.create({
     color: '#e2e8f0',
   },
 });
+}

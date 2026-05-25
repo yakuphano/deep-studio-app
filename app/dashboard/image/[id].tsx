@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
+import TaskDiscardCheckbox from '@/components/task/TaskDiscardCheckbox';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAnnotationTaskNav } from '@/contexts/AnnotationTaskNavContext';
@@ -24,7 +25,8 @@ import {
 import { WorkbenchObjectListChrome } from '@/components/workbench/WorkbenchObjectListChrome';
 import { DEFAULT_BRUSH_COLOR } from '@/types/annotations';
 import AudioPlayer from "../../../components/AudioPlayer";
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 interface TaskData {
   id: string;
   title: string;
@@ -39,9 +41,16 @@ interface TaskData {
   transcription?: string;
   annotation_data?: unknown;
   language?: string | null;
+  guideline_url?: string | null;
+  guideline_file_name?: string | null;
+  discarded_at?: string | null;
+  discarded_by?: string | null;
 }
 
 export default function ImageTaskDetailScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const params = useLocalSearchParams<{ id: string | string[] }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const router = useRouter();
@@ -150,6 +159,10 @@ export default function ImageTaskDetailScreen() {
           transcription: data.transcription ?? '',
           annotation_data: data.annotation_data ?? null,
           language: data.language ?? null,
+          guideline_url: data.guideline_url ?? null,
+          guideline_file_name: data.guideline_file_name ?? null,
+          discarded_at: data.discarded_at ?? null,
+          discarded_by: data.discarded_by ?? null,
         };
         setTask(taskData);
         setTranscription(taskData.transcription ?? '');
@@ -447,7 +460,7 @@ export default function ImageTaskDetailScreen() {
           paddingHorizontal: 20,
           paddingVertical: 8,
           marginBottom: 4,
-          backgroundColor: '#0f172a',
+          backgroundColor: themeColors.background,
           minHeight: 40,
           zIndex: 1000,
           gap: 12,
@@ -466,11 +479,21 @@ export default function ImageTaskDetailScreen() {
             <Ionicons name="arrow-back" size={20} color="#3b82f6" />
             <Text style={{ fontSize: 16, fontWeight: '600', color: '#3b82f6', marginLeft: 8 }}>Back</Text>
           </TouchableOpacity>
-          <GuidelineOpenButton
-            variant="header"
-            guidelineUrl={(task as { guideline_url?: string | null })?.guideline_url}
-            guidelineFileName={(task as { guideline_file_name?: string | null })?.guideline_file_name}
-          />
+          <View style={{ alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+            <GuidelineOpenButton
+              variant="header"
+              guidelineUrl={(task as { guideline_url?: string | null })?.guideline_url}
+              guidelineFileName={(task as { guideline_file_name?: string | null })?.guideline_file_name}
+            />
+            {id ? (
+              <TaskDiscardCheckbox
+                taskId={String(id)}
+                discarded={!!task?.discarded_at}
+                disabled={isSubmitted}
+                userId={user?.id}
+              />
+            ) : null}
+          </View>
         </View>
         
         {/* Task Info Overlay */}
@@ -595,7 +618,7 @@ export default function ImageTaskDetailScreen() {
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             onPress={() => handleDeleteAnnotation(a.id)}
                           >
-                            <Ionicons name="trash-outline" size={16} color="#94a3b8" />
+                            <Ionicons name="trash-outline" size={16} color={themeColors.textMuted} />
                           </TouchableOpacity>
                         </View>
                        
@@ -692,15 +715,25 @@ export default function ImageTaskDetailScreen() {
           onPress={navigateBackFromDetail}
           activeOpacity={0.8}
         >
-          <Ionicons name="arrow-back" size={20} color="#f1f5f9" />
+          <Ionicons name="arrow-back" size={20} color={themeColors.text} />
           <Text style={styles.backText}>{t('taskDetail.back')}</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('common.taskDetail')}</Text>
-        <GuidelineOpenButton
-          variant="header"
-          guidelineUrl={(task as { guideline_url?: string | null }).guideline_url}
-          guidelineFileName={(task as { guideline_file_name?: string | null }).guideline_file_name}
-        />
+        <View style={{ alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+          <GuidelineOpenButton
+            variant="header"
+            guidelineUrl={(task as { guideline_url?: string | null }).guideline_url}
+            guidelineFileName={(task as { guideline_file_name?: string | null }).guideline_file_name}
+          />
+          {id ? (
+            <TaskDiscardCheckbox
+              taskId={String(id)}
+              discarded={!!task?.discarded_at}
+              disabled={isSubmitted}
+              userId={user?.id}
+            />
+          ) : null}
+        </View>
       </View>
 
       <ScrollView style={styles.content}>
@@ -887,10 +920,11 @@ export default function ImageTaskDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   containerFullWidth: {
     width: '100%',
@@ -902,7 +936,7 @@ const styles = StyleSheet.create({
     marginRight: 0,
   },
   loadingText: { 
-    color: '#94a3b8', 
+    color: themeColors.textMuted, 
     fontSize: 14, 
     textAlign: 'center', 
     marginTop: 24 
@@ -917,10 +951,10 @@ const styles = StyleSheet.create({
   // Footer styles
   footer: {
     paddingHorizontal: 20,
-    paddingBottom: 20,
-    backgroundColor: '#0f172a',
+    paddingBottom: 8,
+    backgroundColor: themeColors.background,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: themeColors.border,
   },
   
   // Task info bar (sola hizalı — sağ üstteki Guideline ile çakışmasın)
@@ -932,14 +966,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     paddingRight: 168,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
   },
   taskInfoType: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     backgroundColor: 'rgba(148, 163, 184, 0.1)',
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -964,9 +998,9 @@ const styles = StyleSheet.create({
   },
   leftToolbarCol: {
     alignItems: 'center',
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     borderRightWidth: 1,
-    borderRightColor: '#334155',
+    borderRightColor: themeColors.border,
   },
 
   // Center area
@@ -983,11 +1017,11 @@ const styles = StyleSheet.create({
   },
   canvasWorkspace: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     borderRadius: 8,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
   canvasWorkspaceWithGrid: {
     position: 'relative',
@@ -1009,15 +1043,15 @@ const styles = StyleSheet.create({
     minWidth: 280,
     maxWidth: 280,
     padding: 8,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderLeftWidth: 1,
-    borderLeftColor: '#334155',
+    borderLeftColor: themeColors.border,
     flexDirection: 'column',
   },
   rightSidebarTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#f1f5f9',
+    color: themeColors.text,
     marginBottom: 12,
     letterSpacing: 1,
     textTransform: 'uppercase',
@@ -1035,12 +1069,12 @@ const styles = StyleSheet.create({
     marginBottom: 8 
   },
   objectCard: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 12,
     marginBottom: 0,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
   objectCardHeader: {
     flexDirection: 'row',
@@ -1051,7 +1085,7 @@ const styles = StyleSheet.create({
   objectCardTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#f1f5f9',
+    color: themeColors.text,
     flex: 1,
   },
   labelOptionsGrid: {
@@ -1077,8 +1111,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#0f172a',
+    paddingVertical: 6,
+    backgroundColor: themeColors.background,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.08)',
   },
@@ -1093,8 +1127,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   exitButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 8,
     backgroundColor: 'transparent',
     borderWidth: 1,
@@ -1103,29 +1137,29 @@ const styles = StyleSheet.create({
   exitButtonText: { 
     fontSize: 14, 
     color: '#ef4444', 
-    fontWeight: '600' 
+    fontWeight: '500' 
   },
   submitExitButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
     borderRadius: 8,
     backgroundColor: '#3b82f6',
   },
   submitExitButtonText: { 
     fontSize: 14, 
     color: '#fff', 
-    fontWeight: '600' 
+    fontWeight: '500' 
   },
   submitButtonGreen: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
     borderRadius: 8,
     backgroundColor: '#22c55e',
   },
   submitButtonGreenText: { 
     fontSize: 14, 
     color: '#fff', 
-    fontWeight: '600' 
+    fontWeight: '500' 
   },
   submitButtonDisabled: { 
     opacity: 0.6 
@@ -1135,14 +1169,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: 8,
     backgroundColor: '#22c55e',
   },
   submittedText: { 
     fontSize: 14, 
     color: '#fff', 
-    fontWeight: '600' 
+    fontWeight: '500' 
   },
   
   // Header styles
@@ -1154,9 +1188,9 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
   },
   backButton: {
     flexDirection: 'row',
@@ -1166,12 +1200,12 @@ const styles = StyleSheet.create({
   backText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#f1f5f9',
+    color: themeColors.text,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#f1f5f9',
+    color: themeColors.text,
     marginLeft: 16,
     flex: 1,
     textAlign: 'center',
@@ -1179,7 +1213,7 @@ const styles = StyleSheet.create({
   taskTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#f1f5f9',
+    color: themeColors.text,
     paddingHorizontal: 16,
     marginBottom: 8,
     lineHeight: 28,
@@ -1207,15 +1241,15 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#f1f5f9',
+    color: themeColors.text,
     marginBottom: 12,
   },
   audioCard: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
   playerContent: {
     flexDirection: 'row',
@@ -1240,7 +1274,7 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: 4,
-    backgroundColor: '#334155',
+    backgroundColor: themeColors.surfaceElevated,
     borderRadius: 2,
     overflow: 'hidden',
   },
@@ -1250,7 +1284,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     marginTop: 8,
   },
   speedRow: {
@@ -1261,7 +1295,7 @@ const styles = StyleSheet.create({
   },
   speedLabel: {
     fontSize: 14,
-    color: '#f1f5f9',
+    color: themeColors.text,
   },
   speedControlRow: {
     flexDirection: 'row',
@@ -1272,9 +1306,9 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 6,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1283,20 +1317,20 @@ const styles = StyleSheet.create({
   },
   speedBtnText: {
     fontSize: 16,
-    color: '#f1f5f9',
+    color: themeColors.text,
     fontWeight: '600',
   },
   speedValue: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     borderRadius: 6,
   },
   speedValueText: {
     fontSize: 12,
-    color: '#f1f5f9',
+    color: themeColors.text,
     fontWeight: '600',
   },
   noAudioText: {
@@ -1319,16 +1353,16 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   transcriptionCard: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     marginBottom: 12,
   },
   transcriptionInput: {
     fontSize: 14,
-    color: '#f1f5f9',
+    color: themeColors.text,
     minHeight: 120,
     textAlignVertical: 'top',
   },
@@ -1370,3 +1404,4 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
 });
+}

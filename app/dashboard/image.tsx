@@ -16,7 +16,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { TaskListCard } from '@/components/tasks/TaskListCard';
 import { taskListGridColumnCount, taskListCardSlotWidth } from '@/lib/taskListGrid';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type Task = {
   id: string;
   title: string;
@@ -47,6 +48,9 @@ function getLanguageLabel(code: string) {
 }
 
 export default function ImageTasksScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
@@ -175,21 +179,22 @@ export default function ImageTasksScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   authLoading: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
   },
   authLoadingText: {
-    color: '#f8fafc',
+    color: themeColors.text,
     fontSize: 15,
   },
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     paddingTop: 0,
   },
   body: {
@@ -220,7 +225,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(236, 72, 153, 0.35)',
   },
   backText: { color: '#f9a8d4', fontSize: 14, fontWeight: '600' },
-  breadcrumbText: { color: '#4b5563', fontSize: 12 },
+  breadcrumbText: { color: themeColors.textMuted, fontSize: 12 },
   pageHeader: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -231,7 +236,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   pageTitle: {
-    color: '#f8fafc',
+    color: themeColors.text,
     fontSize: 26,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -263,10 +268,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   emptyTitle: {
-    color: '#f8fafc',
+    color: themeColors.text,
     fontSize: 22,
     fontWeight: 'bold',
     marginTop: 16,
@@ -288,3 +293,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
+}

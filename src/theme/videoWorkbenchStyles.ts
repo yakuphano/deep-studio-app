@@ -1,9 +1,10 @@
 import { StyleSheet } from 'react-native';
+import { colors } from './colors';
 
 export const videoWorkbenchStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: colors.background,
   },
   mainContent: {
     flex: 1,
@@ -33,9 +34,9 @@ export const videoWorkbenchStyles = StyleSheet.create({
   },
   sidePanel: {
     width: 320,
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surface,
     borderLeftWidth: 1,
-    borderLeftColor: 'rgba(255,255,255,0.1)',
+    borderLeftColor: colors.border,
   },
   sidePanelContent: {
     flex: 1,
@@ -44,12 +45,12 @@ export const videoWorkbenchStyles = StyleSheet.create({
   controlsContainer: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomColor: colors.border,
   },
   videoTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
+    color: colors.text,
     marginBottom: 12,
   },
   playbackControls: {
@@ -62,7 +63,7 @@ export const videoWorkbenchStyles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#3b82f6',
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -76,18 +77,18 @@ export const videoWorkbenchStyles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
-    backgroundColor: 'rgba(59,130,246,0.2)',
+    backgroundColor: colors.accentMuted,
     borderWidth: 1,
-    borderColor: '#3b82f6',
+    borderColor: colors.accent,
   },
   speedButtonText: {
     fontSize: 12,
-    color: '#3b82f6',
+    color: colors.accent,
     fontWeight: '500',
   },
   timeDisplay: {
     fontSize: 14,
-    color: '#94a3b8',
+    color: colors.textMuted,
     fontFamily: 'monospace',
   },
   // Transcription section (video workbench: tek blok; flex:1 kartları şişirirdi)
@@ -98,19 +99,19 @@ export const videoWorkbenchStyles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#fff',
+    color: colors.text,
     marginBottom: 12,
   },
   transcriptionContainer: {
-    backgroundColor: '#0f172a',
+    backgroundColor: colors.surfaceElevated,
     borderRadius: 8,
     padding: 10,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
   },
   transcriptionInput: {
     fontSize: 13,
-    color: '#fff',
+    color: colors.text,
     textAlignVertical: 'top',
     minHeight: 72,
     maxHeight: 120,
@@ -125,18 +126,18 @@ export const videoWorkbenchStyles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 6,
-    backgroundColor: '#3b82f6',
+    backgroundColor: colors.accent,
   },
   actionButtonText: {
     fontSize: 12,
-    color: '#fff',
+    color: colors.onAccent,
     fontWeight: '500',
   },
   // Annotation section
   annotationSection: {
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.1)',
+    borderTopColor: colors.border,
   },
   annotationTools: {
     flexDirection: 'row',
@@ -147,16 +148,16 @@ export const videoWorkbenchStyles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 6,
-    backgroundColor: 'rgba(148,163,184,0.2)',
+    backgroundColor: colors.accentMuted,
     alignItems: 'center',
     justifyContent: 'center',
   },
   toolButtonActive: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: colors.accent,
   },
   annotationCanvas: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: colors.canvasMuted,
     borderRadius: 8,
     overflow: 'hidden',
   },
@@ -164,7 +165,7 @@ export const videoWorkbenchStyles = StyleSheet.create({
   labelsSection: {
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.1)',
+    borderTopColor: colors.border,
   },
   labelsGrid: {
     flexDirection: 'row',
@@ -179,8 +180,8 @@ export const videoWorkbenchStyles = StyleSheet.create({
     borderWidth: 1,
   },
   labelOptionSelected: {
-    backgroundColor: '#3b82f6',
-    borderColor: '#3b82f6',
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   labelOptionText: {
     fontSize: 10,
@@ -190,24 +191,24 @@ export const videoWorkbenchStyles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: colors.border,
   },
   timeRangeLabel: {
     fontSize: 11,
-    color: '#64748b',
+    color: colors.textMuted,
     marginBottom: 2,
   },
-  
+
   // Bottom buttons
   bottomButtonBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#0f172a',
+    paddingVertical: 6,
+    backgroundColor: colors.surface,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopColor: colors.border,
   },
   bottomLeftActions: {
     flexDirection: 'row',
@@ -220,56 +221,56 @@ export const videoWorkbenchStyles = StyleSheet.create({
     alignItems: 'center',
   },
   exitButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 8,
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#ef4444',
+    borderColor: colors.error,
   },
-  exitButtonText: { 
-    fontSize: 14, 
-    color: '#ef4444', 
-    fontWeight: '600' 
+  exitButtonText: {
+    fontSize: 14,
+    color: colors.error,
+    fontWeight: '500',
   },
   submitExitButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
     borderRadius: 8,
-    backgroundColor: '#3b82f6',
+    backgroundColor: colors.accent,
   },
-  submitExitButtonText: { 
-    fontSize: 14, 
-    color: '#fff', 
-    fontWeight: '600' 
+  submitExitButtonText: {
+    fontSize: 14,
+    color: colors.onAccent,
+    fontWeight: '500',
   },
   submitButtonGreen: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
     borderRadius: 8,
-    backgroundColor: '#22c55e',
+    backgroundColor: colors.success,
   },
-  submitButtonGreenText: { 
-    fontSize: 14, 
-    color: '#fff', 
-    fontWeight: '600' 
+  submitButtonGreenText: {
+    fontSize: 14,
+    color: colors.onAccent,
+    fontWeight: '500',
   },
-  submitButtonDisabled: { 
-    opacity: 0.6 
+  submitButtonDisabled: {
+    opacity: 0.6,
   },
   submittedBadgeCompact: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#22c55e',
+    backgroundColor: colors.success,
   },
-  submittedText: { 
-    fontSize: 14, 
-    color: '#fff', 
-    fontWeight: '600' 
+  submittedText: {
+    fontSize: 14,
+    color: colors.onAccent,
+    fontWeight: '600',
   },
 
   taskInfoBar: {
@@ -279,19 +280,19 @@ export const videoWorkbenchStyles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     paddingRight: 168,
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: colors.border,
     flexWrap: 'wrap',
     gap: 12,
   },
   taskInfoType: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#f1f5f9',
+    color: colors.text,
   },
   taskInfoPriceBadge: {
-    backgroundColor: '#8b5cf6',
+    backgroundColor: colors.accentPurple,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -299,7 +300,7 @@ export const videoWorkbenchStyles = StyleSheet.create({
   taskInfoPriceText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#fff',
+    color: colors.onAccent,
   },
 
   sectionHeader: {
@@ -319,9 +320,9 @@ export const videoWorkbenchStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+    backgroundColor: colors.accentMuted,
     borderWidth: 1,
-    borderColor: '#8b5cf6',
+    borderColor: colors.accent,
   },
   transcriptionScroll: {
     maxHeight: 100,
@@ -330,7 +331,7 @@ export const videoWorkbenchStyles = StyleSheet.create({
     opacity: 0.5,
   },
   buttonDisabledText: {
-    color: '#94a3b8',
+    color: colors.textMuted,
   },
   transcriptionEditorSidebar: {
     flexGrow: 0,
@@ -338,12 +339,12 @@ export const videoWorkbenchStyles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: colors.border,
   },
 
   /** video-annotation + VideoSidebar layout (önceden eksikti; sayfa çöküyordu) */
   loadingText: {
-    color: '#94a3b8',
+    color: colors.textMuted,
     fontSize: 14,
     textAlign: 'center',
     marginTop: 24,
@@ -365,9 +366,9 @@ export const videoWorkbenchStyles = StyleSheet.create({
     minWidth: 60,
     maxWidth: 60,
     padding: 4,
-    backgroundColor: '#0f172a',
+    backgroundColor: colors.surface,
     borderRightWidth: 1,
-    borderRightColor: '#334155',
+    borderRightColor: colors.border,
     flexDirection: 'column',
     gap: 4,
   },
@@ -375,30 +376,31 @@ export const videoWorkbenchStyles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 6,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1.5,
+    borderColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'column',
     gap: 1,
   },
   toolBtnActivePurple: {
-    backgroundColor: '#7c3aed',
-    borderColor: '#7c3aed',
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+    borderWidth: 2,
   },
   toolBtnLargeText: {
     fontSize: 9,
-    color: '#f1f5f9',
+    color: colors.text,
     marginTop: 1,
-    fontWeight: '500',
+    fontWeight: '700',
   },
   deleteToolBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderColor: '#ef4444',
+    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+    borderColor: colors.error,
   },
   deleteToolBtnText: {
-    color: '#ef4444',
+    color: colors.error,
   },
   annotationMain: {
     flex: 1,
@@ -423,12 +425,12 @@ export const videoWorkbenchStyles = StyleSheet.create({
   videoMissingTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#e2e8f0',
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   videoMissingHint: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: colors.textMuted,
     textAlign: 'center',
     lineHeight: 18,
     maxWidth: 420,
@@ -444,7 +446,7 @@ export const videoWorkbenchStyles = StyleSheet.create({
   optionalNotesToggleText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: colors.textMuted,
   },
   annotationCanvasWrapFullWidth: {
     flex: 1,
@@ -454,11 +456,11 @@ export const videoWorkbenchStyles = StyleSheet.create({
   },
   canvasWorkspace: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: colors.canvasMuted,
     borderRadius: 8,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
   },
   videoPlaceholder: {
     flex: 1,
@@ -468,7 +470,7 @@ export const videoWorkbenchStyles = StyleSheet.create({
     minHeight: 200,
   },
   videoPlaceholderText: {
-    color: '#64748b',
+    color: colors.textMuted,
     fontSize: 16,
     marginTop: 8,
   },
@@ -477,9 +479,9 @@ export const videoWorkbenchStyles = StyleSheet.create({
     minWidth: 280,
     maxWidth: 280,
     padding: 8,
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surface,
     borderLeftWidth: 1,
-    borderLeftColor: '#334155',
+    borderLeftColor: colors.border,
     flexDirection: 'column',
     minHeight: 0,
     alignSelf: 'stretch',
@@ -487,7 +489,7 @@ export const videoWorkbenchStyles = StyleSheet.create({
   rightSidebarTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#f1f5f9',
+    color: colors.text,
     marginBottom: 12,
     letterSpacing: 1,
     textTransform: 'uppercase',
@@ -498,19 +500,19 @@ export const videoWorkbenchStyles = StyleSheet.create({
   },
   objectListEmpty: {
     fontSize: 12,
-    color: '#64748b',
+    color: colors.textMuted,
     fontStyle: 'italic',
   },
   objectCardWrap: {
     marginBottom: 8,
   },
   objectCard: {
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surfaceElevated,
     borderRadius: 12,
     padding: 12,
     marginBottom: 0,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
   },
   objectCardHeader: {
     flexDirection: 'row',
@@ -521,7 +523,7 @@ export const videoWorkbenchStyles = StyleSheet.create({
   objectCardTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#f1f5f9',
+    color: colors.text,
     flex: 1,
   },
   labelOptionsGrid: {

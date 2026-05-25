@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useMemo, useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { getWorkbenchPathForTask } from '@/lib/taskWorkbenchPath';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type Row = {
   id: string;
   title: string;
@@ -27,6 +28,9 @@ type Row = {
 };
 
 export default function RevisionsScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const { user } = useAuth();
@@ -71,14 +75,14 @@ export default function RevisionsScreen() {
 
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#3b82f6" />
+          <ActivityIndicator size="large" color={themeColors.accent} />
         </View>
       ) : (
         <FlatList
           data={rows}
           keyExtractor={(item) => item.id}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor="#3b82f6" />
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={themeColors.accent} />
           }
           contentContainerStyle={styles.list}
           ListEmptyComponent={<Text style={styles.empty}>{t('revisions.empty')}</Text>}
@@ -107,24 +111,25 @@ export default function RevisionsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a', padding: 20, paddingTop: 16 },
-  title: { fontSize: 22, fontWeight: '800', color: '#f8fafc' },
-  subtitle: { fontSize: 14, color: '#94a3b8', marginTop: 8, marginBottom: 20 },
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: themeColors.background, padding: 20, paddingTop: 16 },
+  title: { fontSize: 22, fontWeight: '800', color: themeColors.text },
+  subtitle: { fontSize: 14, color: themeColors.textMuted, marginTop: 8, marginBottom: 20 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   list: { paddingBottom: 40 },
   card: {
-    backgroundColor: 'rgba(30, 41, 59, 0.95)',
+    backgroundColor: themeColors.surface,
     borderRadius: 14,
     padding: 16,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: 'rgba(251, 191, 36, 0.25)',
+    borderColor: 'rgba(251, 191, 36, 0.35)',
   },
-  cardTitle: { fontSize: 17, fontWeight: '700', color: '#f1f5f9' },
-  type: { fontSize: 13, color: '#64748b', marginTop: 4 },
+  cardTitle: { fontSize: 17, fontWeight: '700', color: themeColors.text },
+  type: { fontSize: 13, color: themeColors.textMuted, marginTop: 4 },
   feedback: { flexDirection: 'row', gap: 8, marginTop: 12, alignItems: 'flex-start' },
-  feedbackText: { flex: 1, fontSize: 14, color: '#fde68a', lineHeight: 20 },
+  feedbackText: { flex: 1, fontSize: 14, color: '#854d0e', lineHeight: 20 },
   btn: {
     marginTop: 14,
     flexDirection: 'row',
@@ -136,5 +141,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  empty: { textAlign: 'center', color: '#64748b', marginTop: 48, fontSize: 15 },
+  empty: { textAlign: 'center', color: themeColors.textMuted, marginTop: 48, fontSize: 15 },
 });
+}

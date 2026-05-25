@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useMemo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -27,7 +27,8 @@ import {
   displayUserLabel,
   type ConversationPartner,
 } from '@/lib/messages';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type Message = {
   id: string;
   sender_id: string;
@@ -41,6 +42,9 @@ type ChatUser = ConversationPartner;
 type AdminMode = 'chat' | 'broadcast';
 
 export default function AdminMessagesScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const { user, isAdmin } = useAuth();
@@ -124,7 +128,9 @@ export default function AdminMessagesScreen() {
         }
       )
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, [selectedUser?.id, adminAuthId, fetchMessages, loadUsers]);
 
   const handleBroadcast = async () => {
@@ -209,7 +215,7 @@ export default function AdminMessagesScreen() {
   return (
     <View style={styles.container}>
       <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={22} color="#f8fafc" />
+        <Ionicons name="arrow-back" size={22} color={themeColors.text} />
         <Text style={styles.backBtnText}>{t('admin.userList')}</Text>
       </TouchableOpacity>
 
@@ -218,7 +224,7 @@ export default function AdminMessagesScreen() {
           style={[styles.modeBtn, mode === 'chat' && styles.modeBtnActive]}
           onPress={() => setMode('chat')}
         >
-          <Ionicons name="chatbubbles-outline" size={18} color={mode === 'chat' ? '#fff' : '#94a3b8'} />
+          <Ionicons name="chatbubbles-outline" size={18} color={mode === 'chat' ? '#fff' : themeColors.textMuted} />
           <Text style={[styles.modeBtnText, mode === 'chat' && styles.modeBtnTextActive]}>
             {t('admin.messagesChatMode')}
           </Text>
@@ -227,7 +233,7 @@ export default function AdminMessagesScreen() {
           style={[styles.modeBtn, mode === 'broadcast' && styles.modeBtnActive]}
           onPress={() => setMode('broadcast')}
         >
-          <Ionicons name="megaphone-outline" size={18} color={mode === 'broadcast' ? '#fff' : '#94a3b8'} />
+          <Ionicons name="megaphone-outline" size={18} color={mode === 'broadcast' ? '#fff' : themeColors.textMuted} />
           <Text style={[styles.modeBtnText, mode === 'broadcast' && styles.modeBtnTextActive]}>
             {t('admin.messagesBroadcastMode')}
           </Text>
@@ -278,7 +284,7 @@ export default function AdminMessagesScreen() {
       <View style={styles.main}>
         <View style={styles.userList}>
           <View style={styles.searchWrap}>
-            <Ionicons name="search" size={18} color="#94a3b8" style={styles.searchIcon} />
+            <Ionicons name="search" size={18} color={themeColors.textMuted} style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
               placeholder={t('admin.searchEmployeePlaceholder')}
@@ -377,38 +383,40 @@ export default function AdminMessagesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: themeColors.background },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 16, paddingBottom: 8 },
-  backBtnText: { fontSize: 16, fontWeight: '600', color: '#f8fafc' },
+  backBtnText: { fontSize: 16, fontWeight: '600', color: themeColors.text },
   main: { flex: 1, flexDirection: 'row' },
   userList: {
     width: 260,
     borderRightWidth: 1,
-    borderRightColor: 'rgba(255,255,255,0.08)',
+    borderRightColor: themeColors.border,
     padding: 12,
+    backgroundColor: themeColors.surface,
   },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     height: 40,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surfaceElevated,
     borderRadius: 20,
     paddingHorizontal: 15,
     margin: 10,
     marginBottom: 12,
     zIndex: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: themeColors.border,
   },
   searchIcon: { marginRight: 10 },
   searchInput: {
     flex: 1,
     paddingVertical: 0,
     fontSize: 14,
-    color: '#ffffff',
+    color: themeColors.text,
   },
-  userListTitle: { fontSize: 14, fontWeight: '600', color: '#94a3b8', marginBottom: 12 },
+  userListTitle: { fontSize: 14, fontWeight: '600', color: themeColors.textMuted, marginBottom: 12 },
   userScroll: { flex: 1 },
   userItem: {
     padding: 12,
@@ -422,7 +430,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 8,
   },
-  userItemText: { fontSize: 14, color: '#f1f5f9', flex: 1 },
+  userItemText: { fontSize: 14, color: themeColors.text, flex: 1 },
   unreadDot: {
     minWidth: 20,
     height: 20,
@@ -433,18 +441,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   unreadDotText: { fontSize: 11, fontWeight: '700', color: '#fff' },
-  emptyUsers: { fontSize: 14, color: '#64748b', marginTop: 20 },
+  emptyUsers: { fontSize: 14, color: themeColors.textMuted, marginTop: 20 },
   chatArea: { flex: 1 },
   chatFlex: { flex: 1 },
   placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-  placeholderText: { fontSize: 16, color: '#64748b', marginTop: 16 },
+  placeholderText: { fontSize: 16, color: themeColors.textMuted, marginTop: 16 },
   chatHeader: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: 'rgba(30, 41, 59, 0.5)',
+    borderBottomColor: themeColors.border,
+    backgroundColor: themeColors.surfaceElevated,
   },
-  chatHeaderTitle: { fontSize: 16, fontWeight: '600', color: '#f8fafc' },
+  chatHeaderTitle: { fontSize: 16, fontWeight: '600', color: themeColors.text },
   list: { padding: 16, paddingBottom: 24 },
   bubbleWrap: { marginBottom: 12 },
   bubbleLeft: { alignItems: 'flex-start' },
@@ -461,31 +469,33 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 16,
   },
   bubbleAdmin: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: themeColors.surfaceElevated,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: themeColors.border,
   },
-  bubbleText: { fontSize: 15, color: '#f1f5f9', lineHeight: 22 },
-  bubbleTime: { fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 4 },
+  bubbleText: { fontSize: 15, color: themeColors.text, lineHeight: 22 },
+  bubbleTime: { fontSize: 11, color: themeColors.textMuted, marginTop: 4 },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     padding: 12,
     gap: 10,
     paddingBottom: 24,
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    backgroundColor: themeColors.surface,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopColor: themeColors.border,
   },
   input: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: themeColors.background,
     borderRadius: 24,
     paddingHorizontal: 18,
     paddingVertical: 12,
     fontSize: 15,
-    color: '#f1f5f9',
+    color: themeColors.text,
     maxHeight: 120,
+    borderWidth: 1,
+    borderColor: themeColors.border,
   },
   sendBtn: {
     width: 48,
@@ -510,25 +520,25 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
   },
   modeBtnActive: { backgroundColor: '#3b82f6' },
-  modeBtnText: { fontSize: 14, fontWeight: '600', color: '#94a3b8' },
+  modeBtnText: { fontSize: 14, fontWeight: '600', color: themeColors.textMuted },
   modeBtnTextActive: { color: '#fff' },
   broadcastPanel: { flex: 1 },
   broadcastContent: { padding: 20, paddingBottom: 40, maxWidth: 720, alignSelf: 'center', width: '100%' },
-  broadcastHeading: { fontSize: 20, fontWeight: '700', color: '#f8fafc', marginBottom: 8 },
-  broadcastHint: { fontSize: 14, color: '#94a3b8', marginBottom: 20, lineHeight: 20 },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#94a3b8', marginBottom: 8 },
+  broadcastHeading: { fontSize: 20, fontWeight: '700', color: themeColors.text, marginBottom: 8 },
+  broadcastHint: { fontSize: 14, color: themeColors.textMuted, marginBottom: 20, lineHeight: 20 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: themeColors.textMuted, marginBottom: 8 },
   broadcastInput: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
-    color: '#f1f5f9',
+    color: themeColors.text,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: themeColors.border,
     marginBottom: 16,
   },
   broadcastBody: { minHeight: 160, textAlignVertical: 'top' },
@@ -544,3 +554,4 @@ const styles = StyleSheet.create({
   },
   broadcastSendText: { fontSize: 16, fontWeight: '700', color: '#fff' },
 });
+}

@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
 import { resolvePlayableTaskVideoUrl } from '@/lib/taskVideoUrl';
+import { setTaskDiscardInDb } from '@/lib/taskDiscard';
 import { 
   type TaskData, 
   type VideoAnnotation, 
@@ -305,6 +306,8 @@ export const useVideoWorkbench = (taskId: string) => {
       guideline_url: data.guideline_url ?? null,
       guideline_storage_path: data.guideline_storage_path ?? null,
       guideline_file_name: data.guideline_file_name ?? null,
+      discarded_at: data.discarded_at ?? null,
+      discarded_by: data.discarded_by ?? null,
     };
 
     setTask(taskData);
@@ -616,6 +619,26 @@ export const useVideoWorkbench = (taskId: string) => {
     });
   }, [videoAnnotations]);
 
+  const applyDiscard = useCallback(
+    async (discarded: boolean) => {
+      if (!taskId || !user?.id) return { error: null };
+      const { error } = await setTaskDiscardInDb(taskId, discarded, user.id);
+      if (!error) {
+        setTask((prev) =>
+          prev
+            ? {
+                ...prev,
+                discarded_at: discarded ? new Date().toISOString() : null,
+                discarded_by: discarded ? user.id : null,
+              }
+            : null
+        );
+      }
+      return { error };
+    },
+    [taskId, user?.id]
+  );
+
   return {
     // States
     currentFrame,
@@ -652,5 +675,6 @@ export const useVideoWorkbench = (taskId: string) => {
     setSaving,
     setLoading,
     getSubmitValidationMessages,
+    applyDiscard,
   };
 };

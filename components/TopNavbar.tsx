@@ -16,6 +16,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useUnreadMessagesCount } from '@/hooks/useUnreadMessagesCount';
 import { supabase } from '@/lib/supabase';
 import { canAccessReviewQueue, postLoginPathForRole } from '@/lib/userRoles';
+import type { AppColors } from '@/theme/palettes';
+import { useAppTheme } from '@/contexts/ThemeContext';
 
 const NAV_ITEMS = [
   { href: '/dashboard', labelKey: 'nav.dashboard' },
@@ -26,6 +28,9 @@ const NAV_ITEMS = [
 ];
 
 export default function TopNavbar() {
+  const { theme, colors: themeColors, setTheme } = useAppTheme();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
@@ -80,7 +85,7 @@ export default function TopNavbar() {
             <Text style={styles.brandText}>Deep Studio</Text>
           </View>
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color="#3b82f6" />
+            <ActivityIndicator size="small" color={themeColors.accent} />
             <Text style={styles.loadingText}>Checking access...</Text>
           </View>
         </View>
@@ -146,9 +151,40 @@ export default function TopNavbar() {
                 </View>
               )}
             </View>
+            <View style={styles.mobileRowSpacer} />
             <TouchableOpacity style={styles.menuBtn} onPress={() => { setMenuOpen(!menuOpen); setLangDropdownOpen(false); }}>
               <Text style={styles.menuIcon}>☰</Text>
             </TouchableOpacity>
+            <View style={styles.themeToggleWrap}>
+              <TouchableOpacity
+                style={[styles.themeToggleBtn, theme === 'light' && styles.themeToggleBtnActive]}
+                onPress={() => setTheme('light')}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={t('profile.themeLight')}
+                accessibilityState={{ selected: theme === 'light' }}
+              >
+                <Ionicons
+                  name="sunny"
+                  size={18}
+                  color={theme === 'light' ? themeColors.onAccent : themeColors.textMuted}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.themeToggleBtn, theme === 'dark' && styles.themeToggleBtnActive]}
+                onPress={() => setTheme('dark')}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={t('profile.themeDark')}
+                accessibilityState={{ selected: theme === 'dark' }}
+              >
+                <Ionicons
+                  name="moon"
+                  size={18}
+                  color={theme === 'dark' ? themeColors.onAccent : themeColors.textMuted}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
           <View style={styles.navRow}>
@@ -206,6 +242,36 @@ export default function TopNavbar() {
               <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
                 <Text style={styles.logoutText}>{t('nav.logout')}</Text>
               </TouchableOpacity>
+              <View style={styles.themeToggleWrap}>
+                <TouchableOpacity
+                  style={[styles.themeToggleBtn, theme === 'light' && styles.themeToggleBtnActive]}
+                  onPress={() => setTheme('light')}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('profile.themeLight')}
+                  accessibilityState={{ selected: theme === 'light' }}
+                >
+                  <Ionicons
+                    name="sunny"
+                    size={18}
+                    color={theme === 'light' ? themeColors.onAccent : themeColors.textMuted}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.themeToggleBtn, theme === 'dark' && styles.themeToggleBtnActive]}
+                  onPress={() => setTheme('dark')}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('profile.themeDark')}
+                  accessibilityState={{ selected: theme === 'dark' }}
+                >
+                  <Ionicons
+                    name="moon"
+                    size={18}
+                    color={theme === 'dark' ? themeColors.onAccent : themeColors.textMuted}
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         )}
@@ -252,12 +318,18 @@ export default function TopNavbar() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: themeColors.border,
     paddingBottom: 8,
+    shadowColor: '#0f2744',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   containerWeb: {
     position: 'fixed' as any,
@@ -270,6 +342,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    marginLeft: 'auto',
+  },
+  themeToggleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: themeColors.border,
+    overflow: 'hidden',
+  },
+  themeToggleBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 11,
+    backgroundColor: themeColors.surfaceElevated,
+  },
+  themeToggleBtnActive: {
+    backgroundColor: themeColors.accent,
   },
   inner: {
     flexDirection: 'row',
@@ -289,7 +378,7 @@ const styles = StyleSheet.create({
   brandText: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: themeColors.text,
     letterSpacing: 0.5,
   },
   loadingContainer: {
@@ -298,7 +387,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   loadingText: {
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     fontSize: 14,
   },
   navRow: {
@@ -314,7 +403,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   navItemActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+    backgroundColor: themeColors.accentMuted,
   },
   navItemAdmin: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
@@ -325,7 +414,7 @@ const styles = StyleSheet.create({
   navItemInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   navText: {
     fontSize: 14,
-    color: '#FFFFFF',
+    color: themeColors.textSecondary,
     fontWeight: '500',
   },
   badge: {
@@ -340,7 +429,7 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 11, color: '#fff', fontWeight: '700' },
   dropdownItemInner: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   navTextActive: {
-    color: '#FFFFFF',
+    color: themeColors.accent,
     fontWeight: '600',
   },
   navTextAdmin: {
@@ -348,7 +437,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   navTextAdminActive: {
-    color: '#FFFFFF',
+    color: themeColors.onAccent,
     fontWeight: '700',
   },
   langDropdownWrap: {
@@ -365,7 +454,7 @@ const styles = StyleSheet.create({
   langText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#FFFFFF',
+    color: themeColors.textSecondary,
   },
   langChevron: {
     marginLeft: 4,
@@ -376,12 +465,17 @@ const styles = StyleSheet.create({
     right: 0,
     marginTop: 4,
     minWidth: 72,
-    backgroundColor: 'rgba(30, 41, 59, 0.98)',
+    backgroundColor: themeColors.surface,
     borderRadius: 10,
     padding: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: themeColors.border,
     zIndex: 1001,
+    shadowColor: '#0f2744',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
   langOption: {
     paddingVertical: 10,
@@ -389,15 +483,15 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   langOptionActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+    backgroundColor: themeColors.accentMuted,
   },
   langOptionText: {
     fontSize: 15,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     fontWeight: '500',
   },
   langOptionTextActive: {
-    color: '#f8fafc',
+    color: themeColors.accent,
     fontWeight: '600',
   },
   logoutBtn: {
@@ -415,23 +509,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
+    minWidth: 0,
+  },
+  mobileRowSpacer: {
+    flex: 1,
+    minWidth: 4,
   },
   menuBtn: {
     padding: 10,
   },
   menuIcon: {
     fontSize: 22,
-    color: '#f8fafc',
+    color: themeColors.text,
     fontWeight: '600',
   },
   dropdown: {
     marginTop: 12,
     marginHorizontal: 20,
-    backgroundColor: 'rgba(30, 41, 59, 0.95)',
+    backgroundColor: themeColors.surface,
     borderRadius: 16,
     padding: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: themeColors.border,
   },
   dropdownItem: {
     paddingVertical: 14,
@@ -439,14 +539,14 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   dropdownItemActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    backgroundColor: themeColors.accentMuted,
   },
   dropdownText: {
     fontSize: 16,
-    color: '#FFFFFF',
+    color: themeColors.text,
   },
   dropdownTextActive: {
-    color: '#60a5fa',
+    color: themeColors.accent,
     fontWeight: '600',
   },
   dropdownItemAdmin: {
@@ -457,3 +557,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+}

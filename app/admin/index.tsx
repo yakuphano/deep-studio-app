@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -26,7 +26,8 @@ import {
   type ExportTaskRow,
   type ExportFormatKey,
 } from '@/lib/adminTaskExport';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type User = {
   id: string;
   email: string;
@@ -42,7 +43,14 @@ function ActionCard({
   iconColor,
   label,
   onPress,
-}: { icon: keyof typeof Ionicons.glyphMap; iconColor: string; label: string; onPress: () => void }) {
+  styles,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  iconColor: string;
+  label: string;
+  onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
   return (
     <TouchableOpacity style={styles.actionCard} onPress={onPress}>
       <Ionicons name={icon} size={24} color={iconColor} style={styles.actionCardIcon} />
@@ -52,6 +60,9 @@ function ActionCard({
 }
 
 export default function AdminPanelScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const { user } = useAuth();
@@ -245,18 +256,18 @@ export default function AdminPanelScreen() {
 
   if (adminStatusLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: themeColors.background, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={{ color: '#f8fafc', fontSize: 16, marginTop: 16 }}>Checking admin access...</Text>
+        <Text style={{ color: themeColors.text, fontSize: 16, marginTop: 16 }}>Checking admin access...</Text>
       </View>
     );
   }
 
   if (!hasAdminAccess) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: themeColors.background, justifyContent: 'center', alignItems: 'center' }}>
         <Text style={{ color: '#ef4444', fontSize: 18 }}>Access Denied</Text>
-        <Text style={{ color: '#94a3b8', fontSize: 14, marginTop: 8 }}>You don't have admin privileges</Text>
+        <Text style={{ color: themeColors.textMuted, fontSize: 14, marginTop: 8 }}>You don't have admin privileges</Text>
       </View>
     );
   }
@@ -347,7 +358,7 @@ export default function AdminPanelScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/dashboard')}>
-          <Ionicons name="arrow-back" size={22} color="#f8fafc" />
+          <Ionicons name="arrow-back" size={22} color={themeColors.text} />
           <Text style={styles.backButtonText}>Back to Tasks</Text>
         </TouchableOpacity>
 
@@ -386,17 +397,48 @@ export default function AdminPanelScreen() {
 
         {/* Quick Actions */}
         <View style={styles.actionsRow}>
-          <ActionCard icon="add-circle" iconColor="#3b82f6" label="Create New Task" onPress={() => router.push('/admin/tasks/create')} />
-          <ActionCard icon="mail" iconColor="#06b6d4" label={t('admin.messagesAction')} onPress={() => router.push('/admin/messages')} />
           <ActionCard
+            styles={styles}
+            icon="add-circle"
+            iconColor="#3b82f6"
+            label="Create New Task"
+            onPress={() => router.push('/admin/tasks/create')}
+          />
+          <ActionCard
+            styles={styles}
+            icon="mail"
+            iconColor="#06b6d4"
+            label={t('admin.messagesAction')}
+            onPress={() => router.push('/admin/messages')}
+          />
+          <ActionCard
+            styles={styles}
             icon="shield-checkmark"
             iconColor="#38bdf8"
             label={t('admin.qaReviewAction')}
             onPress={() => router.push('/review')}
           />
-          <ActionCard icon="refresh" iconColor="#10b981" label="Refresh Analytics" onPress={fetchDashboardStats} />
-          <ActionCard icon="list-outline" iconColor="#8b5cf6" label="Recent Tasks" onPress={() => router.push('/admin/tasks')} />
-          <ActionCard icon="download" iconColor="#f59e0b" label="Export Data" onPress={() => {}} />
+          <ActionCard
+            styles={styles}
+            icon="refresh"
+            iconColor="#10b981"
+            label="Refresh Analytics"
+            onPress={fetchDashboardStats}
+          />
+          <ActionCard
+            styles={styles}
+            icon="list-outline"
+            iconColor="#8b5cf6"
+            label="Recent Tasks"
+            onPress={() => router.push('/admin/tasks')}
+          />
+          <ActionCard
+            styles={styles}
+            icon="download"
+            iconColor="#f59e0b"
+            label="Export Data"
+            onPress={() => {}}
+          />
         </View>
 
         {/* User Management Section - Always Visible */}
@@ -613,10 +655,11 @@ export default function AdminPanelScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: '#0f172a' 
+    backgroundColor: themeColors.background 
   },
   scroll: {
     paddingHorizontal: 20,
@@ -630,20 +673,24 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: themeColors.surface,
     borderRadius: 8,
     alignSelf: 'flex-start',
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
   },
-  backButtonText: { 
-    fontSize: 14, 
-    fontWeight: '600', 
-    color: '#f8fafc' 
+  backButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: themeColors.text,
+    backgroundColor: 'transparent',
   },
   pageTitle: {
     fontSize: 26,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: themeColors.text,
     marginBottom: 16,
+    backgroundColor: 'transparent',
   },
   statsRow: {
     flexDirection: 'row',
@@ -654,29 +701,32 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     minWidth: 150,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 2,
+    borderColor: themeColors.accent,
     alignItems: 'center',
   },
   statValue: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: themeColors.text,
     marginVertical: 8,
+    backgroundColor: 'transparent',
   },
   statLabel: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     textAlign: 'center',
+    backgroundColor: 'transparent',
   },
   typeBreakdown: {
     fontSize: 10,
-    color: '#64748b',
+    color: themeColors.textMuted,
     textAlign: 'center',
     marginTop: 4,
+    backgroundColor: 'transparent',
   },
   actionsRow: {
     flexDirection: 'row',
@@ -687,11 +737,11 @@ const styles = StyleSheet.create({
   actionCard: {
     flex: 1,
     minWidth: 120,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 2,
+    borderColor: themeColors.accent,
     alignItems: 'center',
   },
   actionCardIcon: {
@@ -699,15 +749,16 @@ const styles = StyleSheet.create({
   },
   actionCardLabel: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: themeColors.text,
     textAlign: 'center',
+    backgroundColor: 'transparent',
   },
   userManagementSection: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 2,
+    borderColor: themeColors.accent,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -718,13 +769,15 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: themeColors.text,
+    backgroundColor: 'transparent',
   },
   userManagementHintText: {
     fontSize: 13,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     lineHeight: 18,
     marginBottom: 14,
+    backgroundColor: 'transparent',
   },
   userManagementActions: {
     gap: 12,
@@ -772,11 +825,11 @@ const styles = StyleSheet.create({
   },
   // Export Section Styles
   exportSection: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 2,
+    borderColor: themeColors.accent,
     marginTop: 24,
   },
   exportForm: {
@@ -785,14 +838,16 @@ const styles = StyleSheet.create({
   exportLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: themeColors.text,
     marginBottom: 8,
+    backgroundColor: 'transparent',
   },
   exportHint: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     marginBottom: 8,
     lineHeight: 16,
+    backgroundColor: 'transparent',
   },
   companyPickerScroll: {
     marginBottom: 8,
@@ -807,24 +862,28 @@ const styles = StyleSheet.create({
   },
   companyPickerChip: {
     maxWidth: 200,
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-    borderWidth: 1,
-    borderColor: '#334155',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
   companyPickerChipActive: {
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-    borderColor: '#f59e0b',
+    backgroundColor: themeColors.accentMuted,
+    borderWidth: 2,
+    borderColor: themeColors.accent,
   },
   companyPickerChipText: {
-    color: '#cbd5e1',
+    color: themeColors.text,
     fontSize: 13,
     fontWeight: '500',
+    backgroundColor: 'transparent',
   },
   companyPickerChipTextActive: {
-    color: '#fbbf24',
+    color: themeColors.accent,
+    fontWeight: '700',
+    backgroundColor: 'transparent',
   },
   exportTaskTypeRow: {
     flexDirection: 'row',
@@ -833,32 +892,36 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   exportChip: {
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-    borderWidth: 1,
-    borderColor: '#1e293b',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
   exportChipActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-    borderColor: '#3b82f6',
+    backgroundColor: themeColors.accentMuted,
+    borderWidth: 2,
+    borderColor: themeColors.accent,
   },
   exportChipText: {
-    color: '#94a3b8',
+    color: themeColors.text,
     fontSize: 14,
     fontWeight: '500',
+    backgroundColor: 'transparent',
   },
   exportChipTextActive: {
-    color: '#3b82f6',
+    color: themeColors.accent,
+    fontWeight: '700',
+    backgroundColor: 'transparent',
   },
   exportInput: {
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-    borderWidth: 1,
-    borderColor: '#1e293b',
+    backgroundColor: themeColors.surface,
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
     borderRadius: 8,
     padding: 12,
-    color: '#f8fafc',
+    color: themeColors.text,
     fontSize: 16,
     marginBottom: 16,
   },
@@ -885,26 +948,30 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   formatChip: {
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-    borderWidth: 1,
-    borderColor: '#1e293b',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 12,
     minWidth: 60,
   },
   formatChipActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-    borderColor: '#3b82f6',
+    backgroundColor: themeColors.accentMuted,
+    borderWidth: 2,
+    borderColor: themeColors.accent,
   },
   formatChipText: {
-    color: '#94a3b8',
+    color: themeColors.text,
     fontSize: 14,
     fontWeight: '500',
     textAlign: 'center',
+    backgroundColor: 'transparent',
   },
   formatChipTextActive: {
-    color: '#3b82f6',
+    color: themeColors.accent,
+    fontWeight: '700',
+    backgroundColor: 'transparent',
   },
   // Date Range Styles
   dateRangeRow: {
@@ -914,24 +981,28 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   dateChip: {
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-    borderWidth: 1,
-    borderColor: '#1e293b',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
   dateChipActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-    borderColor: '#3b82f6',
+    backgroundColor: themeColors.accentMuted,
+    borderWidth: 2,
+    borderColor: themeColors.accent,
   },
   dateChipText: {
-    color: '#94a3b8',
+    color: themeColors.text,
     fontSize: 12,
     fontWeight: '500',
+    backgroundColor: 'transparent',
   },
   dateChipTextActive: {
-    color: '#3b82f6',
+    color: themeColors.accent,
+    fontWeight: '700',
+    backgroundColor: 'transparent',
   },
   customDateContainer: {
     flexDirection: 'row',
@@ -940,12 +1011,12 @@ const styles = StyleSheet.create({
   },
   dateInput: {
     flex: 1,
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-    borderWidth: 1,
-    borderColor: '#1e293b',
+    backgroundColor: themeColors.surface,
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
     borderRadius: 8,
     padding: 12,
-    color: '#f8fafc',
+    color: themeColors.text,
     fontSize: 14,
   },
   // Language Filter Styles
@@ -956,25 +1027,30 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   languageChip: {
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-    borderWidth: 1,
-    borderColor: '#1e293b',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 12,
     minWidth: 80,
   },
   languageChipActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-    borderColor: '#3b82f6',
+    backgroundColor: themeColors.accentMuted,
+    borderWidth: 2,
+    borderColor: themeColors.accent,
   },
   languageChipText: {
-    color: '#94a3b8',
+    color: themeColors.text,
     fontSize: 12,
     fontWeight: '500',
     textAlign: 'center',
+    backgroundColor: 'transparent',
   },
   languageChipTextActive: {
-    color: '#3b82f6',
+    color: themeColors.accent,
+    fontWeight: '700',
+    backgroundColor: 'transparent',
   },
 });
+}

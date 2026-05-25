@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import type { CustomLabelDefinition } from '@/constants/annotationLabels';
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
 const PRESET_SWATCHES = [
   '#ef4444',
@@ -36,6 +38,8 @@ export function WorkbenchObjectListChrome({
   primaryAddDisabled,
 }: Props) {
   const { t } = useTranslation();
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createWorkbenchObjectListChromeStyles(themeColors), [themeColors]);
   const [draft, setDraft] = useState('');
   const [pickedColor, setPickedColor] = useState(PRESET_SWATCHES[6]);
 
@@ -81,7 +85,7 @@ export function WorkbenchObjectListChrome({
                     accessibilityRole="button"
                     accessibilityLabel={`${t('annotation.deleteObject')}: ${lbl}`}
                   >
-                    <Ionicons name="close-circle" size={16} color="#94a3b8" />
+                    <Ionicons name="close-circle" size={16} color={themeColors.textMuted} />
                   </TouchableOpacity>
                 </View>
               ))}
@@ -150,7 +154,7 @@ export function WorkbenchObjectListChrome({
                   accessibilityRole="button"
                   accessibilityLabel={`${t('annotation.deleteObject')}: ${lbl}`}
                 >
-                  <Ionicons name="close-circle" size={16} color="#94a3b8" />
+                  <Ionicons name="close-circle" size={16} color={themeColors.textMuted} />
                 </TouchableOpacity>
               </View>
             ))}
@@ -161,7 +165,8 @@ export function WorkbenchObjectListChrome({
   );
 }
 
-const styles = StyleSheet.create({
+function createWorkbenchObjectListChromeStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   headerSpacer: {
     flex: 1,
     minWidth: 0,
@@ -175,7 +180,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#f1f5f9',
+    color: themeColors.text,
     letterSpacing: 0.5,
     textTransform: 'uppercase',
     maxWidth: 72,
@@ -186,20 +191,20 @@ const styles = StyleSheet.create({
     minWidth: 0,
     minHeight: 32,
     maxHeight: 32,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     borderWidth: 1,
     borderColor: '#475569',
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    color: '#f1f5f9',
+    color: themeColors.text,
     fontSize: 11,
   },
   addBtn: {
     paddingHorizontal: 4,
     paddingVertical: 4,
     borderRadius: 6,
-    backgroundColor: '#334155',
+    backgroundColor: themeColors.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -221,20 +226,20 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.25)',
   },
   swatchSelected: {
-    borderColor: '#f8fafc',
+    borderColor: themeColors.border,
     borderWidth: 2,
   },
   strip: {
     marginBottom: 8,
     paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
     gap: 4,
   },
   stripTitle: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
@@ -247,7 +252,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     maxWidth: '100%',
-    backgroundColor: '#334155',
+    backgroundColor: themeColors.surfaceElevated,
     paddingLeft: 6,
     paddingRight: 4,
     paddingVertical: 3,
@@ -268,3 +273,4 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
 });
+}

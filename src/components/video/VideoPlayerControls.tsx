@@ -1,10 +1,10 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { colors } from '@/theme/colors';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 const PLAYBACK_SPEED_STORAGE_KEY = 'deepstudio_playback_speed';
 const MIN_SPEED = 0.1;
 const MAX_SPEED = 3;
@@ -26,6 +26,9 @@ export default function VideoPlayerControls({
   onTimeUpdate,
   onLoadedMetadata
 }: VideoPlayerControlsProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
@@ -204,7 +207,7 @@ export default function VideoPlayerControls({
           <Ionicons 
             name={isPlaying ? 'pause' : 'play'} 
             size={24} 
-            color={colors.text} 
+            color={themeColors.text} 
           />
         </TouchableOpacity>
 
@@ -240,14 +243,14 @@ export default function VideoPlayerControls({
             style={styles.speedButton}
             onPress={speedDown}
           >
-            <Ionicons name="remove" size={16} color={colors.text} />
+            <Ionicons name="remove" size={16} color={themeColors.text} />
           </TouchableOpacity>
           <Text style={styles.speedText}>{playbackSpeed}x</Text>
           <TouchableOpacity
             style={styles.speedButton}
             onPress={speedUp}
           >
-            <Ionicons name="add" size={16} color={colors.text} />
+            <Ionicons name="add" size={16} color={themeColors.text} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.resetButton}
@@ -262,21 +265,22 @@ export default function VideoPlayerControls({
           style={styles.captureButton}
           onPress={captureFrame}
         >
-          <Ionicons name="camera" size={20} color={colors.text} />
+          <Ionicons name="camera" size={20} color={themeColors.text} />
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: themeColors.background,
   },
   videoContainer: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: themeColors.surface,
     borderRadius: 8,
     overflow: 'hidden',
   },
@@ -292,19 +296,19 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: themeColors.surface,
     borderRadius: 8,
   },
   noVideoText: {
     fontSize: 16,
-    color: colors.textMuted,
+    color: themeColors.textMuted,
     textAlign: 'center',
   },
   controlsContainer: {
-    backgroundColor: colors.surfaceElevated,
+    backgroundColor: themeColors.surfaceElevated,
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: themeColors.border,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
@@ -313,7 +317,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: colors.accentPurple,
+    backgroundColor: themeColors.accentPurple,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -329,18 +333,18 @@ const styles = StyleSheet.create({
   progressBackground: {
     flex: 1,
     height: '100%',
-    backgroundColor: colors.border,
+    backgroundColor: themeColors.border,
     borderRadius: 4,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: colors.accentPurple,
+    backgroundColor: themeColors.accentPurple,
     borderRadius: 4,
   },
   timeText: {
     fontSize: 12,
-    color: colors.textMuted,
+    color: themeColors.textMuted,
     textAlign: 'center',
   },
   speedContainer: {
@@ -352,38 +356,39 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.surface,
+    backgroundColor: themeColors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: themeColors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   speedText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.text,
+    color: themeColors.text,
     minWidth: 40,
     textAlign: 'center',
   },
   resetButton: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    backgroundColor: colors.surface,
+    backgroundColor: themeColors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: themeColors.border,
     borderRadius: 4,
   },
   resetButtonText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.textMuted,
+    color: themeColors.textMuted,
   },
   captureButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.accentPurple,
+    backgroundColor: themeColors.accentPurple,
     alignItems: 'center',
     justifyContent: 'center',
   },
 });
+}

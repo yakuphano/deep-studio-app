@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
 function formatStatusLabel(status: string) {
   if (!status?.trim()) return 'Pending';
@@ -43,14 +45,17 @@ export function TaskListCard({
   guidelineUrl?: string | null;
   guidelineFileName?: string | null;
 }) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createTaskListCardStyles(themeColors), [themeColors]);
+
   const priceLabel = price != null ? `₺${price}` : '—';
 
   return (
-    <View style={[styles.root, style]}>
+    <View style={[styles.root, { borderColor: accent }, style]}>
       <Pressable
-        style={({ pressed, hovered }) => [
+        style={({ pressed }) => [
           styles.pressMain,
-          (Boolean(hovered) || pressed) && { borderColor: accent },
+          pressed && styles.pressMainActive,
         ]}
         onPress={onPress}
       >
@@ -101,19 +106,20 @@ export function TaskListCard({
   );
 }
 
-const styles = StyleSheet.create({
+function createTaskListCardStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   root: {
     minWidth: 0,
-    backgroundColor: '#1a1f2e',
+    backgroundColor: themeColors.surface,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.2)',
+    borderWidth: 2,
     overflow: 'hidden',
   },
   pressMain: {
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'transparent',
+  },
+  pressMainActive: {
+    opacity: 0.94,
   },
   footer: {
     paddingHorizontal: 11,
@@ -124,7 +130,7 @@ const styles = StyleSheet.create({
     height: 96,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#252d3d',
+    backgroundColor: themeColors.surfaceElevated,
   },
   iconCircle: {
     width: 56,
@@ -142,7 +148,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: themeColors.text,
     letterSpacing: -0.15,
     lineHeight: 19,
   },
@@ -150,7 +156,7 @@ const styles = StyleSheet.create({
     marginTop: -2,
     fontSize: 11,
     fontWeight: '500',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
   },
   metaRow: {
     flexDirection: 'row',
@@ -203,3 +209,4 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 });
+}

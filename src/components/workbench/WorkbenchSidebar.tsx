@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import { colors } from '@/theme/colors';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 interface WorkbenchSidebarProps {
   activeTool: string;
   isBrushActive: boolean;
@@ -41,6 +41,9 @@ export default function WorkbenchSidebar({
   saving,
   isWeb
 }: WorkbenchSidebarProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
 
   const tools = [
     {
@@ -81,12 +84,14 @@ export default function WorkbenchSidebar({
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Tools</Text>
         <ScrollView style={styles.toolsContainer}>
-          {tools.map((tool) => (
+          {tools.map((tool) => {
+            const toolActive = activeTool === tool.id && !isBrushActive;
+            return (
             <TouchableOpacity
               key={tool.id}
               style={[
                 styles.toolButton,
-                activeTool === tool.id && !isBrushActive && styles.toolButtonActive
+                toolActive && styles.toolButtonActive
               ]}
               onPress={() => {
                 onActiveToolChange(tool.id);
@@ -99,10 +104,10 @@ export default function WorkbenchSidebar({
                   } as any)
                 : {})}
             >
-              <Ionicons name={tool.icon as any} size={20} color="#f1f5f9" />
-              <Text style={styles.toolButtonText}>{tool.label}</Text>
+              <Ionicons name={tool.icon as any} size={20} color={toolActive ? '#ffffff' : themeColors.text} />
+              <Text style={[styles.toolButtonText, toolActive && styles.toolButtonTextActive]}>{tool.label}</Text>
             </TouchableOpacity>
-          ))}
+          );})}
           
           {/* Undo Button */}
           <TouchableOpacity
@@ -111,8 +116,8 @@ export default function WorkbenchSidebar({
             activeOpacity={0.8}
             {...(isWeb ? { accessibilityLabel: 'Undo (V)', title: 'Undo (V)' } as any : {})}
           >
-            <Ionicons name="arrow-undo-outline" size={20} color="#f1f5f9" />
-            <Text style={styles.toolButtonText}>Undo (V)</Text>
+            <Ionicons name="arrow-undo-outline" size={20} color={activeTool === 'undo' && !isBrushActive ? '#ffffff' : themeColors.text} />
+            <Text style={[styles.toolButtonText, activeTool === 'undo' && !isBrushActive && styles.toolButtonTextActive]}>Undo (V)</Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
@@ -228,23 +233,24 @@ export default function WorkbenchSidebar({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     width: 280,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRightWidth: 1,
-    borderRightColor: '#334155',
+    borderRightColor: themeColors.border,
     flexDirection: 'column',
   },
   section: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
   },
   sectionTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     marginBottom: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -256,9 +262,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 6,
-    backgroundColor: '#374151',
-    borderWidth: 1,
-    borderColor: '#4b5563',
+    backgroundColor: themeColors.surface,
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'column',
@@ -266,17 +272,21 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   toolButtonActive: {
-    backgroundColor: colors.accentPurple,
-    borderColor: colors.accentPurple,
+    backgroundColor: themeColors.accentPurple,
+    borderColor: themeColors.accentPurple,
+    borderWidth: 2,
   },
   toolButtonText: {
     fontSize: 9,
-    color: '#f1f5f9',
+    color: themeColors.text,
     textAlign: 'center',
     marginTop: 2,
-    fontWeight: '600',
+    fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  toolButtonTextActive: {
+    color: '#ffffff',
   },
   aiButtonWrapper: {
     marginBottom: 8,
@@ -286,11 +296,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: colors.accentPurple,
+    backgroundColor: themeColors.accentPurple,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 6,
     alignSelf: 'flex-start',
+    borderWidth: 2,
+    borderColor: '#0f2744',
   },
   aiTranscribeButtonDisabled: {
     opacity: 0.6,
@@ -301,31 +313,32 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   transcriptionCard: {
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     borderRadius: 8,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
   transcriptionLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     marginBottom: 8,
   },
   transcriptionInput: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 6,
     padding: 12,
-    color: '#f1f5f9',
+    color: themeColors.text,
     fontSize: 14,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     textAlignVertical: 'top',
     minHeight: 80,
   },
   submitSection: {
-    padding: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     marginTop: 'auto',
   },
   submitContainer: {
@@ -337,19 +350,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
     borderRadius: 8,
   },
   submitExitButton: {
     backgroundColor: '#3b82f6',
+    borderWidth: 2,
+    borderColor: '#1e40af',
   },
   submitSaveButton: {
     backgroundColor: '#8b5cf6',
+    borderWidth: 2,
+    borderColor: '#5b21b6',
   },
   submitButtonText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
     color: '#fff',
   },
   submittedBadge: {
@@ -361,10 +378,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 6,
     backgroundColor: '#8b5cf6',
+    borderWidth: 2,
+    borderColor: '#5b21b6',
   },
   submittedText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
     color: '#fff',
   },
 });
+}

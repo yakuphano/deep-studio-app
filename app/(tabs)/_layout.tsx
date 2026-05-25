@@ -1,11 +1,13 @@
 import { Stack } from 'expo-router';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
 export default function MainLayout() {
+  const colors = useThemeColors();
   return (
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#0f172a', width: '100%' },
+        contentStyle: { backgroundColor: colors.background, width: '100%' },
         // Note: unmountOnBlur is not available in Stack navigation
         // The infinite loop issue should be resolved by the Air-Gap refactor already applied
       }}

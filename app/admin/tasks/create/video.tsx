@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, createElement } from 'react';
+import React, { useMemo, useState, useRef, useCallback, createElement } from 'react';
 import {
   View,
   Text,
@@ -29,6 +29,9 @@ import {
   uploadGuidelineIfSelected,
   type GuidelineFileSelection,
 } from '@/lib/uploadTaskGuideline';
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
+import { getAdminCreateTaskFormStyles } from '@/theme/adminCreateTaskForm';
 
 /** Web file dialog + DocumentPicker: zip ve video */
 const WEB_FILE_ACCEPT =
@@ -192,6 +195,10 @@ function validateFileSizeForStorage(sizeBytes: number): string | null {
 }
 
 export default function CreateVideoTaskScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+  const acf = useMemo(() => getAdminCreateTaskFormStyles(themeColors), [themeColors]);
+
   const router = useRouter();
   const { user } = useAuth();
 
@@ -712,73 +719,76 @@ export default function CreateVideoTaskScreen() {
       >
         <Text style={styles.title}>Create Video Annotation Task</Text>
 
-        <View style={styles.form}>
-          <View style={styles.leftColumn}>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Company Name *</Text>
+        <View style={acf.formPageMax}>
+          <View style={acf.formPanel}>
+            <Text style={acf.formEyebrow}>Task setup</Text>
+        <View style={acf.form}>
+          <View style={acf.leftColumn}>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Company Name *</Text>
               <TextInput
                 style={[styles.input, focusedInput === 'company_name' && styles.inputFocused]}
                 value={taskData.company_name}
                 onChangeText={(text) => setTaskData((prev) => ({ ...prev, company_name: text }))}
-                placeholder="Enter company or client name (e.g. TransPerfect, Google)"
-                placeholderTextColor="#9ca3af"
+                placeholder="Client or company name"
+                placeholderTextColor={themeColors.textMuted}
                 onFocus={() => setFocusedInput('company_name')}
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Task Title *</Text>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Task Title *</Text>
               <TextInput
                 style={[styles.input, focusedInput === 'title' && styles.inputFocused]}
                 value={taskData.title}
                 onChangeText={(text) => setTaskData((prev) => ({ ...prev, title: text }))}
-                placeholder="Enter task title"
-                placeholderTextColor="#9ca3af"
+                placeholder="Short task title"
+                placeholderTextColor={themeColors.textMuted}
                 onFocus={() => setFocusedInput('title')}
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Price ($)</Text>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Price ($)</Text>
               <TextInput
                 style={[styles.input, focusedInput === 'price' && styles.inputFocused]}
                 value={taskData.price.toString()}
                 onChangeText={(text) =>
                   setTaskData((prev) => ({ ...prev, price: parseFloat(text) || 0 }))
                 }
-                placeholder="Enter task price"
-                placeholderTextColor="#9ca3af"
+                placeholder="0"
+                placeholderTextColor={themeColors.textMuted}
                 keyboardType="numeric"
                 onFocus={() => setFocusedInput('price')}
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Annotation Type</Text>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Annotation Type</Text>
               <TextInput
                 style={[styles.input, focusedInput === 'annotationType' && styles.inputFocused]}
                 value={taskData.annotationType}
                 onChangeText={(text) => setTaskData((prev) => ({ ...prev, annotationType: text }))}
-                placeholder="Enter annotation type (e.g., bbox, polygon, point)"
-                placeholderTextColor="#9ca3af"
+                placeholder="bbox, polygon, …"
+                placeholderTextColor={themeColors.textMuted}
                 onFocus={() => setFocusedInput('annotationType')}
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
           </View>
 
-          <View style={styles.rightColumn}>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Description *</Text>
+          <View style={[acf.rightColumn, { flex: 1.5 }]}>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Description *</Text>
               <TextInput
                 style={[styles.input, styles.textArea, focusedInput === 'description' && styles.inputFocused]}
                 value={taskData.description}
                 onChangeText={(text) => setTaskData((prev) => ({ ...prev, description: text }))}
-                placeholder="Enter detailed task description"
-                placeholderTextColor="#9ca3af"
+                placeholder="Task instructions for workers"
+                placeholderTextColor={themeColors.textMuted}
                 multiline
                 numberOfLines={4}
                 onFocus={() => setFocusedInput('description')}
@@ -792,8 +802,8 @@ export default function CreateVideoTaskScreen() {
               disabled={isCreating || isUploading}
             />
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Video kaynağı</Text>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Video source</Text>
 
               <View style={styles.sourceSelector}>
                 <TouchableOpacity
@@ -806,7 +816,7 @@ export default function CreateVideoTaskScreen() {
                   <Ionicons
                     name="cloud-upload"
                     size={16}
-                    color={sourceType === 'local' ? '#fff' : '#9ca3af'}
+                    color={sourceType === 'local' ? '#fff' : themeColors.textMuted}
                   />
                   <Text
                     style={[styles.sourceButtonText, sourceType === 'local' && styles.sourceButtonTextActive]}
@@ -825,7 +835,7 @@ export default function CreateVideoTaskScreen() {
                     setUploadProgress(0);
                   }}
                 >
-                  <Ionicons name="link" size={16} color={sourceType === 'remote' ? '#fff' : '#9ca3af'} />
+                  <Ionicons name="link" size={16} color={sourceType === 'remote' ? '#fff' : themeColors.textMuted} />
                   <Text
                     style={[styles.sourceButtonText, sourceType === 'remote' && styles.sourceButtonTextActive]}
                   >
@@ -849,13 +859,13 @@ export default function CreateVideoTaskScreen() {
                 </TouchableOpacity>
               ) : (
                 <View style={styles.urlInputContainer}>
-                  <Ionicons name="link" size={16} color="#9ca3af" style={styles.urlInputIcon} />
+                  <Ionicons name="link" size={16} color={themeColors.textMuted} style={styles.urlInputIcon} />
                   <TextInput
                     style={[styles.input, styles.urlInput, focusedInput === 'url' && styles.inputFocused]}
                     value={remoteUrl}
                     onChangeText={setRemoteUrl}
                     placeholder=".mp4 / .webm / .mov | .txt | .json | .zip veri seti"
-                    placeholderTextColor="#9ca3af"
+                    placeholderTextColor={themeColors.textMuted}
                     onFocus={() => setFocusedInput('url')}
                     onBlur={() => setFocusedInput(null)}
                   />
@@ -935,22 +945,25 @@ export default function CreateVideoTaskScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.saveButton} onPress={() => void handleCreateTask()} disabled={isCreating}>
+        <TouchableOpacity style={[styles.saveButton, acf.saveInPanel]} onPress={() => void handleCreateTask()} disabled={isCreating}>
           {isCreating ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.saveButtonText}>Create Task</Text>
           )}
         </TouchableOpacity>
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   backButtonContainer: {
     position: 'absolute',
@@ -976,76 +989,60 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 48,
-    paddingBottom: 28,
+    paddingHorizontal: 14,
+    paddingTop: 44,
+    paddingBottom: 16,
   },
   title: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#f8fafc',
-    marginBottom: 18,
+    color: themeColors.text,
+    marginBottom: 10,
     textAlign: 'center',
   },
-  form: {
-    flexDirection: 'row',
-    gap: 20,
-    marginBottom: 16,
-  },
-  leftColumn: {
-    flex: 1,
-  },
-  rightColumn: {
-    flex: 1.5,
-  },
-  formGroup: {
-    marginBottom: 14,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 6,
-  },
   input: {
-    backgroundColor: '#1f2937',
-    borderWidth: 1,
-    borderColor: '#30363d',
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    color: '#ffffff',
+    backgroundColor: themeColors.surface,
+    borderWidth: 1.5,
+    borderColor: themeColors.border,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: themeColors.text,
   },
   inputFocused: {
-    borderColor: '#3b82f6',
+    borderColor: themeColors.accent,
     borderWidth: 2,
   },
   textArea: {
-    height: 120,
+    minHeight: 64,
+    maxHeight: 88,
     textAlignVertical: 'top',
   },
   uploadButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1f2937',
+    backgroundColor: themeColors.surface,
     borderWidth: 2,
-    borderColor: '#30363d',
+    borderColor: themeColors.border,
     borderStyle: 'dashed',
-    borderRadius: 12,
-    padding: 20,
-    gap: 12,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 8,
   },
   uploadButtonFocused: {
-    borderColor: '#facc15',
+    borderColor: themeColors.accent,
     borderWidth: 2,
   },
   uploadButtonText: {
     fontSize: 16,
-    color: '#ffffff',
+    color: themeColors.text,
     fontWeight: '500',
     flex: 1,
     textAlign: 'center',
+    backgroundColor: 'transparent',
   },
   statusText: {
     marginTop: 10,
@@ -1056,20 +1053,22 @@ const styles = StyleSheet.create({
   fileInfo: {
     marginTop: 12,
     padding: 12,
-    backgroundColor: '#1f2937',
+    backgroundColor: themeColors.surface,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#30363d',
+    borderWidth: 1.5,
+    borderColor: themeColors.border,
   },
   fileName: {
     fontSize: 14,
-    color: '#ffffff',
+    color: themeColors.text,
     fontWeight: '600',
     marginBottom: 4,
+    backgroundColor: 'transparent',
   },
   fileSize: {
     fontSize: 12,
-    color: '#64748b',
+    color: themeColors.textMuted,
+    backgroundColor: 'transparent',
   },
   uploadedHint: {
     marginTop: 6,
@@ -1100,7 +1099,7 @@ const styles = StyleSheet.create({
   progressBar: {
     flex: 1,
     height: 8,
-    backgroundColor: '#30363d',
+    backgroundColor: themeColors.borderLight,
     borderRadius: 4,
     overflow: 'hidden',
   },
@@ -1147,10 +1146,12 @@ const styles = StyleSheet.create({
   },
   sourceSelector: {
     flexDirection: 'row',
-    backgroundColor: '#1f2937',
+    backgroundColor: themeColors.surfaceElevated,
     borderRadius: 8,
     padding: 4,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: themeColors.borderLight,
   },
   sourceButton: {
     flex: 1,
@@ -1167,8 +1168,9 @@ const styles = StyleSheet.create({
   },
   sourceButtonText: {
     fontSize: 12,
-    color: '#9ca3af',
+    color: themeColors.textMuted,
     fontWeight: '600',
+    backgroundColor: 'transparent',
   },
   sourceButtonTextActive: {
     color: '#fff',
@@ -1176,29 +1178,28 @@ const styles = StyleSheet.create({
   urlInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1f2937',
-    borderWidth: 1,
-    borderColor: '#30363d',
+    backgroundColor: themeColors.surface,
+    borderWidth: 1.5,
+    borderColor: themeColors.border,
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   urlInputIcon: {
     marginRight: 8,
   },
   urlInput: {
     flex: 1,
-    color: '#f8fafc',
+    color: themeColors.text,
     fontSize: 14,
   },
   saveButton: {
     backgroundColor: '#3b82f6',
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
     alignItems: 'center',
-    marginTop: 12,
-    minHeight: 48,
+    minHeight: 44,
     justifyContent: 'center',
   },
   saveButtonText: {
@@ -1207,3 +1208,4 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 });
+}

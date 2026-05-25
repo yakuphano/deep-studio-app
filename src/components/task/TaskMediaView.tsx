@@ -1,11 +1,12 @@
-import React, { useImperativeHandle, useRef, forwardRef } from 'react';
+import React, { useImperativeHandle, useRef, forwardRef, useMemo } from 'react';
 import { View, Text } from 'react-native';
-import { taskDetailStyles } from '@/theme/taskDetailStyles';
+import { createTaskDetailStyles } from '@/theme/taskDetailStyles';
 import { type TaskData, type TaskType } from '@/types/taskDetail';
 import AudioPlayer from '@/components/AudioPlayer';
 import VideoPlayer from '@/components/VideoPlayer';
 import AnnotationCanvas from '@/components/AnnotationCanvas.web';
 import { resolveTaskImageUrl } from '@/lib/audioUrl';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
 export type TaskMediaViewCanvasHandle = {
   /** Zoom/pan sonrası görüntüyü konteynıra sığdırıp ortalar */
@@ -61,6 +62,9 @@ export const TaskMediaView = forwardRef<TaskMediaViewCanvasHandle | null, TaskMe
     },
     ref
   ) {
+    const themeColors = useThemeColors();
+    const taskDetailStyles = useMemo(() => createTaskDetailStyles(themeColors), [themeColors]);
+
     const annotationCanvasRef = useRef<{ resetView: () => void; undo?: () => void } | null>(null);
 
     useImperativeHandle(
@@ -130,7 +134,7 @@ export const TaskMediaView = forwardRef<TaskMediaViewCanvasHandle | null, TaskMe
               />
             ) : (
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 }}>
-                <Text style={{ color: '#94a3b8', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
+                <Text style={{ color: themeColors.textMuted, fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
                   {rawStr
                     ? 'Görüntü bu adresten yüklenemiyor (çoğunlukla eski file://, blob: veya zip:// kaydı). Admin → Create Image Task ile dosyayı yeniden yükleyin; görüntü Supabase Storage’a gider ve https ile açılır.'
                     : 'Bu görevde image_url tanımlı değil.'}

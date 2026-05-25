@@ -1,8 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
-import { taskDetailStyles } from '@/theme/taskDetailStyles';
 import { useVideoAI } from '@/hooks/useVideoAI';
-import { colors } from '@/theme/colors';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
 interface TaskEditorProps {
   transcription: string;
@@ -21,6 +20,7 @@ export const TaskEditor: React.FC<TaskEditorProps> = ({
   onAIFix,
   taskType,
 }) => {
+  const themeColors = useThemeColors();
   const { transcribing, aiFixing } = useVideoAI();
 
   // TEMP: Remove all conditions to test if component is being called
@@ -45,7 +45,7 @@ export const TaskEditor: React.FC<TaskEditorProps> = ({
       <Text style={{
         fontSize: 14,
         fontWeight: '600',
-        color: colors.textMuted,
+        color: themeColors.textMuted,
         marginBottom: 12,
         textTransform: 'uppercase',
       }}>
@@ -61,7 +61,7 @@ export const TaskEditor: React.FC<TaskEditorProps> = ({
       }}>
         <TouchableOpacity
           style={{
-            backgroundColor: colors.accentPurple,
+            backgroundColor: themeColors.accentPurple,
             paddingVertical: 6,
             paddingHorizontal: 12,
             borderRadius: 4,
@@ -80,7 +80,7 @@ export const TaskEditor: React.FC<TaskEditorProps> = ({
 
         <TouchableOpacity
           style={{
-            backgroundColor: colors.accentPurple,
+            backgroundColor: themeColors.accentPurple,
             paddingVertical: 6,
             paddingHorizontal: 12,
             borderRadius: 4,
@@ -109,7 +109,7 @@ export const TaskEditor: React.FC<TaskEditorProps> = ({
           minHeight: 120,
           textAlignVertical: 'top',
           borderWidth: 1,
-          borderColor: colors.border,
+          borderColor: themeColors.border,
         }}
         value={transcription}
         onChangeText={onTranscriptionChange}

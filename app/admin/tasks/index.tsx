@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,8 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 interface Task {
   id: string;
   title: string;
@@ -66,6 +67,9 @@ function confirmDestructive(
 }
 
 export default function AdminTasksPage() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const router = useRouter();
 
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -341,7 +345,7 @@ export default function AdminTasksPage() {
             onPress={() => setSelectionMenuOpen(true)}
             accessibilityLabel="Seçim menüsü"
           >
-            <Ionicons name="menu" size={24} color="#f1f5f9" />
+            <Ionicons name="menu" size={24} color={themeColors.text} />
           </TouchableOpacity>
           <View style={styles.selectionSummaryWrap}>
             <Text style={styles.selectionSummary} numberOfLines={1}>
@@ -375,7 +379,7 @@ export default function AdminTasksPage() {
                 <View style={styles.menuCardHeader}>
                   <Text style={styles.menuCardTitle}>Seçim</Text>
                   <TouchableOpacity onPress={() => setSelectionMenuOpen(false)} hitSlop={12}>
-                    <Ionicons name="close" size={24} color="#94a3b8" />
+                    <Ionicons name="close" size={24} color={themeColors.textMuted} />
                   </TouchableOpacity>
                 </View>
                 <Text style={styles.menuHint}>Yalnızca bu listedeki görevler seçilir.</Text>
@@ -424,7 +428,7 @@ export default function AdminTasksPage() {
                     setSelectionMenuOpen(false);
                   }}
                 >
-                  <Ionicons name="close-circle-outline" size={20} color="#94a3b8" />
+                  <Ionicons name="close-circle-outline" size={20} color={themeColors.textMuted} />
                   <Text style={[styles.menuItemText, styles.menuItemMuted]}>Tüm seçimleri temizle</Text>
                 </TouchableOpacity>
               </View>
@@ -455,10 +459,11 @@ export default function AdminTasksPage() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   header: {
     flexDirection: 'row',
@@ -490,7 +495,7 @@ const styles = StyleSheet.create({
   pageTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: themeColors.text,
   },
   bulkBar: {
     flexDirection: 'row',
@@ -498,6 +503,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     marginBottom: 16,
+  },
+  hamburgerBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: themeColors.border,
+    backgroundColor: themeColors.surfaceElevated,
+  },
+  selectionSummaryWrap: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  selectionSummary: {
+    fontSize: 14,
+    color: themeColors.textMuted,
+    fontWeight: '500',
   },
   bulkBtn: {
     paddingVertical: 8,
@@ -539,16 +562,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   menuCard: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     paddingVertical: 8,
     maxWidth: 420,
     width: '100%',
   },
   menuItemMuted: {
-    color: '#94a3b8',
+    color: themeColors.textMuted,
   },
   menuCardHeader: {
     flexDirection: 'row',
@@ -557,15 +580,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
   },
   menuCardTitle: {
-    color: '#f8fafc',
+    color: themeColors.text,
     fontSize: 18,
     fontWeight: '700',
   },
   menuHint: {
-    color: '#64748b',
+    color: themeColors.textMuted,
     fontSize: 12,
     paddingHorizontal: 16,
     paddingTop: 10,
@@ -578,19 +601,19 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(51, 65, 85, 0.6)',
+    borderBottomColor: themeColors.borderLight,
   },
   menuItemLast: {
     borderBottomWidth: 0,
   },
   menuItemText: {
     flex: 1,
-    color: '#f1f5f9',
+    color: themeColors.text,
     fontSize: 15,
     fontWeight: '600',
   },
   menuItemBadge: {
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     fontSize: 13,
     fontWeight: '600',
     minWidth: 28,
@@ -614,13 +637,13 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   taskCard: {
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 16,
     paddingLeft: 48,
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 2,
+    borderColor: themeColors.accent,
     position: 'relative',
   },
   checkboxWrap: {
@@ -662,7 +685,7 @@ const styles = StyleSheet.create({
   taskTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: themeColors.text,
     marginBottom: 12,
   },
   taskMetaContainer: {
@@ -675,13 +698,13 @@ const styles = StyleSheet.create({
   },
   metaLabel: {
     fontSize: 14,
-    color: '#64748b',
+    color: themeColors.textMuted,
     fontWeight: '500',
     minWidth: 60,
   },
   metaValue: {
     fontSize: 14,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     flex: 1,
   },
   taskPrice: {
@@ -695,7 +718,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    color: '#f8fafc',
+    color: themeColors.text,
     fontSize: 16,
     marginTop: 16,
   },
@@ -706,8 +729,9 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
   },
   emptyText: {
-    color: '#64748b',
+    color: themeColors.textMuted,
     fontSize: 16,
     marginTop: 16,
   },
 });
+}

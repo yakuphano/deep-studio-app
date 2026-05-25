@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '@/theme/colors';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 interface Task {
   id: string;
   title: string;
@@ -26,6 +26,9 @@ export default function TaskListTable({
   onDeleteTask, 
   refreshing = false 
 }: TaskListTableProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   
   const renderTaskItem = ({ item }: { item: Task }) => (
     <View style={styles.taskCard}>
@@ -67,7 +70,7 @@ export default function TaskListTable({
   if (tasks.length === 0 && !refreshing) {
     return (
       <View style={styles.emptyContainer}>
-        <Ionicons name="folder-open" size={48} color={colors.textMuted} />
+        <Ionicons name="folder-open" size={48} color={themeColors.textMuted} />
         <Text style={styles.emptyText}>No tasks found</Text>
         <Text style={styles.emptySubtext}>Create your first task to get started</Text>
       </View>
@@ -89,23 +92,24 @@ export default function TaskListTable({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: themeColors.background,
   },
   listContainer: {
     padding: 16,
     gap: 12,
   },
   taskCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 16,
     flexDirection: 'row',
     alignItems: 'flex-start',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: themeColors.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -128,7 +132,7 @@ const styles = StyleSheet.create({
   taskTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text,
+    color: themeColors.text,
     marginBottom: 8,
   },
   taskMetaContainer: {
@@ -142,18 +146,18 @@ const styles = StyleSheet.create({
   metaLabel: {
     fontSize: 12,
     fontWeight: '500',
-    color: colors.textMuted,
+    color: themeColors.textMuted,
     minWidth: 50,
   },
   metaValue: {
     fontSize: 12,
-    color: colors.text,
+    color: themeColors.text,
     flex: 1,
   },
   taskPrice: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.accentPurple,
+    color: themeColors.accentPurple,
   },
   emptyContainer: {
     flex: 1,
@@ -164,13 +168,14 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.text,
+    color: themeColors.text,
     marginTop: 16,
   },
   emptySubtext: {
     fontSize: 14,
-    color: colors.textMuted,
+    color: themeColors.textMuted,
     marginTop: 8,
     textAlign: 'center',
   },
 });
+}

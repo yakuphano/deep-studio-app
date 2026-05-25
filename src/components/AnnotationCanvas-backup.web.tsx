@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } 
 import { View, StyleSheet } from 'react-native';
 import { LABEL_COLORS } from '@/constants/annotationLabels';
 import { getHandleAt, getLabelColor } from './AnnotationCanvas-helper-functions';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
 export type Tool = 'pan' | 'undo' | 'bbox' | 'polygon' | 'points' | 'ellipse' | 'cuboid' | 'polyline' | 'semantic' | 'brush' | 'magic_wand';
 export type BboxHandle = 'tl' | 'tr' | 'br' | 'bl' | 't' | 'r' | 'b' | 'l';
@@ -83,6 +84,7 @@ export default React.forwardRef(function AnnotationCanvas({
   onToolChange,
   onUndo,
 }: AnnotationCanvasProps, ref) {
+  const themeColors = useThemeColors();
   const canvasRef = useRef<{
     handleUndo: () => void;
   } | null>(null);
@@ -526,7 +528,7 @@ export default React.forwardRef(function AnnotationCanvas({
           width: '100%',
           height: '100%',
           overflow: 'hidden', // Critical: prevent scrolling
-          backgroundColor: '#1e293b',
+          backgroundColor: themeColors.surface,
         }}
         onContextMenu={(e) => e.preventDefault()}
       >
@@ -1669,6 +1671,6 @@ export default React.forwardRef(function AnnotationCanvas({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
   },
 });

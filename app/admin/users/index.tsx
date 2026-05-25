@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,8 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type User = {
   id: string;
   email: string;
@@ -46,6 +47,9 @@ function canonicalAccountRole(role: string | undefined, isAdmin?: boolean): 'adm
 }
 
 export default function AdminUsersPage() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const { tab } = useLocalSearchParams<{ tab?: string | string[] }>();
@@ -513,7 +517,7 @@ export default function AdminUsersPage() {
             style={[styles.tabPill, activeTab === 'list' && styles.tabPillActive]}
             onPress={() => goTab('list')}
           >
-            <Ionicons name="list" size={16} color={activeTab === 'list' ? '#e0f2fe' : '#64748b'} />
+            <Ionicons name="list" size={16} color={activeTab === 'list' ? themeColors.accent : themeColors.textMuted} />
             <Text style={[styles.tabPillText, activeTab === 'list' && styles.tabPillTextActive]}>
               {t('adminUsers.tabList')}
             </Text>
@@ -616,7 +620,7 @@ export default function AdminUsersPage() {
             </View>
 
             <TouchableOpacity style={styles.backToListBtn} onPress={() => goTab('list')}>
-              <Ionicons name="arrow-back" size={18} color="#94a3b8" />
+              <Ionicons name="arrow-back" size={18} color={themeColors.textMuted} />
               <Text style={styles.backToListText}>{t('adminUsers.backToList')}</Text>
             </TouchableOpacity>
 
@@ -627,7 +631,7 @@ export default function AdminUsersPage() {
                 value={formData.username}
                 onChangeText={(text) => setFormData((prev) => ({ ...prev, username: text }))}
                 placeholder="Enter username"
-                placeholderTextColor="#64748b"
+                placeholderTextColor={themeColors.textMuted}
               />
             </View>
 
@@ -638,7 +642,7 @@ export default function AdminUsersPage() {
                 value={formData.email}
                 onChangeText={(text) => setFormData((prev) => ({ ...prev, email: text }))}
                 placeholder="Enter email"
-                placeholderTextColor="#64748b"
+                placeholderTextColor={themeColors.textMuted}
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
@@ -652,14 +656,14 @@ export default function AdminUsersPage() {
                   value={formData.password}
                   onChangeText={(text) => setFormData((prev) => ({ ...prev, password: text }))}
                   placeholder="Enter password"
-                  placeholderTextColor="#64748b"
+                  placeholderTextColor={themeColors.textMuted}
                   secureTextEntry={!showPassword}
                 />
                 <TouchableOpacity
                   style={styles.passwordToggle}
                   onPress={() => setShowPassword(!showPassword)}
                 >
-                  <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color="#64748b" />
+                  <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color={themeColors.textMuted} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -716,7 +720,7 @@ export default function AdminUsersPage() {
                 setRoleModalUser(null);
               }}
             >
-              <Ionicons name="close" size={24} color="#64748b" />
+              <Ionicons name="close" size={24} color={themeColors.textMuted} />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>{t('adminUsers.changeRoleTitle')}</Text>
             <View style={{ width: 24 }} />
@@ -768,7 +772,7 @@ export default function AdminUsersPage() {
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setShowResetPasswordModal(false)}>
-              <Ionicons name="close" size={24} color="#64748b" />
+              <Ionicons name="close" size={24} color={themeColors.textMuted} />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Reset Password</Text>
             <View style={{ width: 24 }} />
@@ -781,7 +785,7 @@ export default function AdminUsersPage() {
                 style={styles.input}
                 value={selectedUser?.email || ''}
                 editable={false}
-                placeholderTextColor="#64748b"
+                placeholderTextColor={themeColors.textMuted}
               />
             </View>
 
@@ -793,7 +797,7 @@ export default function AdminUsersPage() {
                   value={newPassword}
                   onChangeText={setNewPassword}
                   placeholder="Enter new password"
-                  placeholderTextColor="#64748b"
+                  placeholderTextColor={themeColors.textMuted}
                   secureTextEntry={!showNewPassword}
                 />
                 <TouchableOpacity
@@ -803,7 +807,7 @@ export default function AdminUsersPage() {
                   <Ionicons
                     name={showNewPassword ? 'eye-off' : 'eye'}
                     size={20}
-                    color="#64748b"
+                    color={themeColors.textMuted}
                   />
                 </TouchableOpacity>
               </View>
@@ -824,10 +828,11 @@ export default function AdminUsersPage() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   header: {
     flexDirection: 'row',
@@ -843,7 +848,7 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: 'rgba(59, 130, 246, 0.1)',
     borderWidth: 1,
-    borderColor: '#1e293b',
+    borderColor: themeColors.border,
     borderRadius: 10,
     alignSelf: 'flex-start',
   },
@@ -870,14 +875,15 @@ const styles = StyleSheet.create({
   },
   pageHint: {
     fontSize: 12,
-    color: '#64748b',
+    color: themeColors.textMuted,
     marginTop: 6,
     lineHeight: 17,
+    backgroundColor: 'transparent',
   },
   pageTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: themeColors.text,
   },
   refreshButton: {
     flexDirection: 'row',
@@ -915,10 +921,10 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   userCard: {
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 2,
+    borderColor: themeColors.accent,
     padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
@@ -936,11 +942,11 @@ const styles = StyleSheet.create({
   username: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: themeColors.text,
   },
   email: {
     fontSize: 14,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     marginBottom: 8,
   },
   userMeta: {
@@ -948,7 +954,8 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 12,
-    color: '#64748b',
+    color: themeColors.textMuted,
+    backgroundColor: 'transparent',
   },
   languageContainer: {
     flexDirection: 'row',
@@ -967,8 +974,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   moreLanguagesText: {
-    color: '#64748b',
+    color: themeColors.textMuted,
     fontSize: 10,
+    backgroundColor: 'transparent',
   },
   resetPasswordButton: {
     flexDirection: 'row',
@@ -1003,13 +1011,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    color: '#64748b',
+    color: themeColors.textMuted,
     fontSize: 16,
     marginTop: 16,
+    backgroundColor: 'transparent',
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1018,12 +1027,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
+    borderBottomColor: themeColors.border,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: themeColors.text,
   },
   modalContent: {
     flex: 1,
@@ -1035,17 +1044,17 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: themeColors.text,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    backgroundColor: themeColors.surface,
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#1e293b',
-    color: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
+    color: themeColors.text,
   },
   passwordContainer: {
     flexDirection: 'row',
@@ -1053,13 +1062,13 @@ const styles = StyleSheet.create({
   },
   passwordInput: {
     flex: 1,
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    backgroundColor: themeColors.surface,
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#1e293b',
-    color: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
+    color: themeColors.text,
   },
   passwordToggle: {
     marginLeft: 8,
@@ -1071,7 +1080,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   languageOption: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
@@ -1080,8 +1091,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#3b82f6',
   },
   languageOptionText: {
-    color: '#64748b',
+    color: themeColors.text,
     fontSize: 14,
+    backgroundColor: 'transparent',
   },
   languageOptionTextSelected: {
     color: '#ffffff',
@@ -1093,15 +1105,18 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   cancelButton: {
-    backgroundColor: '#64748b',
+    backgroundColor: themeColors.surface,
+    borderWidth: 1.5,
+    borderColor: themeColors.border,
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 8,
   },
   cancelButtonText: {
-    color: '#ffffff',
+    color: themeColors.text,
     fontSize: 16,
     fontWeight: '600',
+    backgroundColor: 'transparent',
   },
   createButton: {
     backgroundColor: '#3b82f6',
@@ -1116,18 +1131,18 @@ const styles = StyleSheet.create({
   },
   // Table Styles
   tableContainer: {
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 2,
+    borderColor: themeColors.accent,
   },
   userRowWrap: {
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: themeColors.borderLight,
   },
   tableHeader: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    backgroundColor: themeColors.surfaceElevated,
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
     paddingHorizontal: 16,
@@ -1140,7 +1155,7 @@ const styles = StyleSheet.create({
   tableHeaderText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     textTransform: 'uppercase',
   },
   tableRow: {
@@ -1154,7 +1169,7 @@ const styles = StyleSheet.create({
   },
   tableText: {
     fontSize: 14,
-    color: '#f8fafc',
+    color: themeColors.text,
     flexWrap: 'wrap',
   },
   statusBadge: {
@@ -1179,8 +1194,9 @@ const styles = StyleSheet.create({
   },
   noLanguagesText: {
     fontSize: 14,
-    color: '#64748b',
+    color: themeColors.textMuted,
     fontStyle: 'italic',
+    backgroundColor: 'transparent',
   },
   actionButtons: {
     flexDirection: 'row',
@@ -1190,7 +1206,9 @@ const styles = StyleSheet.create({
   iconButton: {
     padding: 6,
     borderRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: themeColors.border,
   },
   addUserButton: {
     flexDirection: 'row',
@@ -1207,12 +1225,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   createButtonDisabled: {
-    backgroundColor: '#94a3b8',
+    backgroundColor: themeColors.border,
     opacity: 0.6,
   },
   metaHint: {
     fontSize: 13,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     marginTop: 4,
   },
   roleOption: {
@@ -1222,9 +1240,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 10,
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-    borderWidth: 1,
-    borderColor: '#1e293b',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
     marginBottom: 10,
   },
   roleOptionSelected: {
@@ -1234,7 +1252,7 @@ const styles = StyleSheet.create({
   roleOptionText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: themeColors.text,
   },
   accountRoleRow: {
     flexDirection: 'row',
@@ -1249,13 +1267,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
+    backgroundColor: 'transparent',
   },
   accountRoleChipSelected: {
-    borderColor: '#3b82f6',
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+    borderWidth: 2,
+    borderColor: themeColors.accent,
+    backgroundColor: themeColors.accentMuted,
   },
   accountRoleChipSelectedReviewer: {
     borderColor: '#a855f7',
@@ -1264,10 +1283,12 @@ const styles = StyleSheet.create({
   accountRoleChipText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeColors.text,
+    backgroundColor: 'transparent',
   },
   accountRoleChipTextSelected: {
-    color: '#f8fafc',
+    color: themeColors.accent,
+    backgroundColor: 'transparent',
   },
   actionToolbar: {
     flexDirection: 'row',
@@ -1284,14 +1305,15 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 10,
     borderRadius: 8,
-    backgroundColor: 'rgba(168, 85, 247, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(168, 85, 247, 0.45)',
+    backgroundColor: themeColors.surface,
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
   },
   toolbarBtnText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#e9d5ff',
+    color: themeColors.accentPurple,
+    backgroundColor: 'transparent',
   },
   tabBar: {
     flexDirection: 'row',
@@ -1306,13 +1328,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 10,
-    backgroundColor: 'rgba(30, 41, 59, 0.8)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
   },
   tabPillActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.35)',
-    borderColor: 'rgba(59, 130, 246, 0.6)',
+    backgroundColor: themeColors.accentMuted,
+    borderWidth: 2,
+    borderColor: themeColors.accent,
   },
   tabPillAnnotator: {
     borderColor: 'rgba(59, 130, 246, 0.35)',
@@ -1331,10 +1354,12 @@ const styles = StyleSheet.create({
   tabPillText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeColors.text,
+    backgroundColor: 'transparent',
   },
   tabPillTextActive: {
-    color: '#e0f2fe',
+    color: themeColors.accent,
+    backgroundColor: 'transparent',
   },
   tabPillTextOnAccent: {
     color: '#ffffff',
@@ -1365,12 +1390,12 @@ const styles = StyleSheet.create({
   createScreenTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#f8fafc',
+    color: themeColors.text,
     marginBottom: 8,
   },
   createScreenSubtitle: {
     fontSize: 14,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     lineHeight: 20,
   },
   backToListBtn: {
@@ -1383,7 +1408,7 @@ const styles = StyleSheet.create({
   backToListText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
   },
   createActionsRow: {
     flexDirection: 'row',
@@ -1393,3 +1418,4 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
 });
+}

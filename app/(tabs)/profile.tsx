@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -7,8 +7,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useProfile } from '@/hooks/useProfile';
 import { canAccessReviewQueue } from '@/lib/userRoles';
 import { TASK_LANGUAGES, type TaskLanguageCode } from '@/constants/taskLanguages';
+import type { AppColors } from '@/theme/palettes';
+import { useAppTheme, useThemeColors } from '@/contexts/ThemeContext';
 
 export default function ProfileScreen() {
+  const themeColors = useThemeColors();
+  const { theme, setTheme } = useAppTheme();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
@@ -126,6 +132,25 @@ export default function ProfileScreen() {
       <View style={styles.rolePill}>
         <Text style={styles.rolePillText}>{t(`roles.${appRole}`)}</Text>
       </View>
+      <Text style={[styles.label, { marginTop: 24 }]}>{t('profile.themeAppearance')}</Text>
+      <View style={styles.themeRow}>
+        <TouchableOpacity
+          style={[styles.themeChip, theme === 'light' && styles.themeChipActive]}
+          onPress={() => setTheme('light')}
+        >
+          <Text style={[styles.themeChipText, theme === 'light' && styles.themeChipTextActive]}>
+            {t('profile.themeLight')}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.themeChip, theme === 'dark' && styles.themeChipActive]}
+          onPress={() => setTheme('dark')}
+        >
+          <Text style={[styles.themeChipText, theme === 'dark' && styles.themeChipTextActive]}>
+            {t('profile.themeDark')}
+          </Text>
+        </TouchableOpacity>
+      </View>
       <Text style={[styles.label, { marginTop: 24 }]}>{t('profile.languagesExpertise')}</Text>
       <Text style={styles.hint}>{t('profile.languagesExpertiseHint')}</Text>
       <View style={styles.chips}>
@@ -180,40 +205,58 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: themeColors.background },
   content: { padding: 20, paddingBottom: 40 },
-  label: { fontSize: 14, fontWeight: '600', color: '#94a3b8', marginBottom: 8 },
-  email: { fontSize: 16, color: '#f1f5f9', marginBottom: 8 },
+  label: { fontSize: 14, fontWeight: '600', color: themeColors.textMuted, marginBottom: 8 },
+  email: { fontSize: 16, color: themeColors.text, marginBottom: 8 },
   rolePill: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    backgroundColor: themeColors.accentMuted,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     marginBottom: 8,
   },
-  rolePillText: { color: '#7dd3fc', fontWeight: '700', fontSize: 14 },
+  rolePillText: { color: themeColors.accent, fontWeight: '700', fontSize: 14 },
+  themeRow: { flexDirection: 'row', gap: 10, marginBottom: 8 },
+  themeChip: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    backgroundColor: themeColors.surface,
+    borderWidth: 1,
+    borderColor: themeColors.border,
+  },
+  themeChipActive: {
+    backgroundColor: themeColors.accent,
+    borderColor: themeColors.accent,
+  },
+  themeChipText: { fontSize: 14, fontWeight: '600', color: themeColors.text },
+  themeChipTextActive: { color: themeColors.onAccent },
   secondaryLink: { paddingVertical: 10, marginBottom: 4 },
-  secondaryLinkText: { color: '#60a5fa', fontSize: 15, fontWeight: '600' },
-  hint: { fontSize: 13, color: '#64748b', marginBottom: 16 },
+  secondaryLinkText: { color: themeColors.accent, fontSize: 15, fontWeight: '600' },
+  hint: { fontSize: 13, color: themeColors.textMuted, marginBottom: 16 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
-  chipActive: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
-  chipText: { color: '#94a3b8', fontSize: 14 },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
-  saveBtn: { backgroundColor: '#3b82f6', paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginBottom: 16 },
+  chipActive: { backgroundColor: themeColors.accent, borderColor: themeColors.accent },
+  chipText: { color: themeColors.textMuted, fontSize: 14 },
+  chipTextActive: { color: themeColors.onAccent, fontWeight: '600' },
+  saveBtn: { backgroundColor: themeColors.accent, paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginBottom: 16 },
   saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  saveBtnText: { color: themeColors.onAccent, fontSize: 16, fontWeight: '600' },
   adminLink: { paddingVertical: 12, alignItems: 'center', marginBottom: 8 },
-  adminLinkText: { fontSize: 15, color: '#60a5fa', fontWeight: '600' },
-  logoutBtn: { paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#334155', alignItems: 'center' },
-  logoutText: { fontSize: 16, color: '#ef4444', fontWeight: '600' },
+  adminLinkText: { fontSize: 15, color: themeColors.accent, fontWeight: '600' },
+  logoutBtn: { paddingVertical: 16, borderTopWidth: 1, borderTopColor: themeColors.border, alignItems: 'center' },
+  logoutText: { fontSize: 16, color: themeColors.error, fontWeight: '600' },
 });
+}

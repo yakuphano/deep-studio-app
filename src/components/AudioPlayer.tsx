@@ -1,9 +1,10 @@
-import React, { useEffect, useState, createElement } from 'react';
+import React, { useMemo, useEffect, useState, createElement } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { resolvePlaybackAudioUrl } from '@/lib/audioUrl';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type AudioPlayerProps = {
   /** @deprecated uri ile aynı; geriye dönük uyumluluk */
   audioUri?: string;
@@ -11,6 +12,9 @@ type AudioPlayerProps = {
 };
 
 export default function AudioPlayer({ audioUri, uri }: AudioPlayerProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const raw = (audioUri ?? uri ?? '').trim();
   const resolved = resolvePlaybackAudioUrl(raw);
 
@@ -51,6 +55,8 @@ export default function AudioPlayer({ audioUri, uri }: AudioPlayerProps) {
 }
 
 function NativeExpoAudioPlayer({ uri }: { uri: string }) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -121,13 +127,14 @@ function NativeExpoAudioPlayer({ uri }: { uri: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
   controls: {
     flexDirection: 'row',
@@ -146,7 +153,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   timeText: {
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     fontSize: 14,
     fontFamily: 'monospace',
   },
@@ -155,3 +162,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
+}

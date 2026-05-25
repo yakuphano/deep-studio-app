@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '@/theme/colors';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 interface TranscriptionPanelProps {
   transcription: string;
   onTranscriptionChange: (text: string) => void;
@@ -22,6 +22,9 @@ export default function TranscriptionPanel({
   onAIFix,
   audioUrl
 }: TranscriptionPanelProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const [isEditing, setIsEditing] = useState(false);
 
   return (
@@ -36,7 +39,7 @@ export default function TranscriptionPanel({
           <Ionicons 
             name={isEditing ? 'checkmark' : 'create'} 
             size={20} 
-            color={colors.accentPurple} 
+            color={themeColors.accentPurple} 
           />
         </TouchableOpacity>
       </View>
@@ -53,10 +56,10 @@ export default function TranscriptionPanel({
           disabled={!audioUrl || transcribing}
         >
           {transcribing ? (
-            <ActivityIndicator size="small" color={colors.text} />
+            <ActivityIndicator size="small" color={themeColors.text} />
           ) : (
             <>
-              <Ionicons name="sparkles" size={16} color={colors.text} />
+              <Ionicons name="sparkles" size={16} color={themeColors.text} />
               <Text style={styles.aiButtonText}>AI Transcribe</Text>
             </>
           )}
@@ -72,10 +75,10 @@ export default function TranscriptionPanel({
           disabled={!transcription.trim() || aiFixing}
         >
           {aiFixing ? (
-            <ActivityIndicator size="small" color={colors.text} />
+            <ActivityIndicator size="small" color={themeColors.text} />
           ) : (
             <>
-              <Ionicons name="sparkles" size={16} color={colors.text} />
+              <Ionicons name="sparkles" size={16} color={themeColors.text} />
               <Text style={styles.aiButtonText}>AI Fix</Text>
             </>
           )}
@@ -91,7 +94,7 @@ export default function TranscriptionPanel({
             onChangeText={onTranscriptionChange}
             multiline
             placeholder="Edit transcription here..."
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={themeColors.textMuted}
             textAlignVertical="top"
           />
         ) : (
@@ -113,13 +116,14 @@ export default function TranscriptionPanel({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.surfaceElevated,
+    backgroundColor: themeColors.surfaceElevated,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: themeColors.border,
     overflow: 'hidden',
   },
   header: {
@@ -128,14 +132,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: colors.surface,
+    backgroundColor: themeColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: themeColors.border,
   },
   headerTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text,
+    color: themeColors.text,
   },
   editButton: {
     padding: 8,
@@ -147,9 +151,9 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: colors.surface,
+    backgroundColor: themeColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: themeColors.border,
   },
   aiButton: {
     flexDirection: 'row',
@@ -158,22 +162,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 6,
-    backgroundColor: colors.accentPurple,
+    backgroundColor: themeColors.accentPurple,
     alignSelf: 'flex-start',
   },
   aiButtonDisabled: {
     opacity: 0.6,
   },
   transcribeButton: {
-    backgroundColor: colors.accentPurple,
+    backgroundColor: themeColors.accentPurple,
   },
   fixButton: {
-    backgroundColor: colors.accentPurple,
+    backgroundColor: themeColors.accentPurple,
   },
   aiButtonText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.text,
+    color: themeColors.text,
   },
   transcriptionContainer: {
     flex: 1,
@@ -186,14 +190,14 @@ const styles = StyleSheet.create({
   transcriptionText: {
     fontSize: 14,
     lineHeight: 20,
-    color: colors.text,
+    color: themeColors.text,
     minHeight: 100,
   },
   transcriptionInput: {
     flex: 1,
     fontSize: 14,
     lineHeight: 20,
-    color: colors.text,
+    color: themeColors.text,
     backgroundColor: 'transparent',
     borderWidth: 0,
     minHeight: 100,
@@ -202,13 +206,14 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: colors.surface,
+    backgroundColor: themeColors.surface,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: themeColors.border,
   },
   characterCount: {
     fontSize: 12,
-    color: colors.textMuted,
+    color: themeColors.textMuted,
     textAlign: 'right',
   },
 });
+}

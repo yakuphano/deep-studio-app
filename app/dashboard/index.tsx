@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,12 +12,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProfile } from '@/hooks/useProfile';
 import { supabase } from '@/lib/supabase';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type TaskType = 'transcription' | 'image' | 'video' | 'medical' | 'lidar';
 
 function RevisionBanner() {
   const { t } = useTranslation();
   const router = useRouter();
+  const themeColors = useThemeColors();
   const { user } = useAuth();
   const { appRole } = useProfile();
   const [count, setCount] = React.useState(0);
@@ -48,9 +50,9 @@ function RevisionBanner() {
         marginBottom: 8,
         padding: 14,
         borderRadius: 12,
-        backgroundColor: 'rgba(251, 191, 36, 0.12)',
+        backgroundColor: 'rgba(251, 191, 36, 0.2)',
         borderWidth: 1,
-        borderColor: 'rgba(251, 191, 36, 0.35)',
+        borderColor: 'rgba(217, 119, 6, 0.35)',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -60,8 +62,8 @@ function RevisionBanner() {
       activeOpacity={0.85}
     >
       <View style={{ flex: 1 }}>
-        <Text style={{ color: '#fde68a', fontWeight: '800', fontSize: 15 }}>{t('annotatorHome.revisionBannerTitle')}</Text>
-        <Text style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>{t('annotatorHome.revisionBannerBody', { count })}</Text>
+        <Text style={{ color: '#92400e', fontWeight: '800', fontSize: 15 }}>{t('annotatorHome.revisionBannerTitle')}</Text>
+        <Text style={{ color: themeColors.textMuted, fontSize: 13, marginTop: 4 }}>{t('annotatorHome.revisionBannerBody', { count })}</Text>
       </View>
       <Ionicons name="chevron-forward" size={22} color="#fbbf24" />
     </TouchableOpacity>
@@ -71,9 +73,13 @@ function RevisionBanner() {
 function TaskSelectionCards({
   onSelect,
   t,
+  styles,
+  themeColors,
 }: {
   onSelect: (type: TaskType) => void;
   t: (k: string) => string;
+  styles: ReturnType<typeof createStyles>;
+  themeColors: AppColors;
 }) {
   return (
     <View style={styles.dashboard}>
@@ -90,7 +96,7 @@ function TaskSelectionCards({
             activeOpacity={0.9}
           >
             <View style={styles.cardIcon}>
-              <Ionicons name="mic" size={48} color="#3b82f6" />
+              <Ionicons name="mic" size={48} color={themeColors.accent} />
             </View>
             <View style={styles.cardTitleArea}>
               <Text style={styles.cardLabel} numberOfLines={2}>
@@ -107,7 +113,7 @@ function TaskSelectionCards({
             activeOpacity={0.9}
           >
             <View style={styles.cardIcon}>
-              <Ionicons name="image" size={48} color="#f472b6" />
+              <Ionicons name="image" size={48} color={themeColors.accentPurple} />
             </View>
             <View style={styles.cardTitleArea}>
               <Text style={styles.cardLabel} numberOfLines={2}>
@@ -123,7 +129,7 @@ function TaskSelectionCards({
             activeOpacity={0.9}
           >
             <View style={styles.cardIcon}>
-              <Ionicons name="videocam" size={48} color="#8b5cf6" />
+              <Ionicons name="videocam" size={48} color="#0b6bcb" />
             </View>
             <View style={styles.cardTitleArea}>
               <Text style={styles.cardLabel} numberOfLines={2}>
@@ -139,7 +145,7 @@ function TaskSelectionCards({
             activeOpacity={0.9}
           >
             <View style={styles.cardIcon}>
-              <Ionicons name="medkit" size={48} color="#14b8a6" />
+              <Ionicons name="medkit" size={48} color={themeColors.success} />
             </View>
             <View style={styles.cardTitleArea}>
               <Text style={styles.cardLabel} numberOfLines={2}>
@@ -155,7 +161,7 @@ function TaskSelectionCards({
             activeOpacity={0.9}
           >
             <View style={styles.cardIcon}>
-              <Ionicons name="scan" size={48} color="#f97316" />
+              <Ionicons name="scan" size={48} color={themeColors.textSecondary} />
             </View>
             <View style={styles.cardTitleArea}>
               <Text style={styles.cardLabel} numberOfLines={2}>
@@ -171,6 +177,9 @@ function TaskSelectionCards({
 }
 
 export default function DashboardHubScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const { user, session } = useAuth();
@@ -194,15 +203,16 @@ export default function DashboardHubScreen() {
   return (
     <View style={styles.container}>
       <RevisionBanner />
-      <TaskSelectionCards onSelect={setTypeAndNavigate} t={t} />
+      <TaskSelectionCards onSelect={setTypeAndNavigate} t={t} styles={styles} themeColors={themeColors} />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   dashboard: {
     flex: 1,
@@ -212,7 +222,7 @@ const styles = StyleSheet.create({
   dashboardTitle: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: themeColors.text,
     marginBottom: 32,
     textAlign: 'left',
   },
@@ -235,26 +245,26 @@ const styles = StyleSheet.create({
     minWidth: 160,
     maxWidth: 280,
     height: 228,
-    backgroundColor: 'rgba(30, 41, 59, 0.8)',
+    backgroundColor: themeColors.surface,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: themeColors.border,
     paddingVertical: 20,
     paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
+    shadowColor: '#0f2744',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
     shadowRadius: 16,
-    elevation: 12,
+    elevation: 6,
     marginBottom: 20,
   },
   cardIcon: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: themeColors.accentMuted,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
@@ -268,16 +278,17 @@ const styles = StyleSheet.create({
   cardLabel: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#f1f5f9',
+    color: themeColors.text,
     textAlign: 'center',
     lineHeight: 22,
   },
   cardHint: {
     fontSize: 13,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     textAlign: 'center',
     fontWeight: '500',
     marginTop: 8,
     lineHeight: 18,
   },
 });
+}

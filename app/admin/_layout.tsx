@@ -1,12 +1,14 @@
 import { Stack } from 'expo-router';
 import TopNavbar from '../../components/TopNavbar';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
 export default function AdminLayout() {
+  const colors = useThemeColors();
   return (
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#0f172a' },
+        contentStyle: { backgroundColor: colors.background },
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />

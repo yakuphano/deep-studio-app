@@ -7,7 +7,11 @@ import AnnotationCanvas, { type Annotation, type Tool } from '@/components/Annot
 import VideoAnnotationTimeline from '@/components/video-workbench/VideoAnnotationTimeline.web';
 import AnnotatorVideoRightPanel from '@/components/video-workbench/AnnotatorVideoRightPanel.web';
 import WorkbenchVideoToolRail from '@/components/video-workbench/WorkbenchVideoToolRail.web';
-import { createVideoProWorkbenchStyles, desktopWorkbenchDark } from '@/theme/videoProWorkbenchTheme';
+import {
+  createVideoProWorkbenchStyles,
+  workbenchChromeFromAppColors,
+  type ProThemeColors,
+} from '@/theme/videoProWorkbenchTheme';
 import { useVideoWorkbench } from '@/hooks/useVideoWorkbench';
 import { WebVideoPlayer, type WebVideoPlayerHandle } from '@/components/video-workbench/WebVideoPlayer.web';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,20 +23,26 @@ import {
   type CustomLabelDefinition,
 } from '@/constants/annotationLabels';
 import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
-
+import TaskDiscardCheckbox from '@/components/task/TaskDiscardCheckbox';
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 const FPS = 30;
-const C = desktopWorkbenchDark;
 
 type Props = { taskId: string };
 
 export default function VideoProWorkbench({ taskId }: Props) {
+  const themeColors = useThemeColors();
+  const chrome = useMemo(() => workbenchChromeFromAppColors(themeColors, { radius: 8 }), [themeColors]);
+  const topStyles = useMemo(() => createTopStylesStyles(themeColors), [themeColors]);
+  const bottomStyles = useMemo(() => createBottomBarStyles(chrome), [chrome]);
+
   const router = useRouter();
   const { t } = useTranslation();
   const { user } = useAuth();
   const videoRef = useRef<WebVideoPlayerHandle>(null);
   const canvasRef = useRef<any>(null);
 
-  const S = useMemo(() => createVideoProWorkbenchStyles(C), []);
+  const S = useMemo(() => createVideoProWorkbenchStyles(chrome), [chrome]);
 
   const [extraLabelDefinitions, setExtraLabelDefinitions] = useState<CustomLabelDefinition[]>([]);
   const [activeTool, setActiveTool] = useState<Tool>('bbox');
@@ -63,6 +73,7 @@ export default function VideoProWorkbench({ taskId }: Props) {
     setSelectedAnnotationId,
     requestSelectAnnotationAfterFrameCapture,
     getSubmitValidationMessages,
+    applyDiscard,
   } = useVideoWorkbench(taskId);
 
   useEffect(() => {
@@ -286,18 +297,29 @@ export default function VideoProWorkbench({ taskId }: Props) {
   }
 
   return (
-    <View style={[S.root, { backgroundColor: C.bg, flex: 1, position: 'relative' as const }]}>
+    <View style={[S.root, { backgroundColor: chrome.bg, flex: 1, position: 'relative' as const }]}>
       {/* Görüntü görevi üst şeridi: Back + sağ üstte tür + fiyat */}
       <View style={topStyles.headerStrip}>
         <TouchableOpacity style={topStyles.backBtn} onPress={navigateBack} activeOpacity={0.8}>
-          <Ionicons name="arrow-back" size={20} color="#3b82f6" />
+          <Ionicons name="arrow-back" size={20} color={themeColors.accent} />
           <Text style={topStyles.backBtnText}>{t('taskDetail.back')}</Text>
         </TouchableOpacity>
-        <GuidelineOpenButton
-          variant="header"
-          guidelineUrl={task?.guideline_url}
-          guidelineFileName={task?.guideline_file_name}
-        />
+        <View style={topStyles.headerRightCol}>
+          <GuidelineOpenButton
+            variant="header"
+            guidelineUrl={task?.guideline_url}
+            guidelineFileName={task?.guideline_file_name}
+          />
+          {task?.id ? (
+            <TaskDiscardCheckbox
+              taskId={task.id}
+              discarded={!!task.discarded_at}
+              disabled={isSubmitted}
+              userId={user?.id}
+              onPersist={applyDiscard}
+            />
+          ) : null}
+        </View>
       </View>
 
       <View style={topStyles.taskInfoBar}>
@@ -312,9 +334,9 @@ export default function VideoProWorkbench({ taskId }: Props) {
         <View
           style={{
             alignItems: 'center',
-            backgroundColor: '#0f172a',
+            backgroundColor: chrome.bg,
             borderRightWidth: 1,
-            borderRightColor: '#334155',
+            borderRightColor: chrome.border,
           }}
         >
           <WorkbenchVideoToolRail
@@ -338,14 +360,14 @@ export default function VideoProWorkbench({ taskId }: Props) {
               flex: 1,
               minWidth: 0,
               flexShrink: 1,
-              backgroundColor: C.bg,
+              backgroundColor: chrome.bg,
               overflow: 'hidden',
             },
           ]}
         >
-          <View style={[S.centerStack, { flex: 1, minHeight: 0, minWidth: 0, backgroundColor: C.bg }]}>
+          <View style={[S.centerStack, { flex: 1, minHeight: 0, minWidth: 0, backgroundColor: chrome.bg }]}>
             {currentFrame ? (
-              <View style={[S.canvasWrap, { flex: 1, backgroundColor: C.bg }]}>
+              <View style={[S.canvasWrap, { flex: 1, backgroundColor: chrome.bg }]}>
                 <View style={S.canvasFitBar} pointerEvents="box-none">
                   <TouchableOpacity
                     style={S.canvasFitButton}
@@ -353,7 +375,7 @@ export default function VideoProWorkbench({ taskId }: Props) {
                     activeOpacity={0.85}
                     {...(Platform.OS === 'web' ? ({ title: 'Reset view' } as object) : {})}
                   >
-                    <Ionicons name="contract-outline" size={20} color={C.text} />
+                    <Ionicons name="contract-outline" size={20} color={chrome.text} />
                   </TouchableOpacity>
                 </View>
                 <View style={S.canvasWorkspace}>
@@ -378,30 +400,30 @@ export default function VideoProWorkbench({ taskId }: Props) {
                 </View>
               </View>
             ) : (
-              <View style={[S.canvasWrap, { flex: 1, backgroundColor: C.bg }]} />
+              <View style={[S.canvasWrap, { flex: 1, backgroundColor: chrome.bg }]} />
             )}
 
-            <View style={[S.videoWrap, { flex: 1.35, backgroundColor: C.bg }]}>
+            <View style={[S.videoWrap, { flex: 1.35, backgroundColor: chrome.bg }]}>
               {videoUrl ? (
                 <WebVideoPlayer
                   key={videoUrl}
                   ref={videoRef}
                   src={videoUrl}
                   fps={FPS}
-                  chrome={C}
+                  chrome={chrome}
                   frameJump={frameJumpControl}
                   onFrameCapture={handleFrameCapture}
                   onTimeUpdate={handleTimeUpdate}
                   onLoadedMetadata={handleLoadedMetadata}
                 />
               ) : (
-                <View style={{ flex: 1, backgroundColor: C.bg }} />
+                <View style={{ flex: 1, backgroundColor: chrome.bg }} />
               )}
             </View>
           </View>
 
           <VideoAnnotationTimeline
-            colors={C}
+            colors={chrome}
             totalFrames={totalFrames}
             currentFrameNumber={currentFrameNumber}
             videoAnnotations={videoAnnotations}
@@ -419,9 +441,9 @@ export default function VideoProWorkbench({ taskId }: Props) {
             alignSelf: 'stretch',
             minHeight: 0,
             flexDirection: 'column',
-            backgroundColor: C.panel,
+            backgroundColor: chrome.panel,
             borderLeftWidth: 1,
-            borderLeftColor: '#334155',
+            borderLeftColor: chrome.border,
             zIndex: 2,
           }}
         >
@@ -434,7 +456,7 @@ export default function VideoProWorkbench({ taskId }: Props) {
           </View>
           <View style={{ flex: 1, minHeight: 0 }}>
             <AnnotatorVideoRightPanel
-              colors={C}
+              colors={chrome}
               annotations={annotations}
               selectedId={selectedAnnotationId}
               onSelect={setSelectedAnnotationId}
@@ -489,7 +511,8 @@ export default function VideoProWorkbench({ taskId }: Props) {
   );
 }
 
-const topStyles = StyleSheet.create({
+function createTopStylesStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   headerStrip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -498,12 +521,17 @@ const topStyles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 8,
     marginBottom: 4,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     minHeight: 40,
-    maxHeight: 44,
     zIndex: 1000,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
+  },
+  headerRightCol: {
+    alignItems: 'flex-end',
+    gap: 4,
+    flexShrink: 0,
+    maxWidth: '46%',
   },
   backBtn: {
     flexDirection: 'row',
@@ -511,12 +539,12 @@ const topStyles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    backgroundColor: themeColors.accentMuted,
   },
   backBtnText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#3b82f6',
+    color: themeColors.accent,
     marginLeft: 8,
   },
   taskInfoBar: {
@@ -527,14 +555,14 @@ const topStyles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     paddingRight: 168,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
   },
   taskInfoType: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     backgroundColor: 'rgba(148, 163, 184, 0.1)',
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -552,18 +580,19 @@ const topStyles = StyleSheet.create({
     color: '#22c55e',
   },
 });
+}
 
-/** `app/dashboard/image/[id].tsx` alt çubuğu ile aynı düzen */
-const bottomStyles = StyleSheet.create({
+function createBottomBarStyles(c: ProThemeColors) {
+  return StyleSheet.create({
   bottomButtonBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#0f172a',
+    paddingVertical: 6,
+    backgroundColor: c.panel,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopColor: c.border,
   },
   bottomLeftActions: {
     flexDirection: 'row',
@@ -578,39 +607,39 @@ const bottomStyles = StyleSheet.create({
     alignItems: 'center',
   },
   exitButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 8,
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#ef4444',
+    borderColor: c.danger,
   },
   exitButtonText: {
     fontSize: 14,
-    color: '#ef4444',
-    fontWeight: '600',
+    color: c.danger,
+    fontWeight: '500',
   },
   submitExitButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
     borderRadius: 8,
-    backgroundColor: '#3b82f6',
+    backgroundColor: c.accent,
   },
   submitExitButtonText: {
     fontSize: 14,
     color: '#fff',
-    fontWeight: '600',
+    fontWeight: '500',
   },
   submitButtonGreen: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
     borderRadius: 8,
     backgroundColor: '#22c55e',
   },
   submitButtonGreenText: {
     fontSize: 14,
     color: '#fff',
-    fontWeight: '600',
+    fontWeight: '500',
   },
   submitButtonDisabled: {
     opacity: 0.6,
@@ -620,13 +649,14 @@ const bottomStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: 8,
     backgroundColor: '#22c55e',
   },
   submittedText: {
     fontSize: 14,
     color: '#fff',
-    fontWeight: '600',
+    fontWeight: '500',
   },
 });
+}

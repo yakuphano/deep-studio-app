@@ -21,7 +21,8 @@ import {
 import type { Annotation } from '@/types/annotations';
 import type { VideoAnnotation } from '@/types/video';
 import { WorkbenchObjectListChrome } from '@/components/workbench/WorkbenchObjectListChrome';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type Props = {
   videoAnnotations: VideoAnnotation[];
   currentFrameNumber: number;
@@ -133,6 +134,9 @@ export default function VideoMultiFrameObjectList({
   onDeleteAnnotation,
   thumbnailCache = {},
 }: Props) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
 
   const labelColorOverrides = useMemo(
@@ -336,18 +340,19 @@ export default function VideoMultiFrameObjectList({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   root: {
     flex: 1,
     alignSelf: 'stretch',
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     minHeight: 0,
   },
   chromeWrap: {
     paddingHorizontal: 8,
     paddingTop: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
   },
   scroll: { flex: 1 },
   empty: {
@@ -358,7 +363,7 @@ const styles = StyleSheet.create({
   },
   frameBlock: {
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
     paddingBottom: 6,
   },
   frameBlockCurrent: {
@@ -372,9 +377,9 @@ const styles = StyleSheet.create({
     width: '100%' as const,
     height: 88,
     borderRadius: 6,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
   frameThumbPlaceholder: {
     alignItems: 'center',
@@ -403,7 +408,7 @@ const styles = StyleSheet.create({
   frameHeaderText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     flex: 1,
@@ -416,13 +421,13 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     borderTopWidth: 1,
-    borderTopColor: '#1e293b',
+    borderTopColor: themeColors.border,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
-  rowSelected: { backgroundColor: '#1e293b' },
+  rowSelected: { backgroundColor: themeColors.accentMuted },
   rowMain: { flex: 1, marginRight: 8 },
   rowTitle: { fontSize: 11, fontWeight: '500', color: '#e2e8f0' },
   chips: {
@@ -443,3 +448,4 @@ const styles = StyleSheet.create({
   trash: { padding: 4 },
   dot: { width: 4, height: 4, borderRadius: 2 },
 });
+}

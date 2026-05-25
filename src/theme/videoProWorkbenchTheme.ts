@@ -1,56 +1,58 @@
 import { StyleSheet } from 'react-native';
+import { colors } from './colors';
+import type { AppColors } from './palettes';
 
-/** Dashboard image görev sayfası ile uyumlu slate (sol şerit / canvas / yan panel) */
+/** Web masaüstü iş tezgâhı — açık mavi-beyaz (video / görüntü pro) */
 export const desktopWorkbenchDark = {
-  bg: '#0f172a',
-  panel: '#1e293b',
-  border: '#334155',
-  accent: '#3b82f6',
-  accentMuted: 'rgba(59, 130, 246, 0.18)',
-  text: '#f1f5f9',
-  textMuted: '#94a3b8',
-  textSoft: '#64748b',
-  danger: '#f87171',
+  bg: colors.background,
+  panel: colors.surface,
+  border: colors.border,
+  accent: colors.accent,
+  accentMuted: colors.accentMuted,
+  text: colors.text,
+  textMuted: colors.textMuted,
+  textSoft: colors.textSecondary,
+  danger: colors.error,
   radius: 8,
 } as const;
 
 export const desktopWorkbenchLight = {
-  bg: '#F3F3F3',
-  panel: '#FFFFFF',
-  border: '#D0D0D0',
-  accent: '#0288D1',
-  accentMuted: 'rgba(2, 136, 209, 0.12)',
-  text: '#212121',
-  textMuted: '#616161',
-  textSoft: '#9E9E9E',
-  danger: '#D32F2F',
+  bg: '#f5f8fd',
+  panel: '#ffffff',
+  border: colors.border,
+  accent: colors.accent,
+  accentMuted: colors.accentMuted,
+  text: colors.text,
+  textMuted: colors.textMuted,
+  textSoft: colors.textSecondary,
+  danger: colors.error,
   radius: 8,
 } as const;
 
-/** LiDAR annotator — slate + sky accent (#38bdf8) */
+/** LiDAR / annotator — aynı kurumsal palet, gökyüzü mavsi vurgu */
 export const annotatorWorkbenchDark = {
-  bg: '#0f172a',
-  panel: '#1e293b',
-  border: 'rgba(148, 163, 184, 0.22)',
-  accent: '#38bdf8',
-  accentMuted: 'rgba(56, 189, 248, 0.16)',
-  text: '#f8fafc',
-  textMuted: '#94a3b8',
-  textSoft: '#64748b',
-  danger: '#f87171',
+  bg: colors.background,
+  panel: colors.surface,
+  border: colors.border,
+  accent: '#0b6bcb',
+  accentMuted: 'rgba(11, 108, 203, 0.14)',
+  text: colors.text,
+  textMuted: colors.textMuted,
+  textSoft: colors.textSecondary,
+  danger: colors.error,
   radius: 10,
 } as const;
 
 export const annotatorWorkbenchLight = {
-  bg: '#f8fafc',
-  panel: '#ffffff',
-  border: '#e2e8f0',
-  accent: '#0284c7',
-  accentMuted: 'rgba(2, 132, 199, 0.12)',
-  text: '#0f172a',
-  textMuted: '#475569',
-  textSoft: '#64748b',
-  danger: '#dc2626',
+  bg: colors.background,
+  panel: colors.surface,
+  border: colors.border,
+  accent: colors.accent,
+  accentMuted: colors.accentMuted,
+  text: colors.text,
+  textMuted: colors.textMuted,
+  textSoft: colors.textSecondary,
+  danger: colors.error,
   radius: 10,
 } as const;
 
@@ -59,6 +61,29 @@ export type ProThemeColors =
   | typeof desktopWorkbenchLight
   | typeof annotatorWorkbenchDark
   | typeof annotatorWorkbenchLight;
+
+export type WorkbenchChromeOptions = {
+  radius?: number;
+  accentOverride?: string;
+  accentMutedOverride?: string;
+};
+
+/** İş tezgâhı kabuğu — uygulama light/dark paletinden (ThemeContext). */
+export function workbenchChromeFromAppColors(theme: AppColors, opts?: WorkbenchChromeOptions): ProThemeColors {
+  const radius = opts?.radius ?? 8;
+  return {
+    bg: theme.background,
+    panel: theme.surface,
+    border: theme.border,
+    accent: opts?.accentOverride ?? theme.accent,
+    accentMuted: (opts?.accentMutedOverride ?? theme.accentMuted) as string,
+    text: theme.text,
+    textMuted: theme.textMuted,
+    textSoft: theme.textSecondary,
+    danger: theme.error,
+    radius,
+  } as ProThemeColors;
+}
 
 /** @deprecated Use desktopWorkbenchDark — kept as alias for imports expecting `proColors` */
 export const proColors: ProThemeColors = desktopWorkbenchDark;
@@ -128,8 +153,8 @@ export function createVideoProWorkbenchStyles(c: ProThemeColors) {
       paddingHorizontal: 10,
       borderRadius: c.radius,
       backgroundColor: c.bg,
-      borderWidth: 1,
-      borderColor: c.border,
+      borderWidth: 1.5,
+      borderColor: c.accent,
       gap: 6,
     },
     topNavActionBtnDisabled: {
@@ -169,14 +194,14 @@ export function createVideoProWorkbenchStyles(c: ProThemeColors) {
       paddingVertical: 4,
       paddingHorizontal: 10,
       borderRadius: c.radius,
-      borderWidth: 1,
-      borderColor: c.border,
+      borderWidth: 1.5,
+      borderColor: c.accent,
       backgroundColor: c.panel,
     },
     assistBtnText: {
       fontSize: 11,
-      fontWeight: '600',
-      color: c.textMuted,
+      fontWeight: '700',
+      color: c.text,
     },
     mainRow: {
       flex: 1,
@@ -207,10 +232,11 @@ export function createVideoProWorkbenchStyles(c: ProThemeColors) {
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: c.panel,
-      borderWidth: 1,
-      borderColor: c.border,
+      borderWidth: 1.5,
+      borderColor: c.accent,
     },
     toolRailBtnActive: {
+      borderWidth: 2,
       borderColor: c.accent,
       backgroundColor: c.accentMuted,
     },
@@ -220,7 +246,7 @@ export function createVideoProWorkbenchStyles(c: ProThemeColors) {
       right: 3,
       fontSize: 8,
       fontWeight: '700',
-      color: c.textSoft,
+      color: c.textMuted,
     },
     rightDivider: {
       height: 1,
@@ -341,8 +367,8 @@ export function createVideoProWorkbenchStyles(c: ProThemeColors) {
       justifyContent: 'center',
       borderRadius: c.radius,
       backgroundColor: c.panel,
-      borderWidth: 1,
-      borderColor: c.border,
+      borderWidth: 1.5,
+      borderColor: c.accent,
     },
     canvasWorkspace: {
       flex: 1,
@@ -446,7 +472,7 @@ export function createVideoProWorkbenchStyles(c: ProThemeColors) {
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: 16,
-      paddingVertical: 12,
+      paddingVertical: 6,
       backgroundColor: c.panel,
       borderTopWidth: 1,
       borderTopColor: c.border,
@@ -462,8 +488,8 @@ export function createVideoProWorkbenchStyles(c: ProThemeColors) {
       alignItems: 'center',
     },
     exitButton: {
-      paddingHorizontal: 16,
-      paddingVertical: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
       borderRadius: c.radius,
       backgroundColor: 'transparent',
       borderWidth: 1,
@@ -472,29 +498,29 @@ export function createVideoProWorkbenchStyles(c: ProThemeColors) {
     exitButtonText: {
       fontSize: 14,
       color: c.danger,
-      fontWeight: '600',
+      fontWeight: '500',
     },
     submitExitButton: {
-      paddingHorizontal: 18,
-      paddingVertical: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 7,
       borderRadius: c.radius,
       backgroundColor: c.accent,
     },
     submitExitButtonText: {
       fontSize: 14,
       color: '#fff',
-      fontWeight: '600',
+      fontWeight: '500',
     },
     submitButtonGreen: {
-      paddingHorizontal: 18,
-      paddingVertical: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 7,
       borderRadius: c.radius,
       backgroundColor: '#43A047',
     },
     submitButtonGreenText: {
       fontSize: 14,
       color: '#fff',
-      fontWeight: '600',
+      fontWeight: '500',
     },
     submitButtonDisabled: {
       opacity: 0.6,

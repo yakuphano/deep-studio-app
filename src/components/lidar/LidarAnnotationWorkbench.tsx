@@ -15,11 +15,14 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
+import TaskDiscardCheckbox from '@/components/task/TaskDiscardCheckbox';
 import { useAuth } from '@/contexts/AuthContext';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { resolveTaskImageUrl } from '@/lib/audioUrl';
 import { bevImageUrlToPointCloud, syntheticUrbanStrip } from '@/lib/lidar/bevImageToPointCloud';
 import LidarThreeView from '@/components/lidar/LidarThreeView';
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import type { LidarBoxFootprint, LidarGizmoMode, LidarPointColorMode, LidarThreeTool } from '@/components/lidar/types';
 import { estimateFootprintFromPoints, snapCuboidCenterXZ } from '@/lib/lidar/lidarBoxFromCloud';
 import {
@@ -27,7 +30,7 @@ import {
   defaultCuboidDimensionsForLabel,
   type LidarCuboidAnnotation,
 } from '@/types/lidarAnnotation';
-import { createVideoProWorkbenchStyles, annotatorWorkbenchDark } from '@/theme/videoProWorkbenchTheme';
+import { createVideoProWorkbenchStyles, workbenchChromeFromAppColors } from '@/theme/videoProWorkbenchTheme';
 import { createLidarAnnotationLayoutStyles } from '@/theme/lidarAnnotationLayout';
 import { WorkbenchObjectListChrome } from '@/components/workbench/WorkbenchObjectListChrome';
 import {
@@ -67,6 +70,9 @@ type LidarRailCell =
   | { kind: 'gizmo'; mode: LidarGizmoMode; label: string; icon: React.ComponentProps<typeof Ionicons>['name']; key: string };
 
 export default function LidarAnnotationWorkbench() {
+  const appColors = useThemeColors();
+  const rp = useMemo(() => createRpStyles(appColors), [appColors]);
+
   const { t } = useTranslation();
   const railCells = useMemo(
     (): LidarRailCell[] => [
@@ -92,9 +98,10 @@ export default function LidarAnnotationWorkbench() {
   const router = useRouter();
   const { user } = useAuth();
 
-  const themeColors = annotatorWorkbenchDark;
-  const S = useMemo(() => createVideoProWorkbenchStyles(themeColors), []);
-  const L = useMemo(() => createLidarAnnotationLayoutStyles(themeColors), []);
+  const wb = useMemo(() => workbenchChromeFromAppColors(appColors, { radius: 10 }), [appColors]);
+  const layoutStyles = useMemo(() => createLidarWorkbenchLayoutStyles(appColors), [appColors]);
+  const S = useMemo(() => createVideoProWorkbenchStyles(wb), [wb]);
+  const L = useMemo(() => createLidarAnnotationLayoutStyles(wb), [wb]);
   const sidebarStyles = useMemo(
     () =>
       StyleSheet.create({
@@ -103,16 +110,16 @@ export default function LidarAnnotationWorkbench() {
           minWidth: LIDAR_RIGHT_SIDEBAR_W,
           maxWidth: LIDAR_RIGHT_SIDEBAR_W,
           padding: 8,
-          backgroundColor: themeColors.panel,
+          backgroundColor: wb.panel,
           borderLeftWidth: 1,
-          borderLeftColor: themeColors.border,
+          borderLeftColor: wb.border,
           flexDirection: 'column',
           minHeight: 0,
         },
         objectList: { flex: 1, minHeight: 60, width: '100%' },
         objectListEmpty: {
           fontSize: 12,
-          color: themeColors.textSoft,
+          color: wb.textSoft,
           fontStyle: 'italic' as const,
         },
         submittedBadgeCompact: {
@@ -127,7 +134,7 @@ export default function LidarAnnotationWorkbench() {
         },
         submittedText: { fontSize: 14, color: '#fff', fontWeight: '600' as const },
       }),
-    [themeColors]
+    [wb]
   );
   const [undoUiEpoch, setUndoUiEpoch] = useState(0);
   const bumpUndoUi = useCallback(() => setUndoUiEpoch((x) => x + 1), []);
@@ -140,6 +147,7 @@ export default function LidarAnnotationWorkbench() {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [guidelineUrl, setGuidelineUrl] = useState<string | null>(null);
   const [guidelineFileName, setGuidelineFileName] = useState<string | null>(null);
+  const [discarded, setDiscarded] = useState(false);
 
   const [positions, setPositions] = useState<Float32Array>(() => syntheticUrbanStrip().positions);
   const [colors, setColors] = useState<Float32Array>(() => syntheticUrbanStrip().colors);
@@ -265,6 +273,7 @@ export default function LidarAnnotationWorkbench() {
       setStatus(String(data.status ?? 'pending'));
       setGuidelineUrl(data.guideline_url ? String(data.guideline_url) : null);
       setGuidelineFileName(data.guideline_file_name ? String(data.guideline_file_name) : null);
+      setDiscarded(!!data.discarded_at);
       const raw = data.image_url ?? data.imageUrl ?? null;
       setImageUrl(raw ? String(raw) : null);
       const ad = data.annotation_data;
@@ -544,7 +553,7 @@ export default function LidarAnnotationWorkbench() {
   if (loading || !id) {
     return (
       <View style={L.center}>
-        <ActivityIndicator size="large" color={themeColors.accent} />
+        <ActivityIndicator size="large" color={wb.accent} />
         <Text style={L.muted}>Loading LiDAR task…</Text>
       </View>
     );
@@ -552,37 +561,48 @@ export default function LidarAnnotationWorkbench() {
 
   return (
     <View style={S.root}>
-      <View style={[S.topNav, styles.topNavRow]}>
+      <View style={[S.topNav, layoutStyles.topNavRow]}>
         <TouchableOpacity
           style={S.topNavBack}
           onPress={() => router.replace('/dashboard/lidar')}
           activeOpacity={0.85}
         >
-          <Ionicons name="arrow-back" size={18} color={themeColors.accent} />
+          <Ionicons name="arrow-back" size={18} color={wb.accent} />
           <Text style={S.topNavBackText}>Back</Text>
         </TouchableOpacity>
-        <View style={styles.topNavMetaCol}>
-          <Text style={[S.topNavMetaStrong, styles.topTitle]} numberOfLines={1}>
+        <View style={layoutStyles.topNavMetaCol}>
+          <Text style={[S.topNavMetaStrong, layoutStyles.topTitle]} numberOfLines={1}>
             {title || 'LiDAR'}
           </Text>
-          <View style={styles.priceBadge}>
-            <Text style={styles.priceBadgeText}>
+          <View style={layoutStyles.priceBadge}>
+            <Text style={layoutStyles.priceBadgeText}>
               {t('tasks.fee')}: {price} TL
             </Text>
           </View>
-          <Text style={[S.topNavMetaLine, styles.frameLabel]} numberOfLines={1}>
+          <Text style={[S.topNavMetaLine, layoutStyles.frameLabel]} numberOfLines={1}>
             Frame 1 / 1
           </Text>
           {status === 'submitted' ? (
-            <Text style={[S.topNavMetaLine, { color: themeColors.textMuted }]}>{statusLabel}</Text>
+            <Text style={[S.topNavMetaLine, { color: wb.textMuted }]}>{statusLabel}</Text>
           ) : null}
         </View>
-        <GuidelineOpenButton
-          variant="header"
-          guidelineUrl={guidelineUrl}
-          guidelineFileName={guidelineFileName}
-          style={styles.topNavGuideline}
-        />
+        <View style={{ alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+          <GuidelineOpenButton
+            variant="header"
+            guidelineUrl={guidelineUrl}
+            guidelineFileName={guidelineFileName}
+            style={layoutStyles.topNavGuideline}
+          />
+          {id ? (
+            <TaskDiscardCheckbox
+              taskId={String(id)}
+              discarded={discarded}
+              disabled={status === 'submitted'}
+              userId={user?.id}
+              onApplied={(d) => setDiscarded(d)}
+            />
+          ) : null}
+        </View>
       </View>
 
       <View style={S.mainRow}>
@@ -596,15 +616,15 @@ export default function LidarAnnotationWorkbench() {
             <Text style={L.railSectionTitle}>TOOLS</Text>
 
             <TouchableOpacity
-              style={[L.lidarToolFull, L.lidarUndoFull, !canUndo && styles.railToolDisabled]}
+              style={[L.lidarToolFull, L.lidarUndoFull, !canUndo && layoutStyles.railToolDisabled]}
               onPress={() => doUndo()}
               disabled={!canUndo}
               activeOpacity={0.85}
               {...(Platform.OS === 'web' ? ({ title: 'Undo (Ctrl+Z)' } as object) : {})}
             >
-              <Ionicons name="arrow-undo-outline" size={18} color={canUndo ? '#93c5fd' : themeColors.textSoft} />
+              <Ionicons name="arrow-undo-outline" size={18} color={canUndo ? appColors.accent : wb.textSoft} />
               <Text
-                style={[L.lidarToolFullTxt, { color: canUndo ? themeColors.text : themeColors.textSoft }]}
+                style={[L.lidarToolFullTxt, { color: canUndo ? wb.text : wb.textSoft }]}
                 numberOfLines={1}
               >
                 {t('tasks.lidarUndo')}
@@ -624,8 +644,8 @@ export default function LidarAnnotationWorkbench() {
                   } as object)
                 : {})}
             >
-              <Ionicons name="scan-outline" size={18} color="#a7f3d0" />
-              <Text style={[L.lidarToolFullTxt, { color: '#a7f3d0' }]} numberOfLines={1}>
+              <Ionicons name="scan-outline" size={18} color={appColors.success} />
+              <Text style={[L.lidarToolFullTxt, { color: appColors.success }]} numberOfLines={1}>
                 {t('tasks.lidarCenter')}
               </Text>
               <Text style={L.lidarKeyCap}>{selectedId ? 'F' : 'Home'}</Text>
@@ -662,8 +682,8 @@ export default function LidarAnnotationWorkbench() {
                         color={
                           (meta.kind === 'three' && tool === meta.id) ||
                           (meta.kind === 'gizmo' && tool === 'select' && gizmoMode === meta.mode)
-                            ? themeColors.accent
-                            : themeColors.text
+                            ? wb.accent
+                            : wb.text
                         }
                       />
                       <Text
@@ -687,37 +707,37 @@ export default function LidarAnnotationWorkbench() {
             ))}
 
             {Platform.OS === 'web' ? (
-              <View style={styles.leftRailPointsBlock} pointerEvents="auto">
-                <View style={styles.leftRailHudCard}>
-                  <Text style={styles.hudLabel}>Points</Text>
-                  <View style={styles.hudRow}>
+              <View style={layoutStyles.leftRailPointsBlock} pointerEvents="auto">
+                <View style={layoutStyles.leftRailHudCard}>
+                  <Text style={layoutStyles.hudLabel}>Points</Text>
+                  <View style={layoutStyles.hudRow}>
                     <TouchableOpacity
-                      style={[styles.hudChip, pointColorMode === 'height' && styles.hudChipOn]}
+                      style={[layoutStyles.hudChip, pointColorMode === 'height' && layoutStyles.hudChipOn]}
                       onPress={() => setPointColorMode('height')}
                       activeOpacity={0.85}
                     >
-                      <Text style={[styles.hudChipTxt, pointColorMode === 'height' && styles.hudChipTxtOn]}>Height</Text>
+                      <Text style={[layoutStyles.hudChipTxt, pointColorMode === 'height' && layoutStyles.hudChipTxtOn]}>Height</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.hudChip, pointColorMode === 'intensity' && styles.hudChipOn]}
+                      style={[layoutStyles.hudChip, pointColorMode === 'intensity' && layoutStyles.hudChipOn]}
                       onPress={() => setPointColorMode('intensity')}
                       activeOpacity={0.85}
                     >
-                      <Text style={[styles.hudChipTxt, pointColorMode === 'intensity' && styles.hudChipTxtOn]}>
+                      <Text style={[layoutStyles.hudChipTxt, pointColorMode === 'intensity' && layoutStyles.hudChipTxtOn]}>
                         Intensity
                       </Text>
                     </TouchableOpacity>
                   </View>
-                  <Text style={[styles.hudLabel, { marginTop: 8 }]}>Density</Text>
-                  <View style={styles.hudRow}>
+                  <Text style={[layoutStyles.hudLabel, { marginTop: 8 }]}>Density</Text>
+                  <View style={layoutStyles.hudRow}>
                     {([1, 0.75, 0.5, 0.25] as const).map((d) => (
                       <TouchableOpacity
                         key={d}
-                        style={[styles.hudChip, pointDensity === d && styles.hudChipOn]}
+                        style={[layoutStyles.hudChip, pointDensity === d && layoutStyles.hudChipOn]}
                         onPress={() => setPointDensity(d)}
                         activeOpacity={0.85}
                       >
-                        <Text style={[styles.hudChipTxt, pointDensity === d && styles.hudChipTxtOn]}>
+                        <Text style={[layoutStyles.hudChipTxt, pointDensity === d && layoutStyles.hudChipTxtOn]}>
                           {Math.round(d * 100)}%
                         </Text>
                       </TouchableOpacity>
@@ -779,7 +799,7 @@ export default function LidarAnnotationWorkbench() {
                       style={[
                         L.objectCard,
                         labelColor && { borderLeftColor: labelColor, borderLeftWidth: 4 },
-                        on && { borderColor: themeColors.accent },
+                        on && { borderColor: appColors.accent },
                       ]}
                     >
                       <View style={L.objectCardHeader}>
@@ -800,7 +820,7 @@ export default function LidarAnnotationWorkbench() {
                           onPress={() => handleDeleteCuboid(c.id)}
                           disabled={status === 'submitted'}
                         >
-                          <Ionicons name="trash-outline" size={16} color="#94a3b8" />
+                          <Ionicons name="trash-outline" size={16} color={appColors.textMuted} />
                         </TouchableOpacity>
                       </View>
                       <View style={rp.labelOptionsGrid}>
@@ -825,7 +845,7 @@ export default function LidarAnnotationWorkbench() {
                               disabled={status === 'submitted'}
                               activeOpacity={0.85}
                             >
-                              <Text style={[rp.labelOptionText, { color: act ? '#fff' : chipColor }]} numberOfLines={1}>
+                              <Text style={[rp.labelOptionText, { color: act ? '#fff' : appColors.text }]} numberOfLines={1}>
                                 {lb}
                               </Text>
                             </TouchableOpacity>
@@ -839,8 +859,8 @@ export default function LidarAnnotationWorkbench() {
             )}
 
             {selected ? (
-              <View style={[rp.form, { borderTopColor: themeColors.border }]}>
-                <Text style={[rp.h, { color: themeColors.text }]}>Details</Text>
+              <View style={[rp.form, { borderTopColor: appColors.border }]}>
+                <Text style={[rp.h, { color: appColors.text }]}>Details</Text>
                 <View style={L.field}>
                 <Text style={L.fieldL}>Object ID</Text>
                 <Text
@@ -851,13 +871,13 @@ export default function LidarAnnotationWorkbench() {
                 </Text>
               </View>
               <Text style={[L.fieldL, { marginTop: 4 }]}>Dimensions (L × W × H)</Text>
-              <View style={styles.dimRow}>
+              <View style={layoutStyles.dimRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={L.fieldL}>L</Text>
                   <TextInput
-                    style={[L.inp, styles.compactInp]}
+                    style={[L.inp, layoutStyles.compactInp]}
                     keyboardType="decimal-pad"
-                    placeholderTextColor={themeColors.textSoft}
+                    placeholderTextColor={appColors.textSecondary}
                     value={String(selected.depth)}
                     onChangeText={(txt) => {
                       const v = parseFloat(txt.replace(',', '.'));
@@ -869,9 +889,9 @@ export default function LidarAnnotationWorkbench() {
                 <View style={{ flex: 1 }}>
                   <Text style={L.fieldL}>W</Text>
                   <TextInput
-                    style={[L.inp, styles.compactInp]}
+                    style={[L.inp, layoutStyles.compactInp]}
                     keyboardType="decimal-pad"
-                    placeholderTextColor={themeColors.textSoft}
+                    placeholderTextColor={appColors.textSecondary}
                     value={String(selected.width)}
                     onChangeText={(txt) => {
                       const v = parseFloat(txt.replace(',', '.'));
@@ -883,9 +903,9 @@ export default function LidarAnnotationWorkbench() {
                 <View style={{ flex: 1 }}>
                   <Text style={L.fieldL}>H</Text>
                   <TextInput
-                    style={[L.inp, styles.compactInp]}
+                    style={[L.inp, layoutStyles.compactInp]}
                     keyboardType="decimal-pad"
-                    placeholderTextColor={themeColors.textSoft}
+                    placeholderTextColor={appColors.textSecondary}
                     value={String(selected.height)}
                     onChangeText={(txt) => {
                       const v = parseFloat(txt.replace(',', '.'));
@@ -896,13 +916,13 @@ export default function LidarAnnotationWorkbench() {
                 </View>
               </View>
               <Text style={[L.fieldL, { marginTop: 8 }]}>Position (X Y Z)</Text>
-              <View style={styles.dimRow}>
+              <View style={layoutStyles.dimRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={L.fieldL}>X</Text>
                   <TextInput
-                    style={[L.inp, styles.compactInp]}
+                    style={[L.inp, layoutStyles.compactInp]}
                     keyboardType="decimal-pad"
-                    placeholderTextColor={themeColors.textSoft}
+                    placeholderTextColor={appColors.textSecondary}
                     value={String(selected.cx)}
                     onChangeText={(txt) => {
                       const v = parseFloat(txt.replace(',', '.'));
@@ -914,9 +934,9 @@ export default function LidarAnnotationWorkbench() {
                 <View style={{ flex: 1 }}>
                   <Text style={L.fieldL}>Y</Text>
                   <TextInput
-                    style={[L.inp, styles.compactInp]}
+                    style={[L.inp, layoutStyles.compactInp]}
                     keyboardType="decimal-pad"
-                    placeholderTextColor={themeColors.textSoft}
+                    placeholderTextColor={appColors.textSecondary}
                     value={String(selected.cy)}
                     onChangeText={(txt) => {
                       const v = parseFloat(txt.replace(',', '.'));
@@ -928,9 +948,9 @@ export default function LidarAnnotationWorkbench() {
                 <View style={{ flex: 1 }}>
                   <Text style={L.fieldL}>Z</Text>
                   <TextInput
-                    style={[L.inp, styles.compactInp]}
+                    style={[L.inp, layoutStyles.compactInp]}
                     keyboardType="decimal-pad"
-                    placeholderTextColor={themeColors.textSoft}
+                    placeholderTextColor={appColors.textSecondary}
                     value={String(selected.cz)}
                     onChangeText={(txt) => {
                       const v = parseFloat(txt.replace(',', '.'));
@@ -945,7 +965,7 @@ export default function LidarAnnotationWorkbench() {
                 <TextInput
                   style={[L.inp, { paddingVertical: 8, fontSize: 13 }]}
                   keyboardType="decimal-pad"
-                  placeholderTextColor={themeColors.textSoft}
+                  placeholderTextColor={appColors.textSecondary}
                   value={String(((selected.yaw * 180) / Math.PI).toFixed(1))}
                   onChangeText={(txt) => {
                     const deg = parseFloat(txt.replace(',', '.'));
@@ -956,12 +976,12 @@ export default function LidarAnnotationWorkbench() {
               </View>
                 <View style={rp.rowActions}>
                   <TouchableOpacity
-                    style={[rp.btnGhost, { borderColor: themeColors.danger }]}
+                    style={[rp.btnGhost, { borderColor: appColors.error }]}
                     onPress={() => handleDeleteCuboid(selected.id)}
                     disabled={status === 'submitted'}
                     activeOpacity={0.85}
                   >
-                    <Text style={{ color: themeColors.danger, fontWeight: '600' }}>Delete</Text>
+                    <Text style={{ color: appColors.error, fontWeight: '600' }}>Delete</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1008,7 +1028,9 @@ export default function LidarAnnotationWorkbench() {
 }
 
 /** Right panel list + form — aligned with `AnnotatorVideoRightPanel.web`. */
-const rp = StyleSheet.create({
+
+function createRpStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   scrollContent: { padding: 12, paddingBottom: 24 },
   /** Image / video right `ScrollView` — minimal horizontal padding (sidebar already has padding). */
   scrollContentSidebar: { flexGrow: 1, paddingBottom: 20, paddingTop: 4 },
@@ -1060,8 +1082,9 @@ const rp = StyleSheet.create({
     justifyContent: 'center',
   },
 });
-
-const styles = StyleSheet.create({
+}
+function createLidarWorkbenchLayoutStyles(c: AppColors) {
+  return StyleSheet.create({
   topNavMetaCol: {
     flex: 1,
     flexDirection: 'row' as const,
@@ -1089,21 +1112,21 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   priceBadge: {
-    backgroundColor: 'rgba(34, 197, 94, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 197, 94, 0.45)',
+    backgroundColor: 'rgba(22, 101, 52, 0.12)',
+    borderWidth: 1.5,
+    borderColor: c.success,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 10,
   },
   priceBadgeText: {
-    color: '#86efac',
+    color: c.success,
     fontSize: 12,
     fontWeight: '700',
   },
   frameLabel: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: c.textMuted,
     marginRight: 4,
   },
   dimRow: {
@@ -1122,9 +1145,9 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   leftRailHudCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.88)',
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.25)',
+    backgroundColor: c.surface,
+    borderWidth: 1.5,
+    borderColor: c.accent,
     borderRadius: 10,
     paddingHorizontal: 8,
     paddingVertical: 8,
@@ -1132,7 +1155,7 @@ const styles = StyleSheet.create({
     maxWidth: '100%' as const,
   },
   hudLabel: {
-    color: '#94a3b8',
+    color: c.textMuted,
     fontSize: 10,
     fontWeight: '700' as const,
     letterSpacing: 0.8,
@@ -1147,20 +1170,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: 'rgba(30, 41, 59, 0.9)',
-    borderWidth: 1,
-    borderColor: '#334155',
+    backgroundColor: c.surfaceElevated,
+    borderWidth: 1.5,
+    borderColor: c.border,
   },
   hudChipOn: {
-    borderColor: '#38bdf8',
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderColor: c.accent,
+    backgroundColor: c.accentMuted,
   },
   hudChipTxt: {
-    color: '#cbd5e1',
+    color: c.text,
     fontSize: 12,
     fontWeight: '600' as const,
   },
   hudChipTxtOn: {
-    color: '#38bdf8',
+    color: c.accent,
   },
 });
+}

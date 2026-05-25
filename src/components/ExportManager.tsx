@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, Platform, ActivityIndicator } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import type { Annotation } from '@/components/AnnotationCanvas';
 import { toYOLO, toCOCO, toPascalVOC, type ExportContext } from '@/lib/exportFormats';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 interface ExportManagerProps {
   visible: boolean;
   onClose: () => void;
@@ -32,6 +33,9 @@ export default function ExportManager({
   imageHeight,
   imageFileName,
 }: ExportManagerProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const [exporting, setExporting] = useState(false);
 
@@ -153,7 +157,8 @@ export default function ExportManager({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -161,10 +166,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modal: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     width: '90%',
     maxWidth: 420,
   },
@@ -174,9 +179,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
   },
-  title: { fontSize: 18, fontWeight: '600', color: '#f1f5f9' },
+  title: { fontSize: 18, fontWeight: '600', color: themeColors.text },
   closeBtn: { padding: 4 },
   body: { padding: 16 },
   option: {
@@ -189,8 +194,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   optionDisabled: { opacity: 0.6 },
-  optionText: { fontSize: 15, fontWeight: '600', color: '#f1f5f9', flex: 1 },
-  optionHint: { fontSize: 11, color: '#94a3b8', maxWidth: 140 },
+  optionText: { fontSize: 15, fontWeight: '600', color: themeColors.text, flex: 1 },
+  optionHint: { fontSize: 11, color: themeColors.textMuted, maxWidth: 140 },
   separator: { height: 12 },
   zipOption: {
     flexDirection: 'row',
@@ -203,3 +208,4 @@ const styles = StyleSheet.create({
   },
   zipOptionText: { fontSize: 15, fontWeight: '600', color: '#fff' },
 });
+}

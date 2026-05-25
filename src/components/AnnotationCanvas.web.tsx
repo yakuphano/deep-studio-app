@@ -49,13 +49,17 @@ import { CanvasToolbar } from '@/components/workbench/CanvasToolbar';
 import { useAnnotationActions } from '@/hooks/useAnnotationActions';
 import { normalizeRemoteMediaUrl } from '@/lib/mediaUrl';
 import { buildWeservImageProxyUrl } from '@/lib/imageProxyUrl';
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
-const styles = StyleSheet.create({
+function createAnnotationCanvasStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
   },
 });
+}
 
 interface AnnotationCanvasProps {
   imageSource?: { uri: string } | null;
@@ -102,6 +106,9 @@ export default React.forwardRef(function AnnotationCanvas({
   onBrushPaletteOpenChange: onBrushPaletteOpenChangeProp,
   labelColorOverrides,
 }: AnnotationCanvasProps, ref) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createAnnotationCanvasStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
 
   const resolvedImageUri = useMemo(() => {

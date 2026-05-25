@@ -1,4 +1,4 @@
-import React, { useEffect, useState, createElement } from 'react';
+import React, { useMemo, useEffect, useState, createElement } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { detectGuidelineKind, getGuidelineEmbedUrl } from '@/lib/guidelineViewer';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type Props = {
   visible: boolean;
   url: string;
@@ -25,6 +26,9 @@ type Props = {
 };
 
 export default function GuidelineSideDrawer({ visible, url, fileName, onClose }: Props) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const { width } = useWindowDimensions();
   const panelWidth = Math.min(520, Math.max(320, width * 0.42));
@@ -125,7 +129,7 @@ export default function GuidelineSideDrawer({ visible, url, fileName, onClose }:
               width: '100%',
               height: '100%',
               border: 'none',
-              backgroundColor: '#0f172a',
+              backgroundColor: themeColors.background,
             },
           })
         ) : null}
@@ -165,7 +169,8 @@ export default function GuidelineSideDrawer({ visible, url, fileName, onClose }:
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   webRoot: {
     ...(Platform.OS === 'web'
       ? ({
@@ -232,7 +237,7 @@ const styles = StyleSheet.create({
   viewer: {
     flex: 1,
     minHeight: 0,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   emptyState: {
     flex: 1,
@@ -242,7 +247,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   emptyText: {
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     fontSize: 15,
     textAlign: 'center',
     lineHeight: 22,
@@ -278,7 +283,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   fallbackText: {
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
@@ -295,3 +300,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
+}

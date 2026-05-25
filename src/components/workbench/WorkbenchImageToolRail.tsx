@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -7,7 +7,8 @@ import {
   type WorkbenchDrawingToolId,
 } from '@/constants/workbenchImageTools';
 import BrushColorPalette from '@/components/workbench/BrushColorPalette';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 const CELL = 48;
 const GAP = 4;
 const INNER = CELL * 2 + GAP;
@@ -32,11 +33,14 @@ function ToolCell({
   id,
   active,
   onPress,
+  styles,
 }: {
   id: WorkbenchDrawingToolId;
   active: boolean;
   onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
 }) {
+  const themeColors = useThemeColors();
   const meta = WORKBENCH_IMAGE_TOOL_META[id];
   const iconName = meta.icon as keyof typeof Ionicons.glyphMap;
   return (
@@ -51,8 +55,8 @@ function ToolCell({
           } as object)
         : {})}
     >
-      <Ionicons name={iconName} size={20} color="#f1f5f9" />
-      <Text style={styles.toolBtnText} numberOfLines={2}>
+      <Ionicons name={iconName} size={20} color={active ? '#ffffff' : themeColors.text} />
+      <Text style={[styles.toolBtnText, active && styles.toolBtnTextActive]} numberOfLines={2}>
         {meta.label}
       </Text>
     </TouchableOpacity>
@@ -63,11 +67,14 @@ function BrushToolCell({
   active,
   swatchColor,
   onPress,
+  styles,
 }: {
   active: boolean;
   swatchColor: string;
   onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
 }) {
+  const themeColors = useThemeColors();
   const meta = WORKBENCH_IMAGE_TOOL_META.brush;
   const iconName = meta.icon as keyof typeof Ionicons.glyphMap;
   return (
@@ -82,8 +89,8 @@ function BrushToolCell({
           } as object)
         : {})}
     >
-      <Ionicons name={iconName} size={20} color="#f1f5f9" />
-      <Text style={styles.toolBtnText} numberOfLines={1}>
+      <Ionicons name={iconName} size={20} color={active ? '#ffffff' : themeColors.text} />
+      <Text style={[styles.toolBtnText, active && styles.toolBtnTextActive]} numberOfLines={1}>
         {meta.label}
       </Text>
       <View style={[styles.brushSwatch, { backgroundColor: swatchColor }]} />
@@ -104,6 +111,9 @@ export default function WorkbenchImageToolRail({
   brushPaletteOpen,
   onBrushPaletteOpenChange,
 }: WorkbenchImageToolRailProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const toolActive = (id: WorkbenchDrawingToolId) => activeTool === id && !isBrushActive;
   const brushSync =
     brushColor !== undefined &&
@@ -120,6 +130,7 @@ export default function WorkbenchImageToolRail({
           key="brush"
           active={toolActive('brush')}
           swatchColor={brushColor}
+          styles={styles}
           onPress={() => {
             if (activeTool === 'brush' && brushPaletteOpen) {
               onBrushPaletteOpenChange(false);
@@ -132,7 +143,7 @@ export default function WorkbenchImageToolRail({
       );
     }
     return (
-      <ToolCell key={id} id={id} active={toolActive(id)} onPress={() => onToolChange(id)} />
+      <ToolCell key={id} id={id} active={toolActive(id)} onPress={() => onToolChange(id)} styles={styles} />
     );
   };
 
@@ -140,7 +151,7 @@ export default function WorkbenchImageToolRail({
     <View style={styles.rail}>
       <View style={styles.toolRowsWrap}>
         <View style={styles.toolRow}>
-          <ToolCell id="pan" active={toolActive('pan')} onPress={() => onToolChange('pan')} />
+          <ToolCell id="pan" active={toolActive('pan')} onPress={() => onToolChange('pan')} styles={styles} />
           {onResetImageView ? (
             <TouchableOpacity
               style={[styles.toolBtn, styles.resetViewBtn]}
@@ -153,7 +164,7 @@ export default function WorkbenchImageToolRail({
                   } as object)
                 : {})}
             >
-              <Ionicons name="scan-outline" size={18} color="#a7f3d0" />
+              <Ionicons name="scan-outline" size={18} color={themeColors.success} />
               <Text style={[styles.toolBtnText, styles.resetViewBtnText]} numberOfLines={2}>
                 Center
               </Text>
@@ -170,7 +181,7 @@ export default function WorkbenchImageToolRail({
             activeOpacity={0.85}
             {...(Platform.OS === 'web' ? ({ accessibilityLabel: 'Undo', title: 'Undo' } as object) : {})}
           >
-            <Ionicons name="arrow-undo-outline" size={18} color="#93c5fd" />
+            <Ionicons name="arrow-undo-outline" size={18} color={themeColors.accent} />
             <Text style={styles.toolBtnText}>Undo</Text>
           </TouchableOpacity>
         </View>
@@ -200,7 +211,7 @@ export default function WorkbenchImageToolRail({
         activeOpacity={0.85}
         {...(Platform.OS === 'web' ? ({ accessibilityLabel: 'Delete Selected', title: 'Delete Selected' } as object) : {})}
       >
-        <Ionicons name="trash-outline" size={18} color="#fca5a5" />
+        <Ionicons name="trash-outline" size={18} color={themeColors.error} />
         <Text style={[styles.toolBtnText, styles.deleteBtnText]} numberOfLines={2}>
           Delete
         </Text>
@@ -209,7 +220,8 @@ export default function WorkbenchImageToolRail({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   rail: {
     width: INNER + 8,
     paddingHorizontal: 4,
@@ -242,9 +254,9 @@ const styles = StyleSheet.create({
     maxWidth: CELL,
     minHeight: 52,
     borderRadius: 6,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
+    backgroundColor: themeColors.surface,
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
@@ -259,9 +271,9 @@ const styles = StyleSheet.create({
     maxWidth: INNER,
     minHeight: 52,
     borderRadius: 6,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
+    backgroundColor: themeColors.surface,
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
     flexDirection: 'column',
     flexShrink: 0,
     alignItems: 'center',
@@ -286,28 +298,37 @@ const styles = StyleSheet.create({
   toolBtnActive: {
     backgroundColor: '#7c3aed',
     borderColor: '#7c3aed',
+    borderWidth: 2,
   },
   toolBtnText: {
     fontSize: 8,
-    fontWeight: '600',
-    color: '#e2e8f0',
+    fontWeight: '700',
+    color: themeColors.text,
     textAlign: 'center',
+  },
+  toolBtnTextActive: {
+    color: '#ffffff',
   },
   resetViewBtn: {
     borderColor: '#10b981',
     backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    borderWidth: 1.5,
   },
   resetViewBtnText: {
-    color: '#a7f3d0',
+    color: themeColors.success,
   },
   undoBtn: {
     borderColor: '#3b82f6',
+    borderWidth: 1.5,
   },
   deleteBtn: {
     borderColor: '#ef4444',
     backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1.5,
   },
   deleteBtnText: {
-    color: '#fca5a5',
+    color: themeColors.error,
+    fontWeight: '700',
   },
 });
+}

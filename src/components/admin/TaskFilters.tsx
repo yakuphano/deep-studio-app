@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '@/theme/colors';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 interface TaskFiltersProps {
   onFilterChange?: (filters: TaskFiltersState) => void;
   onRefresh?: () => void;
@@ -47,6 +47,9 @@ export default function TaskFilters({
   refreshing = false,
   totalCount = 0 
 }: TaskFiltersProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const [filters, setFilters] = useState<TaskFiltersState>({
     status: 'all',
     type: 'all',
@@ -101,7 +104,7 @@ export default function TaskFilters({
             <Ionicons 
               name={refreshing ? "refresh" : "refresh-outline"} 
               size={20} 
-              color={colors.accentPurple} 
+              color={themeColors.accentPurple} 
             />
           </TouchableOpacity>
           <TouchableOpacity
@@ -111,7 +114,7 @@ export default function TaskFilters({
             <Ionicons 
               name={showFilters ? "filter" : "filter-outline"} 
               size={20} 
-              color={hasActiveFilters ? colors.accentPurple : colors.textMuted} 
+              color={hasActiveFilters ? themeColors.accentPurple : themeColors.textMuted} 
             />
           </TouchableOpacity>
         </View>
@@ -215,7 +218,7 @@ export default function TaskFilters({
                   <Ionicons 
                     name={filters.sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'} 
                     size={16} 
-                    color={colors.accentPurple} 
+                    color={themeColors.accentPurple} 
                   />
                 </TouchableOpacity>
               </View>
@@ -227,7 +230,7 @@ export default function TaskFilters({
                 style={styles.clearButton}
                 onPress={clearFilters}
               >
-                <Ionicons name="close-circle" size={16} color={colors.accentPurple} />
+                <Ionicons name="close-circle" size={16} color={themeColors.accentPurple} />
                 <Text style={styles.clearButtonText}>Clear</Text>
               </TouchableOpacity>
             )}
@@ -238,11 +241,12 @@ export default function TaskFilters({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
-    backgroundColor: colors.surfaceElevated,
+    backgroundColor: themeColors.surfaceElevated,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: themeColors.border,
   },
   header: {
     flexDirection: 'row',
@@ -258,11 +262,11 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.text,
+    color: themeColors.text,
   },
   count: {
     fontSize: 12,
-    color: colors.textMuted,
+    color: themeColors.textMuted,
   },
   headerRight: {
     flexDirection: 'row',
@@ -272,26 +276,26 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.surface,
+    backgroundColor: themeColors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: themeColors.border,
   },
   filterToggle: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.surface,
+    backgroundColor: themeColors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: themeColors.border,
   },
   filtersPanel: {
-    backgroundColor: colors.surface,
+    backgroundColor: themeColors.surface,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: themeColors.border,
   },
   filtersScroll: {
     paddingHorizontal: 16,
@@ -305,7 +309,7 @@ const styles = StyleSheet.create({
   filterLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.textMuted,
+    color: themeColors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -317,21 +321,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
-    backgroundColor: colors.background,
+    backgroundColor: themeColors.background,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: themeColors.border,
   },
   optionChipActive: {
-    backgroundColor: colors.accentPurple,
-    borderColor: colors.accentPurple,
+    backgroundColor: themeColors.accentPurple,
+    borderColor: themeColors.accentPurple,
   },
   optionText: {
     fontSize: 12,
     fontWeight: '500',
-    color: colors.textMuted,
+    color: themeColors.textMuted,
   },
   optionTextActive: {
-    color: colors.text,
+    color: themeColors.text,
   },
   sortContainer: {
     flexDirection: 'row',
@@ -342,9 +346,9 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: colors.background,
+    backgroundColor: themeColors.background,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: themeColors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -360,6 +364,7 @@ const styles = StyleSheet.create({
   clearButtonText: {
     fontSize: 12,
     fontWeight: '500',
-    color: colors.accentPurple,
+    color: themeColors.accentPurple,
   },
 });
+}

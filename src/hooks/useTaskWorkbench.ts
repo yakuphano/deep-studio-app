@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { useRouter } from 'expo-router';
 import { Alert, Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
@@ -12,6 +12,7 @@ import {
   type TaskStatus 
 } from '@/types/taskDetail';
 import { resolveTaskType } from '@/lib/inferTaskType';
+import { setTaskDiscardInDb } from '@/lib/taskDiscard';
 
 interface UseTaskWorkbenchReturn {
   task: TaskData | null;
@@ -31,8 +32,9 @@ interface UseTaskWorkbenchReturn {
   handleExit: () => void;
   setActiveTool: (tool: string) => void;
   setSelectedAnnotationId: (id: string | null) => void;
-  setAnnotations: (annotations: Annotation[]) => void;
+  setAnnotations: Dispatch<SetStateAction<Annotation[]>>;
   setTranscription: (text: string) => void;
+  handleTaskDiscard: (discarded: boolean) => Promise<{ error: string | null }>;
   // Video controls
   isPlaying: boolean;
   setIsPlaying: (playing: boolean) => void;
@@ -139,6 +141,8 @@ export const useTaskWorkbench = (taskId: string | undefined, userId: string | un
           guideline_url: data.guideline_url ?? null,
           guideline_storage_path: data.guideline_storage_path ?? null,
           guideline_file_name: data.guideline_file_name ?? null,
+          discarded_at: data.discarded_at ?? null,
+          discarded_by: data.discarded_by ?? null,
         };
 
         setTask(taskData);
@@ -385,6 +389,26 @@ export const useTaskWorkbench = (taskId: string | undefined, userId: string | un
     }
   }, [router]);
 
+  const handleTaskDiscard = useCallback(
+    async (discarded: boolean) => {
+      if (!taskId || !userId) return { error: null };
+      const { error } = await setTaskDiscardInDb(taskId, discarded, userId);
+      if (!error) {
+        setTask((prev) =>
+          prev
+            ? {
+                ...prev,
+                discarded_at: discarded ? new Date().toISOString() : null,
+                discarded_by: discarded ? userId : null,
+              }
+            : null
+        );
+      }
+      return { error };
+    },
+    [taskId, userId]
+  );
+
   return {
     task,
     loading,
@@ -405,6 +429,7 @@ export const useTaskWorkbench = (taskId: string | undefined, userId: string | un
     setSelectedAnnotationId,
     setAnnotations,
     setTranscription,
+    handleTaskDiscard,
     // Video controls
     isPlaying,
     setIsPlaying,

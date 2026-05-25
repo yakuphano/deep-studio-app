@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,8 +18,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { normalizeProfileRole, postLoginPathForRole, pickAuthUserEmail } from '@/lib/userRoles';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 export default function LoginScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const navigation = useRouter();
   const { user } = useAuth();
@@ -115,7 +119,7 @@ export default function LoginScreen() {
           <TextInput
             style={styles.input}
             placeholder={t('login.emailPlaceholder')}
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={themeColors.textMuted}
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -132,7 +136,7 @@ export default function LoginScreen() {
           <TextInput
             style={styles.input}
             placeholder={t('login.passwordPlaceholder')}
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={themeColors.textMuted}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -167,7 +171,7 @@ export default function LoginScreen() {
               <TextInput
                 style={styles.modalInput}
                 placeholder={t('login.emailPlaceholder')}
-                placeholderTextColor="#94a3b8"
+                placeholderTextColor={themeColors.textMuted}
                 value={resetEmail}
                 onChangeText={setResetEmail}
                 autoCapitalize="none"
@@ -195,10 +199,11 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     justifyContent: 'center',
     padding: 20,
     alignItems: 'center',
@@ -208,20 +213,20 @@ const styles = StyleSheet.create({
     maxWidth: 450,
     alignSelf: 'center',
     padding: 30,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#334155',
-    shadowColor: '#000',
+    borderColor: themeColors.border,
+    shadowColor: '#0f2744',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 8,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#f8fafc',
+    color: themeColors.text,
     marginBottom: 28,
     textAlign: 'center',
   },
@@ -232,15 +237,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     overflow: 'hidden',
   },
   inputWrapFocused: {
-    borderColor: '#3b82f6',
+    borderColor: themeColors.accent,
   },
   iconBox: {
     width: 36,
-    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+    backgroundColor: themeColors.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
     borderTopLeftRadius: 8,
@@ -251,8 +256,8 @@ const styles = StyleSheet.create({
     paddingLeft: 10,
     paddingRight: 14,
     paddingVertical: 0,
-    backgroundColor: 'rgba(30, 41, 59, 0.5)',
-    color: '#f1f5f9',
+    backgroundColor: themeColors.background,
+    color: themeColors.text,
     fontSize: 16,
   },
   forgotBtn: {
@@ -260,12 +265,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   forgotBtnText: {
-    color: '#60a5fa',
+    color: themeColors.accent,
     fontSize: 13,
     fontWeight: '500',
   },
   button: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: themeColors.accent,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -275,13 +280,13 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
+    color: themeColors.onAccent,
     fontSize: 16,
     fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -289,22 +294,22 @@ const styles = StyleSheet.create({
   modalContent: {
     width: '100%',
     maxWidth: 400,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 16,
     padding: 24,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: themeColors.text,
     marginBottom: 8,
     textAlign: 'center',
   },
   modalHint: {
     fontSize: 14,
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     marginBottom: 20,
     textAlign: 'center',
   },
@@ -315,12 +320,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     overflow: 'hidden',
   },
   modalIconBox: {
     width: 36,
-    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+    backgroundColor: themeColors.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
     borderTopLeftRadius: 8,
@@ -331,8 +336,8 @@ const styles = StyleSheet.create({
     paddingLeft: 10,
     paddingRight: 14,
     paddingVertical: 0,
-    backgroundColor: 'rgba(30, 41, 59, 0.5)',
-    color: '#f1f5f9',
+    backgroundColor: themeColors.background,
+    color: themeColors.text,
     fontSize: 16,
   },
   modalActions: {
@@ -344,10 +349,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 10,
-    backgroundColor: '#334155',
+    backgroundColor: themeColors.surfaceElevated,
   },
   modalCancelText: {
-    color: '#f1f5f9',
+    color: themeColors.text,
     fontSize: 15,
     fontWeight: '500',
   },
@@ -355,11 +360,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 10,
-    backgroundColor: '#3b82f6',
+    backgroundColor: themeColors.accent,
   },
   modalSendText: {
-    color: '#fff',
+    color: themeColors.onAccent,
     fontSize: 15,
     fontWeight: '600',
   },
 });
+}

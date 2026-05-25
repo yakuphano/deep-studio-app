@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, createElement } from 'react';
+import React, { useMemo, useState, useRef, useCallback, createElement } from 'react';
 import {
   View,
   Text,
@@ -27,6 +27,9 @@ import {
   applyGuidelineToTaskRows,
   type GuidelineFileSelection,
 } from '@/lib/uploadTaskGuideline';
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
+import { getAdminCreateTaskFormStyles } from '@/theme/adminCreateTaskForm';
 
 const WEB_FILE_ACCEPT =
   '.jpg,.jpeg,.png,.gif,.webp,.bmp,.zip,image/*,application/zip,application/x-zip-compressed';
@@ -70,6 +73,10 @@ function notify(msg: string) {
 }
 
 export default function CreateMedicalTaskScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+  const acf = useMemo(() => getAdminCreateTaskFormStyles(themeColors), [themeColors]);
+
   const router = useRouter();
   const { user } = useAuth();
 
@@ -392,73 +399,76 @@ export default function CreateMedicalTaskScreen() {
           task-assets/medical/… altına yüklenir.
         </Text>
 
-        <View style={styles.form}>
-          <View style={styles.leftColumn}>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Company Name *</Text>
+        <View style={acf.formPageMax}>
+          <View style={acf.formPanel}>
+            <Text style={acf.formEyebrow}>Task setup</Text>
+            <View style={acf.form}>
+          <View style={acf.leftColumn}>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Company Name *</Text>
               <TextInput
                 style={[styles.input, focusedInput === 'company_name' && styles.inputFocused]}
                 value={taskData.company_name}
                 onChangeText={(text) => setTaskData((prev) => ({ ...prev, company_name: text }))}
                 placeholder="Company or client name"
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor={themeColors.textMuted}
                 onFocus={() => setFocusedInput('company_name')}
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Task Title *</Text>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Task Title *</Text>
               <TextInput
                 style={[styles.input, focusedInput === 'title' && styles.inputFocused]}
                 value={taskData.title}
                 onChangeText={(text) => setTaskData((prev) => ({ ...prev, title: text }))}
                 placeholder="Task title"
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor={themeColors.textMuted}
                 onFocus={() => setFocusedInput('title')}
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Price ($)</Text>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Price ($)</Text>
               <TextInput
                 style={[styles.input, focusedInput === 'price' && styles.inputFocused]}
                 value={taskData.price.toString()}
                 onChangeText={(text) => setTaskData((prev) => ({ ...prev, price: parseFloat(text) || 0 }))}
                 placeholder="0"
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor={themeColors.textMuted}
                 keyboardType="numeric"
                 onFocus={() => setFocusedInput('price')}
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Annotation Type</Text>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Annotation Type</Text>
               <TextInput
                 style={[styles.input, focusedInput === 'annotationType' && styles.inputFocused]}
                 value={taskData.annotationType}
                 onChangeText={(text) => setTaskData((prev) => ({ ...prev, annotationType: text }))}
                 placeholder="bbox, polygon, …"
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor={themeColors.textMuted}
                 onFocus={() => setFocusedInput('annotationType')}
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
           </View>
 
-          <View style={styles.rightColumn}>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Description *</Text>
+          <View style={[acf.rightColumn, { flex: 1.5 }]}>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Description *</Text>
               <TextInput
                 style={[styles.input, styles.textArea, focusedInput === 'description' && styles.inputFocused]}
                 value={taskData.description}
                 onChangeText={(text) => setTaskData((prev) => ({ ...prev, description: text }))}
                 placeholder="Description"
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor={themeColors.textMuted}
                 multiline
-                numberOfLines={6}
+                numberOfLines={4}
                 onFocus={() => setFocusedInput('description')}
                 onBlur={() => setFocusedInput(null)}
               />
@@ -470,15 +480,15 @@ export default function CreateMedicalTaskScreen() {
               disabled={isCreating}
             />
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Image Source</Text>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Image Source</Text>
 
               <View style={styles.sourceSelector}>
                 <TouchableOpacity
                   style={[styles.sourceButton, sourceType === 'local' && styles.sourceButtonActive]}
                   onPress={() => setSourceType('local')}
                 >
-                  <Ionicons name="cloud-upload" size={16} color={sourceType === 'local' ? '#fff' : '#9ca3af'} />
+                  <Ionicons name="cloud-upload" size={16} color={sourceType === 'local' ? '#fff' : themeColors.textMuted} />
                   <Text style={[styles.sourceButtonText, sourceType === 'local' && styles.sourceButtonTextActive]}>
                     Local File
                   </Text>
@@ -487,7 +497,7 @@ export default function CreateMedicalTaskScreen() {
                   style={[styles.sourceButton, sourceType === 'remote' && styles.sourceButtonActive]}
                   onPress={() => setSourceType('remote')}
                 >
-                  <Ionicons name="link" size={16} color={sourceType === 'remote' ? '#fff' : '#9ca3af'} />
+                  <Ionicons name="link" size={16} color={sourceType === 'remote' ? '#fff' : themeColors.textMuted} />
                   <Text style={[styles.sourceButtonText, sourceType === 'remote' && styles.sourceButtonTextActive]}>
                     Remote URL
                   </Text>
@@ -509,13 +519,13 @@ export default function CreateMedicalTaskScreen() {
                 </TouchableOpacity>
               ) : (
                 <View style={styles.urlInputContainer}>
-                  <Ionicons name="link" size={16} color="#9ca3af" style={styles.urlInputIcon} />
+                  <Ionicons name="link" size={16} color={themeColors.textMuted} style={styles.urlInputIcon} />
                   <TextInput
                     style={[styles.input, styles.urlInput, focusedInput === 'url' && styles.inputFocused]}
                     value={remoteUrl}
                     onChangeText={setRemoteUrl}
                     placeholder=".jpg / .txt / .json / .zip (ZIP’te görüntü+ses+video karışık olabilir)"
-                    placeholderTextColor="#9ca3af"
+                    placeholderTextColor={themeColors.textMuted}
                     onFocus={() => setFocusedInput('url')}
                     onBlur={() => setFocusedInput(null)}
                   />
@@ -544,7 +554,7 @@ export default function CreateMedicalTaskScreen() {
         </View>
 
         <TouchableOpacity
-          style={[styles.saveButton, isCreating && styles.saveButtonDisabled]}
+          style={[styles.saveButton, acf.saveInPanel, isCreating && styles.saveButtonDisabled]}
           onPress={() => void handleCreateTask()}
           disabled={isCreating}
         >
@@ -557,15 +567,18 @@ export default function CreateMedicalTaskScreen() {
             <Text style={styles.saveButtonText}>Create Task</Text>
           )}
         </TouchableOpacity>
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   backButtonContainer: {
     position: 'absolute',
@@ -589,101 +602,87 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 20,
-    paddingTop: 60,
+    padding: 14,
+    paddingTop: 52,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
-    color: '#f8fafc',
-    marginBottom: 8,
+    color: themeColors.text,
+    marginBottom: 4,
     textAlign: 'center',
   },
   hint: {
-    fontSize: 13,
-    color: '#94a3b8',
+    fontSize: 12,
+    color: themeColors.textMuted,
     textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 20,
-    paddingHorizontal: 12,
-  },
-  form: {
-    flexDirection: 'row',
-    gap: 24,
-    marginBottom: 24,
-  },
-  leftColumn: {
-    flex: 1,
-  },
-  rightColumn: {
-    flex: 1.5,
-  },
-  formGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 8,
+    marginBottom: 10,
+    lineHeight: 17,
+    paddingHorizontal: 8,
   },
   input: {
-    backgroundColor: '#1f2937',
-    borderWidth: 1,
-    borderColor: '#30363d',
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    color: '#ffffff',
+    backgroundColor: themeColors.surface,
+    borderWidth: 1.5,
+    borderColor: themeColors.border,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: themeColors.text,
   },
   inputFocused: {
     borderColor: '#14b8a6',
     borderWidth: 2,
   },
   textArea: {
-    height: 120,
+    minHeight: 64,
+    maxHeight: 88,
     textAlignVertical: 'top',
   },
   uploadButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1f2937',
+    backgroundColor: themeColors.surface,
     borderWidth: 2,
-    borderColor: '#30363d',
+    borderColor: themeColors.border,
     borderStyle: 'dashed',
-    borderRadius: 12,
-    padding: 20,
-    gap: 12,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 8,
   },
   uploadButtonFocused: {
-    borderColor: '#facc15',
+    borderColor: '#14b8a6',
     borderWidth: 2,
   },
   uploadButtonText: {
     fontSize: 16,
-    color: '#ffffff',
+    color: themeColors.text,
     fontWeight: '500',
     flex: 1,
     textAlign: 'center',
+    backgroundColor: 'transparent',
   },
   fileInfo: {
     marginTop: 12,
     padding: 12,
-    backgroundColor: '#1f2937',
+    backgroundColor: themeColors.surface,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#30363d',
+    borderWidth: 1.5,
+    borderColor: themeColors.border,
   },
   fileName: {
     fontSize: 14,
-    color: '#ffffff',
+    color: themeColors.text,
     fontWeight: '600',
     marginBottom: 4,
+    backgroundColor: 'transparent',
   },
   fileSize: {
     fontSize: 12,
-    color: '#64748b',
+    color: themeColors.textMuted,
+    backgroundColor: 'transparent',
   },
   progressContainer: {
     marginTop: 12,
@@ -694,7 +693,7 @@ const styles = StyleSheet.create({
   progressBar: {
     flex: 1,
     height: 8,
-    backgroundColor: '#30363d',
+    backgroundColor: themeColors.borderLight,
     borderRadius: 4,
     overflow: 'hidden',
   },
@@ -711,10 +710,12 @@ const styles = StyleSheet.create({
   },
   sourceSelector: {
     flexDirection: 'row',
-    backgroundColor: '#1f2937',
+    backgroundColor: themeColors.surfaceElevated,
     borderRadius: 8,
     padding: 4,
-    marginBottom: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: themeColors.borderLight,
   },
   sourceButton: {
     flex: 1,
@@ -731,8 +732,9 @@ const styles = StyleSheet.create({
   },
   sourceButtonText: {
     fontSize: 12,
-    color: '#9ca3af',
+    color: themeColors.textMuted,
     fontWeight: '600',
+    backgroundColor: 'transparent',
   },
   sourceButtonTextActive: {
     color: '#fff',
@@ -740,28 +742,27 @@ const styles = StyleSheet.create({
   urlInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1f2937',
-    borderWidth: 1,
-    borderColor: '#30363d',
+    backgroundColor: themeColors.surface,
+    borderWidth: 1.5,
+    borderColor: themeColors.border,
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   urlInputIcon: {
     marginRight: 8,
   },
   urlInput: {
     flex: 1,
-    color: '#f8fafc',
+    color: themeColors.text,
     fontSize: 14,
   },
   saveButton: {
     backgroundColor: '#14b8a6',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
     alignItems: 'center',
-    marginTop: 32,
   },
   saveButtonDisabled: {
     opacity: 0.7,
@@ -772,3 +773,4 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 });
+}

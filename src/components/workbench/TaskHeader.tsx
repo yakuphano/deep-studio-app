@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
-
+import TaskDiscardCheckbox from '@/components/task/TaskDiscardCheckbox';
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 interface TaskHeaderProps {
   title: string;
   price: number | null;
@@ -11,6 +13,11 @@ interface TaskHeaderProps {
   onBack: () => void;
   guidelineUrl?: string | null;
   guidelineFileName?: string | null;
+  taskId?: string;
+  discarded?: boolean;
+  discardDisabled?: boolean;
+  userId?: string | undefined;
+  onTaskDiscard?: (discarded: boolean) => Promise<{ error: string | null }>;
 }
 
 export default function TaskHeader({
@@ -20,7 +27,15 @@ export default function TaskHeader({
   onBack,
   guidelineUrl,
   guidelineFileName,
+  taskId,
+  discarded = false,
+  discardDisabled,
+  userId,
+  onTaskDiscard,
 }: TaskHeaderProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   return (
     <View style={styles.container}>
@@ -33,12 +48,23 @@ export default function TaskHeader({
           <Ionicons name="arrow-back" size={20} color="#3b82f6" />
           <Text style={styles.backButtonText}>{t('taskDetail.back')}</Text>
         </TouchableOpacity>
-        <GuidelineOpenButton
-          variant="header"
-          guidelineUrl={guidelineUrl ?? null}
-          guidelineFileName={guidelineFileName ?? null}
-          style={styles.guidelineHeaderBtn}
-        />
+        <View style={styles.headerRightCol}>
+          <GuidelineOpenButton
+            variant="header"
+            guidelineUrl={guidelineUrl ?? null}
+            guidelineFileName={guidelineFileName ?? null}
+            style={styles.guidelineHeaderBtn}
+          />
+          {taskId ? (
+            <TaskDiscardCheckbox
+              taskId={taskId}
+              discarded={discarded}
+              disabled={discardDisabled}
+              userId={userId}
+              onPersist={onTaskDiscard}
+            />
+          ) : null}
+        </View>
       </View>
       
       {/* Task Info Overlay */}
@@ -52,9 +78,10 @@ export default function TaskHeader({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   headerRow: {
     flexDirection: 'row',
@@ -69,6 +96,11 @@ const styles = StyleSheet.create({
   },
   guidelineHeaderBtn: {
     flexShrink: 0,
+  },
+  headerRightCol: {
+    flexShrink: 0,
+    alignItems: 'flex-end',
+    gap: 4,
   },
   backButton: {
     flexDirection: 'row',
@@ -93,14 +125,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
     paddingRight: 168,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
   },
   taskInfoType: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
   },
   taskInfoPriceBadge: {
     backgroundColor: '#8b5cf6',
@@ -114,3 +146,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+}

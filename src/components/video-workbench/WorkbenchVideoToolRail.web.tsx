@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Tool } from '@/types/annotations';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 const CELL = 48;
 const GAP = 4;
 const INNER = CELL * 2 + GAP;
@@ -35,11 +36,14 @@ function ToolCell({
   tool,
   active,
   onPress,
+  styles,
 }: {
   tool: VideoRailTool;
   active: boolean;
   onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
 }) {
+  const themeColors = useThemeColors();
   const meta = VIDEO_TOOL_META[tool];
   return (
     <TouchableOpacity
@@ -53,8 +57,8 @@ function ToolCell({
           } as object)
         : {})}
     >
-      <Ionicons name={meta.icon} size={20} color="#f1f5f9" />
-      <Text style={styles.toolBtnText} numberOfLines={2}>
+      <Ionicons name={meta.icon} size={20} color={active ? '#ffffff' : themeColors.text} />
+      <Text style={[styles.toolBtnText, active && styles.toolBtnTextActive]} numberOfLines={2}>
         {meta.label}
       </Text>
     </TouchableOpacity>
@@ -71,13 +75,16 @@ export default function WorkbenchVideoToolRail({
   selectedAnnotationId,
   onDeleteSelected,
 }: WorkbenchVideoToolRailProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const drawingActive = (t: VideoRailTool) => activeTool === t && !trackMode;
 
   return (
     <View style={styles.rail}>
       <View style={styles.toolRowsWrap}>
         <View style={styles.toolRow}>
-          <ToolCell tool="pan" active={drawingActive('pan')} onPress={() => onToolChange('pan')} />
+          <ToolCell tool="pan" active={drawingActive('pan')} onPress={() => onToolChange('pan')} styles={styles} />
           {onResetView ? (
             <TouchableOpacity
               style={[styles.toolBtn, styles.resetViewBtn]}
@@ -90,7 +97,7 @@ export default function WorkbenchVideoToolRail({
                   } as object)
                 : {})}
             >
-              <Ionicons name="scan-outline" size={18} color="#a7f3d0" />
+              <Ionicons name="scan-outline" size={18} color={themeColors.success} />
               <Text style={[styles.toolBtnText, styles.resetViewBtnText]} numberOfLines={2}>
                 Center
               </Text>
@@ -107,19 +114,19 @@ export default function WorkbenchVideoToolRail({
             activeOpacity={0.85}
             {...(Platform.OS === 'web' ? ({ accessibilityLabel: 'Undo', title: 'Undo (Ctrl+Z)' } as object) : {})}
           >
-            <Ionicons name="arrow-undo-outline" size={18} color="#93c5fd" />
+            <Ionicons name="arrow-undo-outline" size={18} color={themeColors.accent} />
             <Text style={styles.toolBtnText}>Undo</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.toolRow}>
-          <ToolCell tool="select" active={drawingActive('select')} onPress={() => onToolChange('select')} />
-          <ToolCell tool="bbox" active={drawingActive('bbox')} onPress={() => onToolChange('bbox')} />
+          <ToolCell tool="select" active={drawingActive('select')} onPress={() => onToolChange('select')} styles={styles} />
+          <ToolCell tool="bbox" active={drawingActive('bbox')} onPress={() => onToolChange('bbox')} styles={styles} />
         </View>
 
         <View style={styles.toolRow}>
-          <ToolCell tool="polygon" active={drawingActive('polygon')} onPress={() => onToolChange('polygon')} />
-          <ToolCell tool="points" active={drawingActive('points')} onPress={() => onToolChange('points')} />
+          <ToolCell tool="polygon" active={drawingActive('polygon')} onPress={() => onToolChange('polygon')} styles={styles} />
+          <ToolCell tool="points" active={drawingActive('points')} onPress={() => onToolChange('points')} styles={styles} />
         </View>
 
         <View style={[styles.toolRow, styles.toolRowSingle]}>
@@ -134,11 +141,11 @@ export default function WorkbenchVideoToolRail({
                 } as object)
               : {})}
           >
-            <Ionicons name="color-wand-outline" size={18} color="#f1f5f9" />
-            <Text style={styles.toolBtnText} numberOfLines={2}>
+            <Ionicons name="color-wand-outline" size={18} color={trackMode ? '#ffffff' : themeColors.text} />
+            <Text style={[styles.toolBtnText, trackMode && styles.toolBtnTextActive]} numberOfLines={2}>
               Track
             </Text>
-            <Text style={styles.trackHint}>T</Text>
+            <Text style={[styles.trackHint, trackMode && styles.trackHintActive]}>T</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -150,7 +157,7 @@ export default function WorkbenchVideoToolRail({
         activeOpacity={0.85}
         {...(Platform.OS === 'web' ? ({ accessibilityLabel: 'Delete selected', title: 'Delete selected' } as object) : {})}
       >
-        <Ionicons name="trash-outline" size={18} color="#fca5a5" />
+        <Ionicons name="trash-outline" size={18} color={themeColors.error} />
         <Text style={[styles.toolBtnText, styles.deleteBtnText]} numberOfLines={2}>
           Delete
         </Text>
@@ -159,7 +166,8 @@ export default function WorkbenchVideoToolRail({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   rail: {
     width: INNER + 8,
     paddingHorizontal: 4,
@@ -192,9 +200,9 @@ const styles = StyleSheet.create({
     maxWidth: CELL,
     minHeight: 52,
     borderRadius: 6,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
+    backgroundColor: themeColors.surface,
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
@@ -208,9 +216,9 @@ const styles = StyleSheet.create({
     maxWidth: INNER,
     minHeight: 52,
     borderRadius: 6,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
+    backgroundColor: themeColors.surface,
+    borderWidth: 1.5,
+    borderColor: themeColors.accent,
     flexDirection: 'column',
     flexShrink: 0,
     alignItems: 'center',
@@ -228,12 +236,16 @@ const styles = StyleSheet.create({
   toolBtnActive: {
     backgroundColor: '#7c3aed',
     borderColor: '#7c3aed',
+    borderWidth: 2,
   },
   toolBtnText: {
     fontSize: 8,
-    fontWeight: '600',
-    color: '#e2e8f0',
+    fontWeight: '700',
+    color: themeColors.text,
     textAlign: 'center',
+  },
+  toolBtnTextActive: {
+    color: '#ffffff',
   },
   trackHint: {
     position: 'absolute',
@@ -241,23 +253,31 @@ const styles = StyleSheet.create({
     right: 5,
     fontSize: 8,
     fontWeight: '700',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
+  },
+  trackHintActive: {
+    color: '#e9d5ff',
   },
   resetViewBtn: {
     borderColor: '#10b981',
     backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    borderWidth: 1.5,
   },
   resetViewBtnText: {
-    color: '#a7f3d0',
+    color: themeColors.success,
   },
   undoBtn: {
     borderColor: '#3b82f6',
+    borderWidth: 1.5,
   },
   deleteBtn: {
     borderColor: '#ef4444',
     backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1.5,
   },
   deleteBtnText: {
-    color: '#fca5a5',
+    color: themeColors.error,
+    fontWeight: '700',
   },
 });
+}

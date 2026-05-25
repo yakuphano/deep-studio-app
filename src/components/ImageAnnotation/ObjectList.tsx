@@ -18,7 +18,8 @@ import {
 } from '@/constants/annotationLabels';
 import type { Annotation } from '@/types/annotations';
 import { WorkbenchObjectListChrome } from '@/components/workbench/WorkbenchObjectListChrome';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 interface ObjectListProps {
   annotations: Annotation[];
   selectedAnnotationId: string | null;
@@ -58,6 +59,9 @@ export default function ObjectList({
   onRemoveExtraLabelOption,
   builtInChipLabels = ANNOTATION_LABELS,
 }: ObjectListProps) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
 
   const labelColorOverrides = useMemo(
@@ -164,7 +168,7 @@ export default function ObjectList({
                       onPress={() => onDeleteAnnotation(annotation.id)}
                       style={styles.deleteIconBtn}
                     >
-                      <Ionicons name="trash-outline" size={18} color="#94a3b8" />
+                      <Ionicons name="trash-outline" size={18} color={themeColors.textMuted} />
                     </TouchableOpacity>
                     <View style={[styles.objectListItemColor, { backgroundColor: labelColor }]} />
                   </View>
@@ -178,17 +182,18 @@ export default function ObjectList({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   objectListSidebar: {
     flex: 1,
     alignSelf: 'stretch',
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
   },
   chromeWrap: {
     paddingHorizontal: 8,
     paddingTop: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
   },
   objectListItemActions: {
     flexDirection: 'row',
@@ -208,14 +213,14 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
   },
   objectListItem: {
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
   objectListItemSelected: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
   },
   objectListItemHeader: {
     flexDirection: 'row',
@@ -257,3 +262,4 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
+}

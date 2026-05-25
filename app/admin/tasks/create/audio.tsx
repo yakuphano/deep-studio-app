@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, createElement } from 'react';
+import React, { useMemo, useState, useRef, useCallback, createElement } from 'react';
 import {
   View,
   Text,
@@ -30,6 +30,9 @@ import {
   uploadGuidelineIfSelected,
   type GuidelineFileSelection,
 } from '@/lib/uploadTaskGuideline';
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
+import { getAdminCreateTaskFormStyles } from '@/theme/adminCreateTaskForm';
 
 const WEB_FILE_ACCEPT =
   '.mp3,.wav,.m4a,.ogg,.flac,.zip,audio/*,application/zip,application/x-zip-compressed';
@@ -77,6 +80,10 @@ function notify(msg: string) {
 }
 
 export default function CreateAudioTaskScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+  const acf = useMemo(() => getAdminCreateTaskFormStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const { user } = useAuth();
@@ -472,6 +479,8 @@ export default function CreateAudioTaskScreen() {
     }
   };
 
+  const handleBack = () => router.back();
+
   return (
     <View style={styles.container}>
       {Platform.OS === 'web'
@@ -484,11 +493,11 @@ export default function CreateAudioTaskScreen() {
           })
         : null}
 
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={20} color="#ffffff" />
+      <View style={styles.backButtonContainer}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+          <Ionicons name="arrow-back" size={16} color="#3b82f6" />
+          <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create Audio Task</Text>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -498,36 +507,39 @@ export default function CreateAudioTaskScreen() {
           saklanır (eski file:// / blob: kayıtları çalmaz).
         </Text>
 
-        <View style={styles.form}>
-          <View style={styles.leftColumn}>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Company Name *</Text>
+        <View style={acf.formPageMax}>
+          <View style={acf.formPanel}>
+            <Text style={acf.formEyebrow}>Task setup</Text>
+            <View style={acf.form}>
+          <View style={acf.leftColumn}>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Company Name *</Text>
               <TextInput
                 style={[styles.input, focusedInput === 'company_name' && styles.inputFocused]}
                 value={taskData.company_name}
                 onChangeText={(text) => setTaskData((prev) => ({ ...prev, company_name: text }))}
-                placeholder="Enter company or client name (e.g. TransPerfect, Google)"
-                placeholderTextColor="#9ca3af"
+                placeholder="Client or company name"
+                placeholderTextColor={themeColors.textMuted}
                 onFocus={() => setFocusedInput('company_name')}
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Task Title *</Text>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Task Title *</Text>
               <TextInput
                 style={[styles.input, focusedInput === 'title' && styles.inputFocused]}
                 value={taskData.title}
                 onChangeText={(text) => setTaskData((prev) => ({ ...prev, title: text }))}
-                placeholder="Enter task title (e.g. Medical Report Transcription)"
-                placeholderTextColor="#9ca3af"
+                placeholder="Short task title"
+                placeholderTextColor={themeColors.textMuted}
                 onFocus={() => setFocusedInput('title')}
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Language</Text>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Language</Text>
               <TouchableOpacity
                 style={styles.languageSelector}
                 onPress={() => {
@@ -538,18 +550,18 @@ export default function CreateAudioTaskScreen() {
                 }}
               >
                 <Text style={styles.languageText}>{taskData.language.toUpperCase()}</Text>
-                <Ionicons name="chevron-down" size={16} color="#64748b" />
+                <Ionicons name="chevron-down" size={16} color={themeColors.textMuted} />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Price ($)</Text>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Price ($)</Text>
               <TextInput
                 style={[styles.input, focusedInput === 'price' && styles.inputFocused]}
                 value={taskData.price.toString()}
                 onChangeText={(text) => setTaskData((prev) => ({ ...prev, price: parseFloat(text) || 0 }))}
                 placeholder="0.00"
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor={themeColors.textMuted}
                 keyboardType="numeric"
                 onFocus={() => setFocusedInput('price')}
                 onBlur={() => setFocusedInput(null)}
@@ -557,17 +569,17 @@ export default function CreateAudioTaskScreen() {
             </View>
           </View>
 
-          <View style={styles.rightColumn}>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Description *</Text>
+          <View style={acf.rightColumn}>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Description *</Text>
               <TextInput
                 style={[styles.input, styles.textArea, focusedInput === 'description' && styles.inputFocused]}
                 value={taskData.description}
                 onChangeText={(text) => setTaskData((prev) => ({ ...prev, description: text }))}
-                placeholder="Enter detailed task description"
-                placeholderTextColor="#9ca3af"
+                placeholder="Instructions for workers"
+                placeholderTextColor={themeColors.textMuted}
                 multiline
-                numberOfLines={6}
+                numberOfLines={4}
                 onFocus={() => setFocusedInput('description')}
                 onBlur={() => setFocusedInput(null)}
               />
@@ -579,8 +591,9 @@ export default function CreateAudioTaskScreen() {
               disabled={isCreating || isUploading}
             />
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Audio Source (Dosya veya URL)</Text>
+            <View style={acf.formGroup}>
+              <Text style={acf.label}>Audio source</Text>
+              <Text style={acf.fieldHint}>Local file, URL, or in-browser recording.</Text>
 
               <View style={styles.sourceSelector}>
                 <TouchableOpacity
@@ -592,7 +605,7 @@ export default function CreateAudioTaskScreen() {
                     revokePreview();
                   }}
                 >
-                  <Ionicons name="cloud-upload" size={16} color={sourceType === 'local' ? '#fff' : '#9ca3af'} />
+                  <Ionicons name="cloud-upload" size={16} color={sourceType === 'local' ? '#fff' : themeColors.textMuted} />
                   <Text style={[styles.sourceButtonText, sourceType === 'local' && styles.sourceButtonTextActive]}>
                     Local File
                   </Text>
@@ -601,7 +614,7 @@ export default function CreateAudioTaskScreen() {
                   style={[styles.sourceButton, sourceType === 'remote' && styles.sourceButtonActive]}
                   onPress={() => setSourceType('remote')}
                 >
-                  <Ionicons name="link" size={16} color={sourceType === 'remote' ? '#fff' : '#9ca3af'} />
+                  <Ionicons name="link" size={16} color={sourceType === 'remote' ? '#fff' : themeColors.textMuted} />
                   <Text style={[styles.sourceButtonText, sourceType === 'remote' && styles.sourceButtonTextActive]}>
                     Remote URL
                   </Text>
@@ -610,7 +623,7 @@ export default function CreateAudioTaskScreen() {
                   style={[styles.sourceButton, sourceType === 'record' && styles.sourceButtonActive]}
                   onPress={() => setSourceType('record')}
                 >
-                  <Ionicons name="mic" size={16} color={sourceType === 'record' ? '#fff' : '#9ca3af'} />
+                  <Ionicons name="mic" size={16} color={sourceType === 'record' ? '#fff' : themeColors.textMuted} />
                   <Text style={[styles.sourceButtonText, sourceType === 'record' && styles.sourceButtonTextActive]}>
                     Record Audio
                   </Text>
@@ -632,13 +645,13 @@ export default function CreateAudioTaskScreen() {
                 </TouchableOpacity>
               ) : sourceType === 'remote' ? (
                 <View style={styles.urlInputContainer}>
-                  <Ionicons name="link" size={16} color="#9ca3af" style={styles.urlInputIcon} />
+                  <Ionicons name="link" size={16} color={themeColors.textMuted} style={styles.urlInputIcon} />
                   <TextInput
                     style={[styles.input, styles.urlInput, focusedInput === 'url' && styles.inputFocused]}
                     value={remoteUrl}
                     onChangeText={setRemoteUrl}
                     placeholder=".mp3 / .wav | .txt | .json | .zip veri seti"
-                    placeholderTextColor="#9ca3af"
+                    placeholderTextColor={themeColors.textMuted}
                     onFocus={() => setFocusedInput('url')}
                     onBlur={() => setFocusedInput(null)}
                   />
@@ -681,7 +694,7 @@ export default function CreateAudioTaskScreen() {
         </View>
 
         <TouchableOpacity
-          style={[styles.saveButton, isCreating && styles.saveButtonDisabled]}
+          style={[styles.saveButton, acf.saveInPanel, isCreating && styles.saveButtonDisabled]}
           onPress={() => void handleCreateTask()}
           disabled={isCreating}
         >
@@ -694,82 +707,75 @@ export default function CreateAudioTaskScreen() {
             <Text style={styles.saveButtonText}>Create Task</Text>
           )}
         </TouchableOpacity>
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 60,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
-    backgroundColor: '#1e293b',
+  backButtonContainer: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    zIndex: 100,
   },
   backButton: {
-    marginRight: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    backgroundColor: 'transparent',
+    gap: 6,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#ffffff',
+  backButtonText: {
+    fontSize: 14,
+    color: '#3b82f6',
+    fontWeight: '500',
   },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 20,
+    padding: 14,
+    paddingTop: 52,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
-    color: '#f8fafc',
-    marginBottom: 8,
+    color: themeColors.text,
+    marginBottom: 4,
+    textAlign: 'center',
   },
   hint: {
-    fontSize: 13,
-    color: '#94a3b8',
-    marginBottom: 16,
-    lineHeight: 20,
-  },
-  form: {
-    flexDirection: 'row',
-    gap: 20,
-  },
-  leftColumn: {
-    flex: 1,
-  },
-  rightColumn: {
-    flex: 1,
-  },
-  formGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#e2e8f0',
-    marginBottom: 8,
+    fontSize: 12,
+    color: themeColors.textMuted,
+    textAlign: 'center',
+    marginBottom: 10,
+    lineHeight: 17,
+    paddingHorizontal: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: '#f1f5f9',
-    backgroundColor: '#1e293b',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: themeColors.text,
+    backgroundColor: themeColors.surface,
   },
   inputFocused: {
     borderColor: '#3b82f6',
   },
   textArea: {
-    height: 120,
+    minHeight: 64,
+    maxHeight: 88,
     textAlignVertical: 'top',
   },
   languageSelector: {
@@ -777,30 +783,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     borderRadius: 8,
-    padding: 12,
-    backgroundColor: '#1e293b',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: themeColors.surface,
   },
   languageText: {
     fontSize: 16,
-    color: '#f1f5f9',
+    color: themeColors.text,
     fontWeight: '500',
   },
   sourceSelector: {
     flexDirection: 'row',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   sourceButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#1e293b',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: themeColors.surface,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     gap: 6,
   },
   sourceButtonActive: {
@@ -809,36 +816,38 @@ const styles = StyleSheet.create({
   },
   sourceButtonText: {
     fontSize: 12,
-    color: '#9ca3af',
+    color: themeColors.textMuted,
     fontWeight: '500',
+    backgroundColor: 'transparent',
   },
   sourceButtonTextActive: {
     color: '#ffffff',
   },
   uploadButton: {
     borderWidth: 2,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     borderStyle: 'dashed',
     borderRadius: 8,
-    padding: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     alignItems: 'center',
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
   },
   uploadButtonFocused: {
     borderColor: '#3b82f6',
   },
   uploadButtonText: {
-    color: '#f1f5f9',
-    fontSize: 14,
+    color: themeColors.text,
+    fontSize: 13,
     fontWeight: '500',
-    marginTop: 8,
+    marginTop: 6,
   },
   urlInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     borderRadius: 8,
     paddingHorizontal: 12,
   },
@@ -851,19 +860,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   recordContainer: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     borderRadius: 8,
-    padding: 16,
+    padding: 10,
   },
   recordButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#10b981',
-    padding: 16,
-    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
     gap: 8,
   },
   recordButtonRecording: {
@@ -877,10 +887,10 @@ const styles = StyleSheet.create({
   audioPreview: {
     marginTop: 12,
     padding: 12,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
   audioPreviewText: {
     fontSize: 14,
@@ -892,12 +902,12 @@ const styles = StyleSheet.create({
     color: '#64748b',
   },
   progressContainer: {
-    marginTop: 16,
+    marginTop: 8,
     alignItems: 'center',
   },
   progressBar: {
     height: 4,
-    backgroundColor: '#334155',
+    backgroundColor: themeColors.surfaceElevated,
     borderRadius: 2,
     overflow: 'hidden',
     width: '100%',
@@ -924,10 +934,10 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     backgroundColor: '#10b981',
-    padding: 16,
-    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
     alignItems: 'center',
-    marginTop: 20,
   },
   saveButtonDisabled: {
     backgroundColor: '#64748b',
@@ -943,3 +953,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+}

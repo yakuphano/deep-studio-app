@@ -3,7 +3,7 @@ import { View, ScrollView, TouchableOpacity, Text, TextInput, Platform, Activity
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTaskWorkbench } from '@/hooks/useTaskWorkbench';
-import { taskDetailStyles } from '@/theme/taskDetailStyles';
+import { createTaskDetailStyles } from '@/theme/taskDetailStyles';
 import TaskHeader from '@/components/workbench/TaskHeader';
 import { TaskMediaView, type TaskMediaViewCanvasHandle } from '@/components/task/TaskMediaView';
 import { TaskEditor } from '@/components/task/TaskEditor';
@@ -15,8 +15,11 @@ import {
   mergeAnnotationChipLabels,
   type CustomLabelDefinition,
 } from '@/constants/annotationLabels';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
 export default function TaskDetailScreen() {
+  const themeColors = useThemeColors();
+  const taskDetailStyles = useMemo(() => createTaskDetailStyles(themeColors), [themeColors]);
   const params = useLocalSearchParams<{ id: string | string[] }>();
   const rawId = Array.isArray(params.id) ? params.id[0] : params.id;
   const taskId =
@@ -44,7 +47,13 @@ export default function TaskDetailScreen() {
     setSelectedAnnotationId,
     setAnnotations,
     setTranscription,
+    handleTaskDiscard,
   } = useTaskWorkbench(taskId, user?.id);
+
+  const taskEditorMediaType = useMemo((): 'audio' | 'image' | 'video' => {
+    if (taskType === 'audio' || taskType === 'image' || taskType === 'video') return taskType;
+    return 'audio';
+  }, [taskType]);
 
   const [selectedLabel, setSelectedLabel] = useState<string>('');
   const [extraLabelDefinitions, setExtraLabelDefinitions] = useState<CustomLabelDefinition[]>([]);
@@ -220,7 +229,7 @@ export default function TaskDetailScreen() {
       return (
         <View style={[taskDetailStyles.container, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
           <ActivityIndicator size="large" color="#8b5cf6" />
-          <Text style={{ color: '#94a3b8', marginTop: 16, textAlign: 'center' }}>
+          <Text style={{ color: themeColors.textMuted, marginTop: 16, textAlign: 'center' }}>
             Video annotation açılıyor…
           </Text>
         </View>
@@ -235,6 +244,11 @@ export default function TaskDetailScreen() {
           onBack={handleExit}
           guidelineUrl={task?.guideline_url}
           guidelineFileName={task?.guideline_file_name}
+          taskId={task?.id}
+          discarded={!!task?.discarded_at}
+          discardDisabled={task?.status === 'submitted'}
+          userId={user?.id}
+          onTaskDiscard={handleTaskDiscard}
         />
         <ScrollView style={taskDetailStyles.scroll} contentContainerStyle={taskDetailStyles.scrollContent}>
           <TaskMediaView
@@ -282,6 +296,11 @@ export default function TaskDetailScreen() {
           onBack={handleExit}
           guidelineUrl={task?.guideline_url}
           guidelineFileName={task?.guideline_file_name}
+          taskId={task?.id}
+          discarded={!!task?.discarded_at}
+          discardDisabled={task?.status === 'submitted'}
+          userId={user?.id}
+          onTaskDiscard={handleTaskDiscard}
         />
 
         <View style={{ flex: 1, minHeight: 0 }}>
@@ -356,6 +375,11 @@ export default function TaskDetailScreen() {
           onBack={handleExit}
           guidelineUrl={task?.guideline_url}
           guidelineFileName={task?.guideline_file_name}
+          taskId={task?.id}
+          discarded={!!task?.discarded_at}
+          discardDisabled={task?.status === 'submitted'}
+          userId={user?.id}
+          onTaskDiscard={handleTaskDiscard}
         />
         
         <ScrollView style={taskDetailStyles.scroll} contentContainerStyle={taskDetailStyles.scrollContent}>
@@ -378,10 +402,10 @@ export default function TaskDetailScreen() {
             onSaveDraft={handleSaveDraft}
             onAITranscription={handleAITranscription}
             onAIFix={handleAIFix}
-            taskType={taskType}
+            taskType={taskEditorMediaType}
           />
         </ScrollView>
-        
+
         <View style={taskDetailStyles.bottomButtonBar}>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <TouchableOpacity style={taskDetailStyles.exitButton} onPress={handleExit}>
@@ -411,6 +435,11 @@ export default function TaskDetailScreen() {
         onBack={handleExit}
         guidelineUrl={task?.guideline_url}
         guidelineFileName={task?.guideline_file_name}
+        taskId={task?.id}
+        discarded={!!task?.discarded_at}
+        discardDisabled={task?.status === 'submitted'}
+        userId={user?.id}
+        onTaskDiscard={handleTaskDiscard}
       />
 
       <View style={{ flex: 1, minHeight: 0 }}>

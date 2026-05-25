@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useMemo, useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   SafeAreaView,
   useWindowDimensions,
+  Alert,
 } from 'react-native';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -16,7 +17,8 @@ import { supabase } from '@/lib/supabase';
 import { useTranslation } from 'react-i18next';
 import { TaskListCard } from '@/components/tasks/TaskListCard';
 import { useAuth } from '@/contexts/AuthContext';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 type Task = {
   id: string;
   title: string;
@@ -43,6 +45,9 @@ function getLanguageLabel(code: string) {
 }
 
 export default function VideoTasksScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const { t } = useTranslation();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
@@ -191,16 +196,17 @@ export default function VideoTasksScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   authLoading: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
   },
-  authLoadingText: { color: '#e2e8f0', fontSize: 15 },
-  container: { flex: 1, backgroundColor: '#0f172a' },
+  authLoadingText: { color: themeColors.textSecondary, fontSize: 15 },
+  container: { flex: 1, backgroundColor: themeColors.background },
   breadcrumbRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -220,9 +226,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(139, 92, 246, 0.35)',
   },
   backText: { color: '#c4b5fd', fontSize: 14, fontWeight: '600' },
-  breadcrumbText: { color: '#4b5563', fontSize: 12 },
+  breadcrumbText: { color: themeColors.textMuted, fontSize: 12 },
   pageHeader: { alignItems: 'center', marginTop: 10, marginBottom: 15 },
-  pageTitle: { color: '#ffffff', fontSize: 24, fontWeight: 'bold', letterSpacing: 0.5 },
+  pageTitle: { color: themeColors.text, fontSize: 24, fontWeight: 'bold', letterSpacing: 0.5 },
   listContainer: { paddingHorizontal: 20, paddingBottom: 20 },
   columnWrapper: {
     justifyContent: 'flex-start',
@@ -245,7 +251,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#f8fafc',
+    color: themeColors.text,
     marginTop: 20,
     textAlign: 'center',
   },
@@ -270,3 +276,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
+}

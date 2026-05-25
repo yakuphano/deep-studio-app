@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
+import TaskDiscardCheckbox from '@/components/task/TaskDiscardCheckbox';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
 import AnnotationCanvas, { type Annotation, type Tool } from '@/components/AnnotationCanvas';
@@ -18,7 +19,8 @@ import {
 } from '@/constants/annotationLabels';
 import { WorkbenchObjectListChrome } from '@/components/workbench/WorkbenchObjectListChrome';
 import VideoProWorkbench from '@/components/video-workbench/VideoProWorkbench';
-
+import type { AppColors } from '@/theme/palettes';
+import { useThemeColors } from '@/contexts/ThemeContext';
 interface TaskData {
   id: string;
   title: string;
@@ -33,9 +35,16 @@ interface TaskData {
   transcription?: string;
   annotation_data?: unknown;
   language?: string | null;
+  guideline_url?: string | null;
+  guideline_file_name?: string | null;
+  discarded_at?: string | null;
+  discarded_by?: string | null;
 }
 
 export default function VideoTaskDetailScreen() {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
   const params = useLocalSearchParams<{ id: string | string[] }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const router = useRouter();
@@ -122,6 +131,10 @@ export default function VideoTaskDetailScreen() {
         transcription: data.transcription ?? '',
         annotation_data: data.annotation_data ?? null,
         language: data.language ?? null,
+        guideline_url: data.guideline_url ?? null,
+        guideline_file_name: data.guideline_file_name ?? null,
+        discarded_at: data.discarded_at ?? null,
+        discarded_by: data.discarded_by ?? null,
       };
 
       setTask(taskData);
@@ -347,7 +360,7 @@ export default function VideoTaskDetailScreen() {
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Pan (G)', title: 'Pan (G)' } as any : {})}
             >
-              <Ionicons name="hand-right-outline" size={20} color="#f1f5f9" />
+              <Ionicons name="hand-right-outline" size={20} color={themeColors.text} />
               <Text style={styles.toolBtnLargeText}>Pan</Text>
             </TouchableOpacity>
             
@@ -370,7 +383,7 @@ export default function VideoTaskDetailScreen() {
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Undo (V)', title: 'Undo (V)' } as any : {})}
             >
-              <Ionicons name="arrow-undo-outline" size={20} color="#f1f5f9" />
+              <Ionicons name="arrow-undo-outline" size={20} color={themeColors.text} />
               <Text style={styles.toolBtnLargeText}>Undo (V)</Text>
             </TouchableOpacity>
             
@@ -388,7 +401,7 @@ export default function VideoTaskDetailScreen() {
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Bounding Box (R)', title: 'Bounding Box (R)' } as any : {})}
             >
-              <Ionicons name="square-outline" size={20} color="#f1f5f9" />
+              <Ionicons name="square-outline" size={20} color={themeColors.text} />
               <Text style={styles.toolBtnLargeText}>Bounding Box (R)</Text>
             </TouchableOpacity>
             
@@ -406,7 +419,7 @@ export default function VideoTaskDetailScreen() {
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Polygon (P)', title: 'Polygon (P)' } as any : {})}
             >
-              <Ionicons name="git-merge-outline" size={20} color="#f1f5f9" />
+              <Ionicons name="git-merge-outline" size={20} color={themeColors.text} />
               <Text style={styles.toolBtnLargeText}>Polygon (P)</Text>
             </TouchableOpacity>
             
@@ -424,7 +437,7 @@ export default function VideoTaskDetailScreen() {
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Points (N)', title: 'Points (N)' } as any : {})}
             >
-              <Ionicons name="radio-button-off-outline" size={20} color="#f1f5f9" />
+              <Ionicons name="radio-button-off-outline" size={20} color={themeColors.text} />
               <Text style={styles.toolBtnLargeText}>Points (N)</Text>
             </TouchableOpacity>
             
@@ -435,7 +448,7 @@ export default function VideoTaskDetailScreen() {
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Ellipse', title: 'Ellipse' } as any : {})}
             >
-              <Ionicons name="ellipse-outline" size={20} color="#f1f5f9" />
+              <Ionicons name="ellipse-outline" size={20} color={themeColors.text} />
               <Text style={styles.toolBtnLargeText}>Ellipse</Text>
             </TouchableOpacity>
             
@@ -446,7 +459,7 @@ export default function VideoTaskDetailScreen() {
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Cuboid', title: 'Cuboid' } as any : {})}
             >
-              <Ionicons name="cube-outline" size={20} color="#f1f5f9" />
+              <Ionicons name="cube-outline" size={20} color={themeColors.text} />
               <Text style={styles.toolBtnLargeText}>Cuboid</Text>
             </TouchableOpacity>
             
@@ -457,7 +470,7 @@ export default function VideoTaskDetailScreen() {
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Polyline', title: 'Polyline' } as any : {})}
             >
-              <Ionicons name="create-outline" size={20} color="#f1f5f9" />
+              <Ionicons name="create-outline" size={20} color={themeColors.text} />
               <Text style={styles.toolBtnLargeText}>Polyline</Text>
             </TouchableOpacity>
             
@@ -468,7 +481,7 @@ export default function VideoTaskDetailScreen() {
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Semantic Segmentation', title: 'Semantic Segmentation' } as any : {})}
             >
-              <Ionicons name="color-filter-outline" size={20} color="#f1f5f9" />
+              <Ionicons name="color-filter-outline" size={20} color={themeColors.text} />
               <Text style={styles.toolBtnLargeText}>Semantic</Text>
             </TouchableOpacity>
             
@@ -479,7 +492,7 @@ export default function VideoTaskDetailScreen() {
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Brush', title: 'Brush' } as any : {})}
             >
-              <Ionicons name="brush-outline" size={20} color="#f1f5f9" />
+              <Ionicons name="brush-outline" size={20} color={themeColors.text} />
               <Text style={styles.toolBtnLargeText}>Brush</Text>
             </TouchableOpacity>
             
@@ -490,7 +503,7 @@ export default function VideoTaskDetailScreen() {
               activeOpacity={0.8}
               {...(isWeb ? { accessibilityLabel: 'Magic Wand', title: 'Magic Wand' } as any : {})}
             >
-              <Ionicons name="sparkles" size={20} color="#f1f5f9" />
+              <Ionicons name="sparkles" size={20} color={themeColors.text} />
               <Text style={styles.toolBtnLargeText}>Magic Wand</Text>
             </TouchableOpacity>
             
@@ -566,7 +579,7 @@ export default function VideoTaskDetailScreen() {
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             onPress={() => handleDeleteAnnotation(a.id)}
                           >
-                            <Ionicons name="trash-outline" size={16} color="#94a3b8" />
+                            <Ionicons name="trash-outline" size={16} color={themeColors.textMuted} />
                           </TouchableOpacity>
                         </View>
                        
@@ -667,15 +680,25 @@ export default function VideoTaskDetailScreen() {
           }}
           activeOpacity={0.8}
         >
-          <Ionicons name="arrow-back" size={20} color="#f1f5f9" />
+          <Ionicons name="arrow-back" size={20} color={themeColors.text} />
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('common.taskDetail')}</Text>
-        <GuidelineOpenButton
-          variant="header"
-          guidelineUrl={(task as { guideline_url?: string | null }).guideline_url}
-          guidelineFileName={(task as { guideline_file_name?: string | null }).guideline_file_name}
-        />
+        <View style={{ alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+          <GuidelineOpenButton
+            variant="header"
+            guidelineUrl={(task as { guideline_url?: string | null }).guideline_url}
+            guidelineFileName={(task as { guideline_file_name?: string | null }).guideline_file_name}
+          />
+          {id ? (
+            <TaskDiscardCheckbox
+              taskId={String(id)}
+              discarded={!!task.discarded_at}
+              disabled={isSubmitted}
+              userId={user?.id}
+            />
+          ) : null}
+        </View>
       </View>
 
       <ScrollView style={styles.content}>
@@ -709,10 +732,11 @@ export default function VideoTaskDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(themeColors: AppColors) {
+  return StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
   },
   containerFullWidth: {
     width: '100%',
@@ -724,7 +748,7 @@ const styles = StyleSheet.create({
     marginRight: 0,
   },
   loadingText: { 
-    color: '#94a3b8', 
+    color: themeColors.textMuted, 
     fontSize: 14, 
     textAlign: 'center', 
     marginTop: 24 
@@ -739,10 +763,10 @@ const styles = StyleSheet.create({
   // Footer styles
   footer: {
     paddingHorizontal: 20,
-    paddingBottom: 20,
-    backgroundColor: '#0f172a',
+    paddingBottom: 8,
+    backgroundColor: themeColors.background,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: themeColors.border,
   },
   
   taskInfoBar: {
@@ -753,14 +777,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     paddingRight: 168,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
   },
   taskInfoType: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeColors.textMuted,
     backgroundColor: 'rgba(148, 163, 184, 0.1)',
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -788,9 +812,9 @@ const styles = StyleSheet.create({
     minWidth: 60,
     maxWidth: 60,
     padding: 4,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     borderRightWidth: 1,
-    borderRightColor: '#334155',
+    borderRightColor: themeColors.border,
     flexDirection: 'column',
     gap: 4,
   },
@@ -798,9 +822,9 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 6,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'column',
@@ -812,7 +836,7 @@ const styles = StyleSheet.create({
   },
   toolBtnLargeText: { 
     fontSize: 9, 
-    color: '#f1f5f9', 
+    color: themeColors.text, 
     marginTop: 1, 
     fontWeight: '500' 
   },
@@ -838,11 +862,11 @@ const styles = StyleSheet.create({
   },
   canvasWorkspace: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     borderRadius: 8,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
   canvasWorkspaceWithGrid: {
     position: 'relative',
@@ -864,15 +888,15 @@ const styles = StyleSheet.create({
     minWidth: 280,
     maxWidth: 280,
     padding: 8,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderLeftWidth: 1,
-    borderLeftColor: '#334155',
+    borderLeftColor: themeColors.border,
     flexDirection: 'column',
   },
   rightSidebarTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#f1f5f9',
+    color: themeColors.text,
     marginBottom: 12,
     letterSpacing: 1,
     textTransform: 'uppercase',
@@ -890,12 +914,12 @@ const styles = StyleSheet.create({
     marginBottom: 8 
   },
   objectCard: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 12,
     marginBottom: 0,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
   objectCardHeader: {
     flexDirection: 'row',
@@ -906,7 +930,7 @@ const styles = StyleSheet.create({
   objectCardTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#f1f5f9',
+    color: themeColors.text,
     flex: 1,
   },
   labelOptionsGrid: {
@@ -932,8 +956,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#0f172a',
+    paddingVertical: 6,
+    backgroundColor: themeColors.background,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.08)',
   },
@@ -948,8 +972,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   exitButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 8,
     backgroundColor: 'transparent',
     borderWidth: 1,
@@ -958,29 +982,29 @@ const styles = StyleSheet.create({
   exitButtonText: { 
     fontSize: 14, 
     color: '#ef4444', 
-    fontWeight: '600' 
+    fontWeight: '500' 
   },
   submitExitButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
     borderRadius: 8,
     backgroundColor: '#3b82f6',
   },
   submitExitButtonText: { 
     fontSize: 14, 
     color: '#fff', 
-    fontWeight: '600' 
+    fontWeight: '500' 
   },
   submitButtonGreen: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
     borderRadius: 8,
     backgroundColor: '#22c55e',
   },
   submitButtonGreenText: { 
     fontSize: 14, 
     color: '#fff', 
-    fontWeight: '600' 
+    fontWeight: '500' 
   },
   submitButtonDisabled: { 
     opacity: 0.6 
@@ -990,14 +1014,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: 8,
     backgroundColor: '#22c55e',
   },
   submittedText: { 
     fontSize: 14, 
     color: '#fff', 
-    fontWeight: '600' 
+    fontWeight: '500' 
   },
   
   // Header styles
@@ -1009,9 +1033,9 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#0f172a',
+    backgroundColor: themeColors.background,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: themeColors.border,
   },
   backButton: {
     flexDirection: 'row',
@@ -1021,12 +1045,12 @@ const styles = StyleSheet.create({
   backText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#f1f5f9',
+    color: themeColors.text,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#f1f5f9',
+    color: themeColors.text,
     marginLeft: 16,
     flex: 1,
     textAlign: 'center',
@@ -1034,7 +1058,7 @@ const styles = StyleSheet.create({
   taskTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#f1f5f9',
+    color: themeColors.text,
     paddingHorizontal: 16,
     marginBottom: 8,
     lineHeight: 28,
@@ -1062,15 +1086,15 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#f1f5f9',
+    color: themeColors.text,
     marginBottom: 12,
   },
   audioCard: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeColors.border,
   },
   noAudioText: {
     fontSize: 14,
@@ -1079,3 +1103,4 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
   },
 });
+}

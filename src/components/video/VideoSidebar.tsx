@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { videoWorkbenchStyles } from '@/theme/videoWorkbenchStyles';
 import { Tool } from '@/types/annotations';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
 interface VideoSidebarProps {
   activeTool: string;
@@ -19,6 +20,7 @@ export const VideoSidebar: React.FC<VideoSidebarProps> = ({
   handleDeleteAnnotation,
   canvasRef,
 }) => {
+  const themeColors = useThemeColors();
   const tools = [
     { id: 'pan', name: 'Pan', icon: 'hand-right-outline' },
     { id: 'select', name: 'Select', icon: 'locate-outline' },
@@ -39,22 +41,24 @@ export const VideoSidebar: React.FC<VideoSidebarProps> = ({
 
   return (
     <View style={videoWorkbenchStyles.leftToolbarCol}>
-      {tools.map((tool) => (
+      {tools.map((tool) => {
+        const active = activeTool === tool.id;
+        return (
         <TouchableOpacity
           key={tool.id}
           style={[
             videoWorkbenchStyles.toolBtnLarge,
-            activeTool === tool.id && videoWorkbenchStyles.toolBtnActivePurple
+            active && videoWorkbenchStyles.toolBtnActivePurple
           ]}
           onPress={() => 
             tool.id === 'undo' ? handleUndo() : handleToolPress(tool.id)
           }
           activeOpacity={0.8}
         >
-          <Ionicons name={tool.icon as any} size={20} color="#f1f5f9" />
-          <Text style={videoWorkbenchStyles.toolBtnLargeText}>{tool.name}</Text>
+          <Ionicons name={tool.icon as any} size={20} color={active ? '#ffffff' : themeColors.text} />
+          <Text style={[videoWorkbenchStyles.toolBtnLargeText, active && { color: '#ffffff' }]}>{tool.name}</Text>
         </TouchableOpacity>
-      ))}
+      );})}
       
       {/* Delete Button */}
       <TouchableOpacity
@@ -62,7 +66,7 @@ export const VideoSidebar: React.FC<VideoSidebarProps> = ({
         onPress={() => selectedAnnotationId && handleDeleteAnnotation(selectedAnnotationId)}
         activeOpacity={0.8}
       >
-        <Ionicons name="trash-outline" size={20} color="#ef4444" />
+        <Ionicons name="trash-outline" size={20} color={themeColors.error} />
         <Text style={[videoWorkbenchStyles.toolBtnLargeText, videoWorkbenchStyles.deleteToolBtnText]}>
           Delete
         </Text>

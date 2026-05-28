@@ -41,7 +41,7 @@ export default function TopNavbar() {
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
 
   const isMobile = width < 768;
-  const currentLang = (i18n.language || 'tr').split('-')[0];
+  const currentLang = (i18n.language || 'en').split('-')[0];
   const unreadCount = useUnreadMessagesCount(user?.id);
 
   // Fallback admin check - force show Management button for specific email

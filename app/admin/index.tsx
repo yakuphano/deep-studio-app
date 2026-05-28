@@ -5,12 +5,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
   ActivityIndicator,
   SafeAreaView,
-  useWindowDimensions,
-  TextInput,
-  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -18,14 +14,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProfile } from '@/hooks/useProfile';
-import {
-  getFormatOptionsForTaskType,
-  buildAdminExportFile,
-  downloadExportBlob,
-  type ExportTaskType,
-  type ExportTaskRow,
-  type ExportFormatKey,
-} from '@/lib/adminTaskExport';
 import type { AppColors } from '@/theme/palettes';
 import { useThemeColors } from '@/contexts/ThemeContext';
 type User = {
@@ -89,27 +77,9 @@ export default function AdminPanelScreen() {
   //   languages: [] as string[],
   // });
   
-  // Export states
-  const [exportTaskType, setExportTaskType] = useState<ExportTaskType>('audio');
-  const [exportClient, setExportClient] = useState('');
-  /** Görevlerde geçen company_name listesi (yeniden eskiye); chip ile seçim */
-  const [exportCompanyOptions, setExportCompanyOptions] = useState<string[]>([]);
-  const [exportFormat, setExportFormat] = useState<string>('json');
-  const [exporting, setExporting] = useState(false);
-  const [dateRange, setDateRange] = useState<'all' | 'last7' | 'last30' | 'custom'>('all');
-  const [customStartDate, setCustomStartDate] = useState('');
-  const [customEndDate, setCustomEndDate] = useState('');
-  const [selectedLanguage, setSelectedLanguage] = useState<string>('all');
-  // const [showPassword, setShowPassword] = useState(false);
-
   const isDevAdmin = user?.email === 'yakup.hano@deepannotation.ai';
   const hasAdminAccess = isAdmin === true || isDevAdmin;
   const adminStatusLoading = isAdmin === null && !isDevAdmin;
-
-  useEffect(() => {
-    const formats = getFormatOptionsForTaskType(exportTaskType);
-    setExportFormat(formats[0].key);
-  }, [exportTaskType]);
 
   const fetchDashboardStats = useCallback(async () => {
     console.log('FETCH START: fetchDashboardStats');
@@ -223,37 +193,6 @@ export default function AdminPanelScreen() {
     void fetchDashboardStats();
   }, [adminStatusLoading, hasAdminAccess, fetchDashboardStats]);
 
-  /** Görevlerdeki company_name değerleri: çok şirket varsa chip satırı; varsayılan en son güncellenen görev. */
-  useEffect(() => {
-    if (adminStatusLoading || !hasAdminAccess) return;
-    let cancelled = false;
-    void (async () => {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('company_name')
-        .not('company_name', 'is', null)
-        .neq('company_name', '')
-        .order('updated_at', { ascending: false })
-        .limit(500);
-      if (cancelled || error || !data?.length) return;
-      const ordered: string[] = [];
-      const seen = new Set<string>();
-      for (const row of data) {
-        const n = String((row as { company_name?: string | null }).company_name ?? '').trim();
-        if (!n || seen.has(n)) continue;
-        seen.add(n);
-        ordered.push(n);
-      }
-      const maxOptions = 32;
-      setExportCompanyOptions(ordered.slice(0, maxOptions));
-      const latest = ordered[0];
-      if (latest) setExportClient((prev) => (prev.trim() === '' ? latest : prev));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [adminStatusLoading, hasAdminAccess]);
-
   if (adminStatusLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: themeColors.background, justifyContent: 'center', alignItems: 'center' }}>
@@ -271,88 +210,6 @@ export default function AdminPanelScreen() {
       </View>
     );
   }
-
-  const languageOptions = [
-    { key: 'all', label: 'All Languages' },
-    { key: 'en', label: 'English' },
-    { key: 'tr', label: 'Turkish' },
-    { key: 'ku', label: 'Kurdish' },
-    { key: 'az', label: 'Azerbaijani Turkish' },
-  ];
-
-  const handleExport = async () => {
-    if (!exportClient.trim()) {
-      Alert.alert('Validation Error', 'Please enter a company or client name.');
-      return;
-    }
-
-    if (dateRange === 'custom' && (!customStartDate || !customEndDate)) {
-      Alert.alert('Validation Error', 'Please enter both start and end dates.');
-      return;
-    }
-
-    setExporting(true);
-    try {
-      const cols =
-        'id, title, type, status, price, language, category, audio_url, image_url, video_url, transcription, annotation_data, created_at, updated_at, client_name, company_name, assigned_to, is_pool_task';
-
-      let query = supabase.from('tasks').select(cols).eq('status', 'completed');
-
-      // Filter by task type
-      if (exportTaskType) {
-        query = query.eq('type', exportTaskType);
-      }
-
-      // Görev oluştururken company_name; eski kayıtlar için client_name — ikisinden biri eşleşsin
-      const raw = exportClient.trim();
-      const q = raw.replace(/\\/g, '\\\\').replace(/,/g, '\\,');
-      const pat = `%${q}%`;
-      query = query.or(`client_name.ilike.${pat},company_name.ilike.${pat}`);
-      
-      // Filter by language (only for Audio tasks)
-      if (exportTaskType === 'audio' && selectedLanguage !== 'all') {
-        query = query.eq('language', selectedLanguage);
-      }
-      
-      // Filter by date range
-      if (dateRange === 'last7') {
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        query = query.gte('updated_at', sevenDaysAgo.toISOString());
-      } else if (dateRange === 'last30') {
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        query = query.gte('updated_at', thirtyDaysAgo.toISOString());
-      } else if (dateRange === 'custom') {
-        query = query.gte('updated_at', `${customStartDate}T00:00:00Z`);
-        query = query.lte('updated_at', `${customEndDate}T23:59:59Z`);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      if (!data || data.length === 0) {
-        Alert.alert('No Data', 'No completed tasks found for selected criteria.');
-        return;
-      }
-
-      const { blob, fileName } = await buildAdminExportFile(
-        data as ExportTaskRow[],
-        exportTaskType,
-        exportFormat as ExportFormatKey,
-        exportClient.trim()
-      );
-      downloadExportBlob(blob, fileName);
-
-      Alert.alert('Success', `${data.length} tasks exported as ${exportFormat.toUpperCase()}.`);
-
-    } catch (error) {
-      console.error('Export Error:', error);
-      Alert.alert('Export Failed', (error as Error).message);
-    } finally {
-      setExporting(false);
-    }
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -434,10 +291,10 @@ export default function AdminPanelScreen() {
           />
           <ActionCard
             styles={styles}
-            icon="download"
+            icon="archive-outline"
             iconColor="#f59e0b"
             label="Export Data"
-            onPress={() => {}}
+            onPress={() => router.push('/admin/export')}
           />
         </View>
 
@@ -474,177 +331,6 @@ export default function AdminPanelScreen() {
                 <Text style={styles.userManagementButtonText}>{t('adminUsers.addReviewer')}</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-
-        {/* Export Data Section */}
-        <View style={styles.exportSection}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="download" size={20} color="#f59e0b" />
-            <Text style={styles.sectionTitle}>Export Data</Text>
-          </View>
-          
-          <View style={styles.exportForm}>
-            <Text style={styles.exportLabel}>Task Type</Text>
-            <View style={styles.exportTaskTypeRow}>
-              <TouchableOpacity 
-                style={[styles.exportChip, exportTaskType === 'audio' && styles.exportChipActive]} 
-                onPress={() => setExportTaskType('audio')}
-              >
-                <Text style={[styles.exportChipText, exportTaskType === 'audio' && styles.exportChipTextActive]}>Audio</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.exportChip, exportTaskType === 'image' && styles.exportChipActive]} 
-                onPress={() => setExportTaskType('image')}
-              >
-                <Text style={[styles.exportChipText, exportTaskType === 'image' && styles.exportChipTextActive]}>Image</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.exportChip, exportTaskType === 'video' && styles.exportChipActive]} 
-                onPress={() => setExportTaskType('video')}
-              >
-                <Text style={[styles.exportChipText, exportTaskType === 'video' && styles.exportChipTextActive]}>Video</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.exportChip, exportTaskType === 'medical' && styles.exportChipActive]} 
-                onPress={() => setExportTaskType('medical')}
-              >
-                <Text style={[styles.exportChipText, exportTaskType === 'medical' && styles.exportChipTextActive]}>Medical</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.exportChip, exportTaskType === 'lidar' && styles.exportChipActive]} 
-                onPress={() => setExportTaskType('lidar')}
-              >
-                <Text style={[styles.exportChipText, exportTaskType === 'lidar' && styles.exportChipTextActive]}>LiDAR</Text>
-              </TouchableOpacity>
-            </View>
-            
-            <Text style={styles.exportLabel}>Export Type</Text>
-            <View style={styles.exportFormatRow}>
-              {getFormatOptionsForTaskType(exportTaskType).map((format) => (
-                <TouchableOpacity
-                  key={format.key}
-                  style={[styles.formatChip, exportFormat === format.key && styles.formatChipActive]}
-                  onPress={() => setExportFormat(format.key)}
-                >
-                  <Text style={[styles.formatChipText, exportFormat === format.key && styles.formatChipTextActive]}>
-                    {format.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            
-            <Text style={styles.exportLabel}>Company name</Text>
-            {exportCompanyOptions.length > 1 ? (
-              <>
-                <Text style={styles.exportHint}>
-                  Kayıtlı şirketler (son aktiviteye göre). Birine dokunun veya alanı elle düzenleyin.
-                </Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.companyPickerScroll}
-                  contentContainerStyle={styles.companyPickerRow}
-                >
-                  {exportCompanyOptions.map((name) => {
-                    const active = exportClient.trim() === name;
-                    return (
-                      <TouchableOpacity
-                        key={name}
-                        style={[styles.companyPickerChip, active && styles.companyPickerChipActive]}
-                        onPress={() => setExportClient(name)}
-                      >
-                        <Text style={[styles.companyPickerChipText, active && styles.companyPickerChipTextActive]} numberOfLines={1}>
-                          {name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </>
-            ) : null}
-            <TextInput
-              style={styles.exportInput}
-              value={exportClient}
-              onChangeText={setExportClient}
-              placeholder="Şirket adı veya filtre metni"
-              placeholderTextColor="#64748b"
-            />
-            
-            {/* Language Filter - Only show for Audio tasks */}
-            {exportTaskType === 'audio' && (
-              <>
-                <Text style={styles.exportLabel}>Select Language</Text>
-                <View style={styles.languageFilterRow}>
-                  {languageOptions.map((lang) => (
-                    <TouchableOpacity
-                      key={lang.key}
-                      style={[styles.languageChip, selectedLanguage === lang.key && styles.languageChipActive]}
-                      onPress={() => setSelectedLanguage(lang.key)}
-                    >
-                      <Text style={[styles.languageChipText, selectedLanguage === lang.key && styles.languageChipTextActive]}>
-                        {lang.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </>
-            )}
-            
-            <Text style={styles.exportLabel}>Date Range</Text>
-            <View style={styles.dateRangeRow}>
-              <TouchableOpacity
-                style={[styles.dateChip, dateRange === 'all' && styles.dateChipActive]}
-                onPress={() => setDateRange('all')}
-              >
-                <Text style={[styles.dateChipText, dateRange === 'all' && styles.dateChipTextActive]}>All Time</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.dateChip, dateRange === 'last7' && styles.dateChipActive]}
-                onPress={() => setDateRange('last7')}
-              >
-                <Text style={[styles.dateChipText, dateRange === 'last7' && styles.dateChipTextActive]}>Last 7 Days</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.dateChip, dateRange === 'last30' && styles.dateChipActive]}
-                onPress={() => setDateRange('last30')}
-              >
-                <Text style={[styles.dateChipText, dateRange === 'last30' && styles.dateChipTextActive]}>Last 30 Days</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.dateChip, dateRange === 'custom' && styles.dateChipActive]}
-                onPress={() => setDateRange('custom')}
-              >
-                <Text style={[styles.dateChipText, dateRange === 'custom' && styles.dateChipTextActive]}>Custom</Text>
-              </TouchableOpacity>
-            </View>
-            
-            {dateRange === 'custom' && (
-              <View style={styles.customDateContainer}>
-                <TextInput
-                  style={styles.dateInput}
-                  value={customStartDate}
-                  onChangeText={setCustomStartDate}
-                  placeholder="Start Date (YYYY-MM-DD)"
-                  placeholderTextColor="#64748b"
-                />
-                <TextInput
-                  style={styles.dateInput}
-                  value={customEndDate}
-                  onChangeText={setCustomEndDate}
-                  placeholder="End Date (YYYY-MM-DD)"
-                  placeholderTextColor="#64748b"
-                />
-              </View>
-            )}
-            
-            <TouchableOpacity 
-              style={[styles.exportButton, exporting && styles.exportButtonDisabled]} 
-              onPress={handleExport}
-              disabled={exporting}
-            >
-              <Text style={styles.exportButtonText}>{exporting ? 'Exporting...' : 'Export'}</Text>
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -822,235 +508,6 @@ function createStyles(themeColors: AppColors) {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
-  },
-  // Export Section Styles
-  exportSection: {
-    backgroundColor: themeColors.surface,
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 2,
-    borderColor: themeColors.accent,
-    marginTop: 24,
-  },
-  exportForm: {
-    gap: 16,
-  },
-  exportLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: themeColors.text,
-    marginBottom: 8,
-    backgroundColor: 'transparent',
-  },
-  exportHint: {
-    fontSize: 12,
-    color: themeColors.textMuted,
-    marginBottom: 8,
-    lineHeight: 16,
-    backgroundColor: 'transparent',
-  },
-  companyPickerScroll: {
-    marginBottom: 8,
-    maxHeight: 44,
-  },
-  companyPickerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 4,
-    paddingRight: 8,
-  },
-  companyPickerChip: {
-    maxWidth: 200,
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: themeColors.accent,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  companyPickerChipActive: {
-    backgroundColor: themeColors.accentMuted,
-    borderWidth: 2,
-    borderColor: themeColors.accent,
-  },
-  companyPickerChipText: {
-    color: themeColors.text,
-    fontSize: 13,
-    fontWeight: '500',
-    backgroundColor: 'transparent',
-  },
-  companyPickerChipTextActive: {
-    color: themeColors.accent,
-    fontWeight: '700',
-    backgroundColor: 'transparent',
-  },
-  exportTaskTypeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  exportChip: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: themeColors.accent,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  exportChipActive: {
-    backgroundColor: themeColors.accentMuted,
-    borderWidth: 2,
-    borderColor: themeColors.accent,
-  },
-  exportChipText: {
-    color: themeColors.text,
-    fontSize: 14,
-    fontWeight: '500',
-    backgroundColor: 'transparent',
-  },
-  exportChipTextActive: {
-    color: themeColors.accent,
-    fontWeight: '700',
-    backgroundColor: 'transparent',
-  },
-  exportInput: {
-    backgroundColor: themeColors.surface,
-    borderWidth: 1.5,
-    borderColor: themeColors.accent,
-    borderRadius: 8,
-    padding: 12,
-    color: themeColors.text,
-    fontSize: 16,
-    marginBottom: 16,
-  },
-  exportButton: {
-    backgroundColor: '#3b82f6',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  exportButtonDisabled: {
-    opacity: 0.6,
-  },
-  exportButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  // Format Selection Styles
-  exportFormatRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  formatChip: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: themeColors.accent,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    minWidth: 60,
-  },
-  formatChipActive: {
-    backgroundColor: themeColors.accentMuted,
-    borderWidth: 2,
-    borderColor: themeColors.accent,
-  },
-  formatChipText: {
-    color: themeColors.text,
-    fontSize: 14,
-    fontWeight: '500',
-    textAlign: 'center',
-    backgroundColor: 'transparent',
-  },
-  formatChipTextActive: {
-    color: themeColors.accent,
-    fontWeight: '700',
-    backgroundColor: 'transparent',
-  },
-  // Date Range Styles
-  dateRangeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  dateChip: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: themeColors.accent,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  dateChipActive: {
-    backgroundColor: themeColors.accentMuted,
-    borderWidth: 2,
-    borderColor: themeColors.accent,
-  },
-  dateChipText: {
-    color: themeColors.text,
-    fontSize: 12,
-    fontWeight: '500',
-    backgroundColor: 'transparent',
-  },
-  dateChipTextActive: {
-    color: themeColors.accent,
-    fontWeight: '700',
-    backgroundColor: 'transparent',
-  },
-  customDateContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  dateInput: {
-    flex: 1,
-    backgroundColor: themeColors.surface,
-    borderWidth: 1.5,
-    borderColor: themeColors.accent,
-    borderRadius: 8,
-    padding: 12,
-    color: themeColors.text,
-    fontSize: 14,
-  },
-  // Language Filter Styles
-  languageFilterRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  languageChip: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: themeColors.accent,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    minWidth: 80,
-  },
-  languageChipActive: {
-    backgroundColor: themeColors.accentMuted,
-    borderWidth: 2,
-    borderColor: themeColors.accent,
-  },
-  languageChipText: {
-    color: themeColors.text,
-    fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
-    backgroundColor: 'transparent',
-  },
-  languageChipTextActive: {
-    color: themeColors.accent,
-    fontWeight: '700',
-    backgroundColor: 'transparent',
   },
 });
 }

@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import React from 'react';
+import { View, Text, TextInput, TouchableOpacity, Platform } from 'react-native';
 import { useVideoAI } from '@/hooks/useVideoAI';
 import { useThemeColors } from '@/contexts/ThemeContext';
 
@@ -38,85 +38,87 @@ export const TaskEditor: React.FC<TaskEditorProps> = ({
   //   return null;
   // }
 
-  // Audio/Video tasks - show transcription controls
   return (
-    <View style={{ padding: 16 }}>
-      {/* TRANSCRIPTION Header */}
-      <Text style={{
-        fontSize: 14,
-        fontWeight: '600',
-        color: themeColors.textMuted,
-        marginBottom: 12,
-        textTransform: 'uppercase',
-      }}>
-        TRANSCRIPTION
-      </Text>
-
-      {/* Small Purple Buttons - Side by Side */}
-      <View style={{
-        flexDirection: 'row',
-        alignSelf: 'flex-start',
-        gap: 8,
-        marginBottom: 16,
-      }}>
+    <View style={{ flex: 1, minHeight: 0, paddingHorizontal: 16, paddingBottom: 8 }}>
+      <View
+        style={{
+          flexShrink: 0,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 8,
+          marginBottom: 8,
+        }}
+      >
+        <Text
+          style={{
+            fontSize: 14,
+            fontWeight: '600',
+            color: themeColors.text,
+          }}
+        >
+          Transcription
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
         <TouchableOpacity
           style={{
             backgroundColor: themeColors.accentPurple,
             paddingVertical: 6,
-            paddingHorizontal: 12,
-            borderRadius: 4,
+            paddingHorizontal: 10,
+            borderRadius: 6,
+            opacity: transcribing ? 0.6 : 1,
           }}
           onPress={onAITranscription}
           disabled={transcribing}
         >
-          <Text style={{
-            color: '#fff',
-            fontSize: 12,
-            fontWeight: '500',
-          }}>
-            AI Yaz\u0131ya Dök
-          </Text>
+          <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>AI Transcribe</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={{
             backgroundColor: themeColors.accentPurple,
             paddingVertical: 6,
-            paddingHorizontal: 12,
-            borderRadius: 4,
+            paddingHorizontal: 10,
+            borderRadius: 6,
+            opacity: aiFixing ? 0.6 : 1,
           }}
           onPress={onAIFix}
           disabled={aiFixing}
         >
-          <Text style={{
-            color: '#fff',
-            fontSize: 12,
-            fontWeight: '500',
-          }}>
-            Yaz\u0131m Kurallar\u0131n\u0131 Düzelt
-          </Text>
+          <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>AI Fix</Text>
         </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Large White TextInput */}
-      <TextInput
+      <View
         style={{
-          backgroundColor: '#fff',
-          borderRadius: 8,
-          padding: 16,
-          fontSize: 16,
-          color: '#000',
-          minHeight: 120,
-          textAlignVertical: 'top',
+          flex: 1,
+          minHeight: 0,
+          backgroundColor: themeColors.surface,
+          borderRadius: 10,
           borderWidth: 1,
           borderColor: themeColors.border,
+          padding: 8,
         }}
-        value={transcription}
-        onChangeText={onTranscriptionChange}
-        placeholder="Enter transcription here..."
-        placeholderTextColor="#64748b"
-        multiline
-      />
+      >
+        <TextInput
+          style={{
+            flex: 1,
+            fontSize: 14,
+            lineHeight: 20,
+            color: themeColors.text,
+            textAlignVertical: 'top',
+            ...(Platform.OS === 'web' ? ({ height: '100%', outlineStyle: 'none' } as object) : { minHeight: 80 }),
+          }}
+          value={transcription}
+          onChangeText={onTranscriptionChange}
+          placeholder="Enter transcription here..."
+          placeholderTextColor={themeColors.textMuted}
+          multiline
+          scrollEnabled
+        />
+      </View>
     </View>
   );
 };

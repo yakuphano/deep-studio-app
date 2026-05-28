@@ -18,6 +18,8 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { fetchAdminAccountProfiles } from '@/lib/adminAccountList';
+import { normalizeProfileRole, QA_REVIEWER_KNOWN_EMAILS, type AppRole } from '@/lib/userRoles';
 import type { AppColors } from '@/theme/palettes';
 import { useThemeColors } from '@/contexts/ThemeContext';
 type User = {
@@ -29,21 +31,48 @@ type User = {
   is_blocked: boolean;
   languages?: string[];
   languages_expertise?: string[] | string | null;
-  created_at: string;
+  created_at?: string;
 };
 
-function roleBadgeBackground(role: string | undefined, isAdmin?: boolean): string {
-  const r = (role ?? '').toLowerCase();
-  if (r === 'admin' || isAdmin === true) return '#ef4444';
-  if (r === 'reviewer') return '#a855f7';
-  return '#3b82f6';
+function displayEmail(row: User): string {
+  if (row.email.trim()) return row.email;
+  if (row.username?.trim()) return row.username;
+  return row.id.slice(0, 8);
 }
 
-function canonicalAccountRole(role: string | undefined, isAdmin?: boolean): 'admin' | 'reviewer' | 'annotator' {
-  const r = (role ?? '').toLowerCase();
-  if (r === 'admin' || isAdmin === true) return 'admin';
-  if (r === 'reviewer') return 'reviewer';
-  return 'annotator';
+function mapProfileRow(row: Record<string, unknown>): User {
+  let email = String(row.email ?? row.user_email ?? '').trim().toLowerCase();
+  const usernameRaw = row.username;
+  const role = String(row.role ?? 'annotator');
+  if (!email) {
+    const local = usernameRaw != null ? String(usernameRaw).trim().toLowerCase() : '';
+    const known = QA_REVIEWER_KNOWN_EMAILS.find((e) => e.split('@')[0]?.toLowerCase() === local);
+    if (known) email = known;
+  }
+  return {
+    id: String(row.id),
+    email,
+    username: usernameRaw != null && String(usernameRaw).trim() ? String(usernameRaw) : undefined,
+    role,
+    is_admin: row.is_admin === true,
+    is_blocked: row.is_blocked === true,
+    languages: Array.isArray(row.languages) ? (row.languages as string[]) : undefined,
+    languages_expertise: row.languages_expertise as User['languages_expertise'],
+    created_at: row.created_at != null ? String(row.created_at) : undefined,
+  };
+}
+
+function sortUsersForList(a: User, b: User): number {
+  const keyA = (a.email || a.username || a.id).toLowerCase();
+  const keyB = (b.email || b.username || b.id).toLowerCase();
+  return keyA.localeCompare(keyB);
+}
+
+function roleBadgeBackground(role: string | undefined, isAdmin?: boolean, email?: string): string {
+  const key = normalizeProfileRole(role, isAdmin, email);
+  if (key === 'admin') return '#ef4444';
+  if (key === 'reviewer') return '#a855f7';
+  return '#3b82f6';
 }
 
 export default function AdminUsersPage() {
@@ -98,65 +127,48 @@ export default function AdminUsersPage() {
     { code: 'az', name: 'Azerbaijani' },
   ];
 
-  const fetchUsers = useCallback(async () => {
-    console.log('FETCH START: fetchUsers');
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    
-    try {
-      setLoading(true);
-      console.log('Fetching users from profiles table...');
-      
-      // Timeout safeguard
-      timeoutId = setTimeout(() => {
-        console.warn('FETCH TIMEOUT: fetchUsers took more than 5 seconds');
-        setLoading(false);
-      }, 5000);
-      
-      // CRITICAL: Check if profiles table exists and fetch all users
-      console.log('Executing Supabase query on profiles table...');
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*'); // Select all columns to see what's available
+  const fetchUsers = useCallback(
+    async (opts?: { isRefresh?: boolean }) => {
+      try {
+        if (opts?.isRefresh) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
 
-      console.log('RAW DATA FROM SUPABASE:', { data, error });
-      console.log('Data type:', typeof data);
-      console.log('Data length:', data?.length || 0);
-      console.log('Data sample:', data?.slice(0, 2));
+        const { rows: rawRows, syncError } = await fetchAdminAccountProfiles();
 
-      if (error) {
-        console.error('Database error details:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        });
+        const rows = rawRows.map((row) => mapProfileRow(row));
+        rows.sort(sortUsersForList);
+        setUsers(rows);
+
+        const missingQa = QA_REVIEWER_KNOWN_EMAILS.filter(
+          (e) => !rows.some((r) => r.email.toLowerCase() === e),
+        );
+        if (missingQa.length > 0) {
+          const hint = syncError
+            ? ` (${syncError})`
+            : ' Auth kaydı var ama profiles satırı yok; Supabase’de admin_sync_missing_profiles çalıştırın.';
+          console.warn('[AdminUsers] QA profil eksik:', missingQa.join(', '), hint);
+        }
+      } catch (error: unknown) {
+        console.error('[AdminUsers] fetchUsers:', error);
+        Alert.alert(
+          t('login.errorTitle'),
+          error instanceof Error ? error.message : String(error),
+        );
         setUsers([]);
-      } else {
-        console.log('Users fetched successfully:', data?.length || 0);
-        console.log('Sample users:', data?.slice(0, 3));
-        
-        // CRITICAL: Set users data FIRST, then clear loading
-        setUsers(data || []);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
       }
-    } catch (error: any) {
-      console.error('Critical error in fetchUsers:', {
-        message: error.message,
-        stack: error.stack
-      });
-      setUsers([]);
-    } finally {
-      // Clear timeout
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
-      
-      // CRITICAL: Always set loading to false AFTER data is set
-      console.log('FETCH END: fetchUsers');
-      setLoading(false);
-    }
-  }, []); // Empty dependency - run once only
+    },
+    [t],
+  );
 
   useEffect(() => {
-    fetchUsers();
-  }, []); // Remove fetchUsers from dependencies to prevent infinite loop
+    void fetchUsers();
+  }, [fetchUsers]);
 
   useEffect(() => {
     if (activeTab === 'create-reviewer') {
@@ -167,9 +179,15 @@ export default function AdminUsersPage() {
   }, [activeTab]);
 
   const formatRoleLabel = (row: User) => {
-    const key = canonicalAccountRole(row.role, row.is_admin);
+    const key = normalizeProfileRole(row.role, row.is_admin, row.email);
     if (key === 'admin') return t('adminUsers.roleAdmin');
-    if (key === 'reviewer') return t('adminUsers.roleReviewer');
+    if (key === 'reviewer') return t('adminUsers.roleQuality');
+    return t('adminUsers.roleAnnotator');
+  };
+
+  const roleLabelForAppRole = (key: AppRole) => {
+    if (key === 'admin') return t('adminUsers.roleAdmin');
+    if (key === 'reviewer') return t('adminUsers.roleQuality');
     return t('adminUsers.roleAnnotator');
   };
 
@@ -209,14 +227,16 @@ export default function AdminUsersPage() {
     if (!roleModalUser) return;
     try {
       const isAdmin = newRole === 'admin';
+      const dbRole =
+        newRole === 'admin' ? 'admin' : newRole === 'reviewer' ? 'quality_controller' : 'annotator';
       const { error } = await supabase
         .from('profiles')
-        .update({ role: newRole, is_admin: isAdmin })
+        .update({ role: dbRole, is_admin: isAdmin })
         .eq('id', roleModalUser.id);
       if (error) throw error;
       setUsers((prev) =>
         prev.map((row) =>
-          row.id === roleModalUser.id ? { ...row, role: newRole, is_admin: isAdmin } : row
+          row.id === roleModalUser.id ? { ...row, role: dbRole, is_admin: isAdmin } : row
         )
       );
       Alert.alert(t('adminUsers.roleUpdated'));
@@ -278,7 +298,7 @@ export default function AdminUsersPage() {
       }
 
       if (authData.user) {
-        const role = formData.accountRole === 'reviewer' ? 'reviewer' : 'annotator';
+        const role = formData.accountRole === 'reviewer' ? 'quality_controller' : 'annotator';
         const { error: profileError } = await supabase.from('profiles').insert({
           id: authData.user.id,
           username: formData.username,
@@ -360,13 +380,13 @@ export default function AdminUsersPage() {
           <Text style={styles.tableText}>{item.username || 'N/A'}</Text>
         </View>
         <View style={styles.tableCell}>
-          <Text style={styles.tableText}>{item.email}</Text>
+          <Text style={styles.tableText}>{displayEmail(item)}</Text>
         </View>
         <View style={styles.tableCell}>
           <View
             style={[
               styles.roleBadge,
-              { backgroundColor: roleBadgeBackground(item.role, item.is_admin) },
+              { backgroundColor: roleBadgeBackground(item.role, item.is_admin, item.email) },
             ]}
           >
             <Text style={styles.roleText}>{formatRoleLabel(item)}</Text>
@@ -594,7 +614,7 @@ export default function AdminUsersPage() {
               keyExtractor={(item) => item.id}
               style={styles.tableContainer}
               refreshing={refreshing}
-              onRefresh={fetchUsers}
+              onRefresh={() => void fetchUsers({ isRefresh: true })}
               showsVerticalScrollIndicator={false}
             />
           </>
@@ -664,6 +684,46 @@ export default function AdminUsersPage() {
                   onPress={() => setShowPassword(!showPassword)}
                 >
                   <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color={themeColors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>{t('adminUsers.accountRoleLabel')}</Text>
+              <View style={styles.accountRoleRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.accountRoleChip,
+                    formData.accountRole === 'annotator' && styles.accountRoleChipSelected,
+                  ]}
+                  onPress={() => setFormData((prev) => ({ ...prev, accountRole: 'annotator' }))}
+                >
+                  <Ionicons name="person" size={18} color={formData.accountRole === 'annotator' ? '#3b82f6' : themeColors.textMuted} />
+                  <Text
+                    style={[
+                      styles.accountRoleChipText,
+                      formData.accountRole === 'annotator' && styles.accountRoleChipTextSelected,
+                    ]}
+                  >
+                    {t('adminUsers.roleAnnotator')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.accountRoleChip,
+                    formData.accountRole === 'reviewer' && styles.accountRoleChipSelectedReviewer,
+                  ]}
+                  onPress={() => setFormData((prev) => ({ ...prev, accountRole: 'reviewer' }))}
+                >
+                  <Ionicons name="shield-checkmark" size={18} color={formData.accountRole === 'reviewer' ? '#a855f7' : themeColors.textMuted} />
+                  <Text
+                    style={[
+                      styles.accountRoleChipText,
+                      formData.accountRole === 'reviewer' && styles.accountRoleChipTextSelected,
+                    ]}
+                  >
+                    {t('adminUsers.roleQuality')}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -740,7 +800,8 @@ export default function AdminUsersPage() {
                 style={[
                   styles.roleOption,
                   roleModalUser &&
-                    canonicalAccountRole(roleModalUser.role, roleModalUser.is_admin) === r &&
+                    normalizeProfileRole(roleModalUser.role, roleModalUser.is_admin, roleModalUser.email) ===
+                      r &&
                     styles.roleOptionSelected,
                 ]}
                 onPress={() => handleApplyRole(r)}
@@ -750,13 +811,7 @@ export default function AdminUsersPage() {
                   size={20}
                   color={r === 'admin' ? '#ef4444' : r === 'reviewer' ? '#a855f7' : '#3b82f6'}
                 />
-                <Text style={styles.roleOptionText}>
-                  {r === 'admin'
-                    ? t('adminUsers.roleAdmin')
-                    : r === 'reviewer'
-                      ? t('adminUsers.roleReviewer')
-                      : t('adminUsers.roleAnnotator')}
-                </Text>
+                <Text style={styles.roleOptionText}>{roleLabelForAppRole(r)}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>

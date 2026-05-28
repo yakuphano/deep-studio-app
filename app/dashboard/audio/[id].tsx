@@ -1,12 +1,19 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  TextInput,
+  Platform,
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
-import GuidelineOpenButton from '@/components/task/GuidelineOpenButton';
-import TaskDiscardCheckbox from '@/components/task/TaskDiscardCheckbox';
+import TaskHeader from '@/components/workbench/TaskHeader';
 import { transcribeWithGroq } from '@/lib/groq';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { useAuth } from '@/contexts/AuthContext';
@@ -266,114 +273,81 @@ export default function AudioTaskDetailScreen() {
     );
   }
 
+  const navigateBack = () => {
+    try {
+      router.back();
+    } catch (_) {}
+  };
+
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => {
-            try {
-              router.back();
-            } catch (_) {}
-          }}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="arrow-back" size={20} color={themeColors.text} />
-          <Text style={styles.backText}>{t('taskDetail.back')}</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('common.taskDetail')}</Text>
-        <View style={{ alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
-          <GuidelineOpenButton
-            variant="header"
-            guidelineUrl={(task as { guideline_url?: string | null }).guideline_url}
-            guidelineFileName={(task as { guideline_file_name?: string | null }).guideline_file_name}
-          />
-          {id ? (
-            <TaskDiscardCheckbox
-              taskId={String(id)}
-              discarded={!!task.discarded_at}
-              disabled={isSubmitted}
-              userId={user?.id}
-            />
-          ) : null}
-        </View>
-      </View>
+      <TaskHeader
+        title={task.title}
+        price={task.price ?? 0}
+        taskTypeLabel={t('tasks.cardAudioTranscription')}
+        onBack={navigateBack}
+        guidelineUrl={task.guideline_url}
+        guidelineFileName={task.guideline_file_name}
+        taskId={id ? String(id) : undefined}
+        discarded={!!task.discarded_at}
+        discardDisabled={isSubmitted}
+        userId={user?.id}
+      />
 
-      <ScrollView style={styles.content}>
-        {task.title ? (
-          <Text style={styles.taskTitle} numberOfLines={2}>
-            {task.title}
-          </Text>
-        ) : null}
-        <View style={styles.priceBadge}>
-          <Text style={styles.priceBadgeText}>{t('tasks.fee')}: {task.price ?? 0} TL</Text>
+      <View style={styles.workArea}>
+        <View style={styles.audioBlock}>
+          {audioUrl && isAudioTask ? (
+            <AudioPlayer uri={audioUrl} />
+          ) : (
+            <Text style={styles.noAudioText}>{t('taskDetail.noAudio')}</Text>
+          )}
         </View>
 
-        <View style={styles.audioSection}>
-          <Text style={styles.sectionLabel}>{t('taskDetail.audioLabel')}</Text>
-          <View style={styles.audioCard}>
-            {audioUrl && isAudioTask ? (
-              <AudioPlayer uri={audioUrl} />
-            ) : (
-              <Text style={styles.noAudioText}>{t('taskDetail.noAudio')}</Text>
-            )}
-          </View>
-        </View>
-
-        <View style={styles.transcriptionSection}>
-          <View style={styles.transcriptionHeader}>
+        <View style={styles.transcriptionBlock}>
+          <View style={styles.transcriptionToolbar}>
             <Text style={styles.sectionLabel}>{t('taskDetail.transcriptionLabel')}</Text>
-          </View>
-          
-          {/* AI Transcribe Butonu */}
-          <TouchableOpacity 
-            style={styles.compactButton}
-            onPress={handleAITranscription}
-            disabled={transcribing}
-          >
-            {transcribing ? (
-              <>
-                <ActivityIndicator size="small" color="#ffffff" />
-                <Text style={styles.compactButtonText}>AI Transcribing...</Text>
-              </>
-            ) : (
-              <>
-                <Ionicons name="sparkles" size={16} color="#ffffff" />
+            <View style={styles.aiBtnRow}>
+              <TouchableOpacity
+                style={[styles.compactButton, transcribing && styles.compactButtonDisabled]}
+                onPress={handleAITranscription}
+                disabled={transcribing || isSubmitted}
+              >
+                {transcribing ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Ionicons name="sparkles" size={14} color="#ffffff" />
+                )}
                 <Text style={styles.compactButtonText}>AI Transcribe</Text>
-              </>
-            )}
-          </TouchableOpacity>
-          <View style={styles.transcriptionCard}>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.compactButton, aiFixing && styles.compactButtonDisabled]}
+                onPress={handleAIFix}
+                disabled={aiFixing || isSubmitted}
+              >
+                {aiFixing ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Ionicons name="construct" size={14} color="#ffffff" />
+                )}
+                <Text style={styles.compactButtonText}>AI Fix</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <View style={styles.transcriptionInputWrap}>
             <TextInput
               style={styles.transcriptionInput}
               placeholder={t('taskDetail.transcriptionPlaceholder')}
-              placeholderTextColor="#64748b"
+              placeholderTextColor={themeColors.textMuted}
               value={transcription}
               onChangeText={setTranscription}
               multiline
               textAlignVertical="top"
-              editable={true}
+              editable={!isSubmitted}
+              scrollEnabled
             />
           </View>
-          <TouchableOpacity 
-            style={styles.compactButton}
-            onPress={handleAIFix}
-            disabled={aiFixing}
-          >
-            {aiFixing ? (
-              <>
-                <ActivityIndicator size="small" color="#ffffff" />
-                <Text style={styles.compactButtonText}>AI Fixing...</Text>
-              </>
-            ) : (
-              <>
-                <Ionicons name="sparkles" size={16} color="#ffffff" />
-                <Text style={styles.compactButtonText}>AI Fix</Text>
-              </>
-            )}
-          </TouchableOpacity>
         </View>
-      </ScrollView>
+      </View>
 
       <View style={styles.footer}>
         {isSubmitted ? (
@@ -383,19 +357,31 @@ export default function AudioTaskDetailScreen() {
           </View>
         ) : (
           <View style={styles.bottomButtonBar}>
-            <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={styles.bottomLeftActions}>
               <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
                 <Text style={styles.exitButtonText}>Exit</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity style={styles.submitExitButton} onPress={() => handleSubmit(false)}>
-                <Text style={styles.submitExitButtonText}>Submit & Exit</Text>
+              <TouchableOpacity
+                style={[styles.submitExitButton, saving && styles.submitButtonDisabled]}
+                onPress={handleSubmitAndExit}
+                disabled={saving}
+              >
+                <Text style={styles.submitExitButtonText}>
+                  {saving ? t('taskDetail.saving') : 'Submit & Exit'}
+                </Text>
               </TouchableOpacity>
             </View>
-            
-            <TouchableOpacity style={styles.submitButtonGreen} onPress={() => handleSubmit(true)}>
-              <Text style={styles.submitButtonGreenText}>Submit</Text>
-            </TouchableOpacity>
+            <View style={styles.bottomRightActions}>
+              <TouchableOpacity
+                style={[styles.submitButtonGreen, saving && styles.submitButtonDisabled]}
+                onPress={handleSubmitNext}
+                disabled={saving}
+              >
+                <Text style={styles.submitButtonGreenText}>
+                  {saving ? t('taskDetail.saving') : 'Submit'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       </View>
@@ -405,270 +391,122 @@ export default function AudioTaskDetailScreen() {
 
 function createStyles(themeColors: AppColors) {
   return StyleSheet.create({
-  container: { 
-    flex: 1, 
+  container: {
+    flex: 1,
     backgroundColor: themeColors.background,
+    ...(Platform.OS === 'web' ? ({ height: '100%', maxHeight: '100vh', overflow: 'hidden' } as object) : {}),
   },
-  loadingText: { 
-    color: themeColors.textMuted, 
-    fontSize: 14, 
-    textAlign: 'center', 
-    marginTop: 24 
+  loadingText: {
+    color: themeColors.textMuted,
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 24,
   },
-  
-  // Header styles
-  header: {
+  workArea: {
+    flex: 1,
+    minHeight: 0,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+    gap: 8,
+  },
+  audioBlock: {
+    flexShrink: 0,
+    backgroundColor: themeColors.surface,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: themeColors.border,
+  },
+  sectionLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: themeColors.text,
+  },
+  noAudioText: {
+    fontSize: 13,
+    color: themeColors.textMuted,
+    textAlign: 'center',
+    paddingVertical: 8,
+  },
+  transcriptionBlock: {
+    flex: 1,
+    minHeight: 0,
+    gap: 6,
+  },
+  transcriptionToolbar: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     flexWrap: 'wrap',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: themeColors.background,
-    borderBottomWidth: 1,
-    borderBottomColor: themeColors.border,
+    gap: 8,
   },
-  backButton: {
+  aiBtnRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexShrink: 0,
   },
-  backText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: themeColors.text,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: themeColors.text,
-    marginLeft: 16,
+  transcriptionInputWrap: {
     flex: 1,
-    textAlign: 'center',
-  },
-  
-  // Content styles
-  content: {
-    flex: 1,
-    padding: 16,
-  },
-  taskTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: themeColors.text,
-    paddingHorizontal: 16,
-    marginBottom: 8,
-    lineHeight: 28,
-  },
-  priceBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    marginLeft: 16,
-    marginBottom: 16,
-  },
-  priceBadgeText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#22c55e',
-  },
-  
-  // Footer styles
-  footer: {
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-    backgroundColor: themeColors.background,
-    borderTopWidth: 1,
-    borderTopColor: themeColors.border,
-  },
-  
-  // Audio styles
-  audioSection: {
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
-  sectionLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: themeColors.text,
-    marginBottom: 12,
-  },
-  audioCard: {
+    minHeight: 0,
     backgroundColor: themeColors.surface,
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: themeColors.border,
-  },
-  playerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  playButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#3b82f6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playIcon: {
-    fontSize: 20,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  playerInfo: {
-    flex: 1,
-  },
-  progressBar: {
-    height: 4,
-    backgroundColor: themeColors.surfaceElevated,
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#3b82f6',
-  },
-  timeText: {
-    fontSize: 12,
-    color: themeColors.textMuted,
-    marginTop: 8,
-  },
-  speedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 16,
-  },
-  speedLabel: {
-    fontSize: 14,
-    color: themeColors.text,
-  },
-  speedControlRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  speedBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 6,
-    backgroundColor: themeColors.surface,
-    borderWidth: 1,
-    borderColor: themeColors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  speedBtnDisabled: {
-    opacity: 0.5,
-  },
-  speedBtnText: {
-    fontSize: 16,
-    color: themeColors.text,
-    fontWeight: '600',
-  },
-  speedValue: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: themeColors.surface,
-    borderWidth: 1,
-    borderColor: themeColors.border,
-    borderRadius: 6,
-  },
-  speedValueText: {
-    fontSize: 12,
-    color: themeColors.text,
-    fontWeight: '600',
-  },
-  noAudioText: {
-    fontSize: 14,
-    color: '#64748b',
-    textAlign: 'center',
-    paddingVertical: 24,
-  },
-  
-  // Transcription styles
-  transcriptionSection: {
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
-  transcriptionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    fontWeight: '600',
-    color: '#fff',
-  },
-  transcriptionCard: {
-    backgroundColor: themeColors.surface,
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: themeColors.border,
-    marginBottom: 12,
+    padding: 8,
   },
   transcriptionInput: {
+    flex: 1,
     fontSize: 14,
+    lineHeight: 20,
     color: themeColors.text,
-    minHeight: 120,
     textAlignVertical: 'top',
+    ...(Platform.OS === 'web' ? ({ height: '100%', outlineStyle: 'none' } as object) : { minHeight: 80 }),
   },
-  
-  // AI Button styles
-  aiButtonWrapper: {
-    marginBottom: 12,
-  },
-  aiTranscribeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#8b5cf6',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  aiTranscribeButtonDisabled: {
-    opacity: 0.6,
-  },
-  aiTranscribeButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  
-  // Compact Button styles
   compactButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start', // ÖNEMLI: Butonu içeriðe göre daraltýr, sola yaslar.
-    backgroundColor: '#7c3aed', // Mor tonunu koruduk
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    backgroundColor: '#7c3aed',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
     borderRadius: 8,
-    marginBottom: 12,
-    gap: 8, // Ýkon ve metin arasý boþluk
+    gap: 6,
+  },
+  compactButtonDisabled: {
+    opacity: 0.6,
   },
   compactButtonText: {
     color: '#ffffff',
     fontWeight: '600',
-    fontSize: 14,
+    fontSize: 12,
   },
-  
-  // Bottom buttons
+  footer: {
+    flexShrink: 0,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: themeColors.background,
+    borderTopWidth: 1,
+    borderTopColor: themeColors.border,
+  },
   bottomButtonBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    backgroundColor: themeColors.background,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  bottomLeftActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  bottomRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   exitButton: {
     paddingHorizontal: 14,

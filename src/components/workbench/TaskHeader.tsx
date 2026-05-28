@@ -48,31 +48,31 @@ export default function TaskHeader({
           <Ionicons name="arrow-back" size={20} color="#3b82f6" />
           <Text style={styles.backButtonText}>{t('taskDetail.back')}</Text>
         </TouchableOpacity>
-        <View style={styles.headerRightCol}>
-          <GuidelineOpenButton
-            variant="header"
-            guidelineUrl={guidelineUrl ?? null}
-            guidelineFileName={guidelineFileName ?? null}
-            style={styles.guidelineHeaderBtn}
-          />
-          {taskId ? (
-            <TaskDiscardCheckbox
-              taskId={taskId}
-              discarded={discarded}
-              disabled={discardDisabled}
-              userId={userId}
-              onPersist={onTaskDiscard}
-            />
-          ) : null}
-        </View>
+        <GuidelineOpenButton
+          variant="header"
+          guidelineUrl={guidelineUrl ?? null}
+          guidelineFileName={guidelineFileName ?? null}
+          style={styles.guidelineHeaderBtn}
+        />
       </View>
       
       {/* Task Info Overlay */}
       <View style={styles.taskInfoBar}>
-        <Text style={styles.taskInfoType}>{taskTypeLabel}</Text>
-        <View style={styles.taskInfoPriceBadge}>
-          <Text style={styles.taskInfoPriceText}>{price ?? 0} TL</Text>
+        <View style={styles.taskInfoLeft}>
+          <Text style={styles.taskInfoType}>{taskTypeLabel}</Text>
+          <View style={styles.taskInfoPriceBadge}>
+            <Text style={styles.taskInfoPriceText}>{price ?? 0} TL</Text>
+          </View>
         </View>
+        {taskId ? (
+          <TaskDiscardCheckbox
+            taskId={taskId}
+            discarded={discarded}
+            disabled={discardDisabled}
+            userId={userId}
+            onPersist={onTaskDiscard}
+          />
+        ) : null}
       </View>
     </View>
   );
@@ -97,11 +97,6 @@ function createStyles(themeColors: AppColors) {
   guidelineHeaderBtn: {
     flexShrink: 0,
   },
-  headerRightCol: {
-    flexShrink: 0,
-    alignItems: 'flex-end',
-    gap: 4,
-  },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -119,15 +114,19 @@ function createStyles(themeColors: AppColors) {
   },
   taskInfoBar: {
     flexDirection: 'row',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 12,
     paddingHorizontal: 20,
     paddingVertical: 12,
-    paddingRight: 168,
     backgroundColor: themeColors.surface,
     borderBottomWidth: 1,
     borderBottomColor: themeColors.border,
+  },
+  taskInfoLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flexShrink: 1,
   },
   taskInfoType: {
     fontSize: 14,

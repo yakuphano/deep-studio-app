@@ -9,6 +9,7 @@ type UserProfile = {
   id: string;
   username: string;
   role: string;
+  is_admin?: boolean;
   is_blocked: boolean;
   languages: string[];
 };
@@ -47,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
       return error ? null : (data as UserProfile);
     } catch {
       return null;
@@ -55,8 +56,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const syncAuth = async (newSession: Session | null) => {
-    // İşlem zaten devam ediyorsa veya aynı session ise tetikleme
-    if (isProcessingRef.current) return;
     isProcessingRef.current = true;
 
     try {
@@ -65,21 +64,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (newSession?.user) {
         resetAdminUserIdCache();
+        const sessionEmail = pickAuthUserEmail(newSession.user);
+        const isDevAdmin = sessionEmail === 'yakup.hano@deepannotation.ai';
+
+        // Profil gelene kadar e-posta yedeği (yakuphanno@gmail.com → kaliteci)
+        setAppRole(normalizeProfileRole(null, isDevAdmin, sessionEmail));
+        setIsAdmin(isDevAdmin);
+
         const userProfile = await fetchUserProfile(newSession.user.id);
+        if (userProfile?.is_blocked) {
+          await supabase.auth.signOut();
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setIsBlocked(true);
+          setIsAdmin(false);
+          setLanguages(['tr', 'en']);
+          setAppRole('annotator');
+          if (typeof window !== 'undefined') {
+            window.alert('Hesabınız engellenmiş. Yönetici ile iletişime geçin.');
+          }
+          return;
+        }
+
         if (userProfile) {
           setProfile(userProfile);
-          setIsBlocked(userProfile.is_blocked);
+          setIsBlocked(false);
           setLanguages(userProfile.languages || ['tr', 'en']);
-          const sessionEmail = pickAuthUserEmail(newSession.user);
-          const isDevAdmin = sessionEmail === 'yakup.hano@deepannotation.ai';
-          const admin = userProfile.role === 'admin' || isDevAdmin;
+          const admin =
+            userProfile.role === 'admin' || userProfile.is_admin === true || isDevAdmin;
           setIsAdmin(admin);
-          setAppRole(normalizeProfileRole(userProfile.role, admin, sessionEmail));
+          setAppRole(
+            normalizeProfileRole(userProfile.role, userProfile.is_admin ?? admin, sessionEmail)
+          );
         } else {
           setProfile(null);
           setIsBlocked(false);
-          const sessionEmail = pickAuthUserEmail(newSession.user);
-          const isDevAdmin = sessionEmail === 'yakup.hano@deepannotation.ai';
           setIsAdmin(isDevAdmin);
           setLanguages(['tr', 'en']);
           setAppRole(normalizeProfileRole(null, isDevAdmin, sessionEmail));

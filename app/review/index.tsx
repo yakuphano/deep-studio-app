@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { canAccessReviewQueue } from '@/lib/userRoles';
+import { canAccessReviewQueue, resolveSessionAppRole } from '@/lib/userRoles';
 import { resolveTaskWorkbenchType } from '@/lib/taskWorkbenchPath';
 import type { AppColors } from '@/theme/palettes';
 import { useThemeColors } from '@/contexts/ThemeContext';
@@ -38,7 +38,7 @@ export default function ReviewQueueScreen() {
 
   const { t } = useTranslation();
   const router = useRouter();
-  const { user, loading: authLoading, appRole } = useAuth();
+  const { user, loading: authLoading, profile, isAdmin } = useAuth();
   const [pending, setPending] = useState<QTask[]>([]);
   const [recent, setRecent] = useState<QTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +46,11 @@ export default function ReviewQueueScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const allowed = canAccessReviewQueue(appRole);
+  const effectiveRole = useMemo(
+    () => resolveSessionAppRole(profile?.role, profile?.is_admin ?? isAdmin, user),
+    [profile?.role, profile?.is_admin, isAdmin, user]
+  );
+  const allowed = canAccessReviewQueue(effectiveRole);
 
   const load = useCallback(async () => {
     if (!user?.id || !allowed) return;

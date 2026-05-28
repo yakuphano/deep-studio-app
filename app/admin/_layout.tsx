@@ -12,6 +12,7 @@ export default function AdminLayout() {
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="export" />
       <Stack.Screen name="messages" />
       <Stack.Screen name="tasks" />
       <Stack.Screen name="tasks/create" />

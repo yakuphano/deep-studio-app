@@ -6,23 +6,33 @@ import tr from './locales/tr.json';
 // @ts-ignore
 import en from './locales/en.json';
 
-const LANG_STORAGE_KEY = 'deepstudio_lang';
+export const LANG_STORAGE_KEY = 'deepstudio_lang';
+export const DEFAULT_UI_LANGUAGE = 'en' as const;
+export const SUPPORTED_UI_LANGUAGES = ['en', 'tr'] as const;
+export type UiLanguage = (typeof SUPPORTED_UI_LANGUAGES)[number];
 
 i18n.use(initReactI18next).init({
-  resources: { tr: { translation: tr as Record<string, unknown> }, en: { translation: en as Record<string, unknown> } },
-  lng: 'tr',
-  fallbackLng: 'tr',
+  resources: {
+    en: { translation: en as Record<string, unknown> },
+    tr: { translation: tr as Record<string, unknown> },
+  },
+  lng: DEFAULT_UI_LANGUAGE,
+  fallbackLng: DEFAULT_UI_LANGUAGE,
+  supportedLngs: [...SUPPORTED_UI_LANGUAGES],
   interpolation: { escapeValue: false },
 });
 
-AsyncStorage.getItem(LANG_STORAGE_KEY).then((saved) => {
-  if (saved && (saved === 'tr' || saved === 'en')) {
-    i18n.changeLanguage(saved);
+void AsyncStorage.getItem(LANG_STORAGE_KEY).then((saved) => {
+  if (saved === 'tr' || saved === 'en') {
+    void i18n.changeLanguage(saved);
   }
 });
 
 i18n.on('languageChanged', (lng) => {
-  AsyncStorage.setItem(LANG_STORAGE_KEY, lng);
+  const code = lng.split('-')[0];
+  if (code === 'tr' || code === 'en') {
+    void AsyncStorage.setItem(LANG_STORAGE_KEY, code);
+  }
 });
 
 export default i18n;

@@ -149,15 +149,8 @@ export const TaskMediaView = forwardRef<TaskMediaViewCanvasHandle | null, TaskMe
     // Ses / transkripsiyon görevleri (type veya category transcription olabilir)
     if (isAudioOrTranscription) {
       return (
-        <View style={taskDetailStyles.audioSection}>
-          <View style={taskDetailStyles.audioHeader}>
-            <View style={taskDetailStyles.sectionActions}>
-              <View style={taskDetailStyles.submittedBadgeCompact}>
-                <Text style={taskDetailStyles.submittedText}>Audio Task</Text>
-              </View>
-            </View>
-          </View>
-          <View style={taskDetailStyles.audioPlayerWrapper}>
+        <View style={[taskDetailStyles.audioSection, { marginBottom: 0, padding: 10 }]}>
+          <View style={[taskDetailStyles.audioPlayerWrapper, { padding: 4 }]}>
             {audioUrl ? (
               <AudioPlayer audioUri={audioUrl} />
             ) : (

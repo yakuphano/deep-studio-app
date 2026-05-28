@@ -458,7 +458,10 @@ export async function buildAdminExportFile(
   };
 }
 
-/** Web: indirme tetikle */
+/**
+ * Web: indirme tetikle — yalnızca admin export ekranından çağrılmalı.
+ * Annotator / kaliteci arayüzlerinde ses veya görev indirmesi yok.
+ */
 export function downloadExportBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

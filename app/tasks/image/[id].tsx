@@ -459,29 +459,29 @@ export default function ImageTaskDetailScreen() {
             <Text style={{ fontSize: 16, fontWeight: '600', color: '#3b82f6', marginLeft: 8 }}>Back</Text>
           </TouchableOpacity>
           <View style={{ flex: 1 }} />
-          <View style={{ alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
-            <GuidelineOpenButton
-              variant="header"
-              guidelineUrl={task.guideline_url ?? null}
-              guidelineFileName={task.guideline_file_name ?? null}
-            />
-            {id ? (
-              <TaskDiscardCheckbox
-                taskId={String(id)}
-                discarded={!!task.discarded_at}
-                disabled={isSubmitted}
-                userId={user?.id}
-              />
-            ) : null}
-          </View>
+          <GuidelineOpenButton
+            variant="header"
+            guidelineUrl={task.guideline_url ?? null}
+            guidelineFileName={task.guideline_file_name ?? null}
+          />
         </View>
         
         {/* Task Info Overlay */}
         <View style={styles.taskInfoBar}>
-          <Text style={styles.taskInfoType}>{taskTypeLabel}</Text>
-          <View style={styles.taskInfoPriceBadge}>
-            <Text style={styles.taskInfoPriceText}>{task?.price ?? 0} TL</Text>
+          <View style={styles.taskInfoLeft}>
+            <Text style={styles.taskInfoType}>{taskTypeLabel}</Text>
+            <View style={styles.taskInfoPriceBadge}>
+              <Text style={styles.taskInfoPriceText}>{task?.price ?? 0} TL</Text>
+            </View>
           </View>
+          {id ? (
+            <TaskDiscardCheckbox
+              taskId={String(id)}
+              discarded={!!task.discarded_at}
+              disabled={isSubmitted}
+              userId={user?.id}
+            />
+          ) : null}
         </View>
         <View style={styles.annotationLayout}>
           <View style={styles.leftToolbarCol}>
@@ -940,14 +940,18 @@ function createStyles(themeColors: AppColors) {
   taskInfoBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    gap: 12,
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 10,
-    paddingRight: 168,
     backgroundColor: themeColors.surface,
     borderBottomWidth: 1,
     borderBottomColor: themeColors.border,
+  },
+  taskInfoLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flexShrink: 1,
   },
   taskInfoType: {
     fontSize: 12,

@@ -17,9 +17,11 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { normalizeProfileRole, postLoginPathForRole, pickAuthUserEmail } from '@/lib/userRoles';
+import { postLoginPathForRole, pickAuthUserEmail, resolveSessionAppRole } from '@/lib/userRoles';
 import type { AppColors } from '@/theme/palettes';
 import { useThemeColors } from '@/contexts/ThemeContext';
+import LanguageToggle from '@/components/LanguageToggle';
+
 export default function LoginScreen() {
   const themeColors = useThemeColors();
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
@@ -48,11 +50,21 @@ export default function LoginScreen() {
 
     let cancelled = false;
     (async () => {
-      const isDevAdmin = pickAuthUserEmail(user) === 'yakup.hano@deepannotation.ai';
-      const { data } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
+      const { data } = await supabase
+        .from('profiles')
+        .select('role, is_admin, is_blocked')
+        .eq('id', user.id)
+        .maybeSingle();
       if (cancelled) return;
-      const admin = data?.role === 'admin' || isDevAdmin;
-      const role = normalizeProfileRole(data?.role ?? null, admin, pickAuthUserEmail(user));
+      if (data?.is_blocked) {
+        await supabase.auth.signOut();
+        Alert.alert(
+          t('login.errorTitle'),
+          'Hesabınız engellenmiş. Yönetici ile iletişime geçin.'
+        );
+        return;
+      }
+      const role = resolveSessionAppRole(data?.role ?? null, data?.is_admin, user);
       const path = postLoginPathForRole(role) as any;
       // Defer replace until after root layout / navigator is fully mounted (avoids expo-router race on web)
       setTimeout(() => {
@@ -79,7 +91,10 @@ export default function LoginScreen() {
     }
     setSubmitting(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
       if (error) throw error;
     } catch (err: any) {
       Alert.alert(t('login.errorTitle'), err?.message || 'Bir hata oluştu');
@@ -109,6 +124,9 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <View style={styles.langRow}>
+        <LanguageToggle compact />
+      </View>
       <View style={styles.card}>
         <Text style={styles.title}>{t('login.title')}</Text>
 
@@ -201,6 +219,14 @@ export default function LoginScreen() {
 
 function createStyles(themeColors: AppColors) {
   return StyleSheet.create({
+  langRow: {
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    alignItems: 'flex-end',
+  },
   container: {
     flex: 1,
     backgroundColor: themeColors.background,

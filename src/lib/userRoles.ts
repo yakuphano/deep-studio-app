@@ -1,10 +1,27 @@
 export type AppRole = 'admin' | 'reviewer' | 'annotator';
 
-/** Oturumdaki QA reviewer hesabı (profilde gecikme/RLS olsa bile). */
-const QA_REVIEWER_FALLBACK_EMAILS = new Set(['yakuphanno@gmail.com']);
+/** Oturumdaki QA reviewer hesapları (profilde gecikme/RLS olsa bile). */
+export const QA_REVIEWER_KNOWN_EMAILS = ['yakuphanno@gmail.com'] as const;
 
-/** Panelde farklı yazılmış reviewer rolleri */
-const REVIEWER_ROLE_ALIASES = new Set(['reviewer', 'qa_reviewer', 'qareviewer']);
+const QA_REVIEWER_FALLBACK_EMAILS = new Set<string>(QA_REVIEWER_KNOWN_EMAILS);
+
+/** profiles.role — kaliteci / QA */
+export const DB_REVIEWER_ROLES = [
+  'reviewer',
+  'qa_reviewer',
+  'qareviewer',
+  'quality_controller',
+  'qualitycontroller',
+] as const;
+
+/** Panelde farklı yazılmış reviewer / kalite kontrol rolleri */
+const REVIEWER_ROLE_ALIASES = new Set([
+  'reviewer',
+  'qa_reviewer',
+  'qareviewer',
+  'quality_controller',
+  'qualitycontroller',
+]);
 
 function stripRoleString(role: string | null | undefined): string {
   return (role ?? 'user').toString().replace(/^\ufeff/, '').toLowerCase().trim();
@@ -42,6 +59,15 @@ export function normalizeProfileRole(
 }
 export function canAccessReviewQueue(role: AppRole): boolean {
   return role === 'admin' || role === 'reviewer';
+}
+
+/** Oturum + profilden geçerli uygulama rolü (e-posta yedeği dahil). */
+export function resolveSessionAppRole(
+  profileRole: string | null | undefined,
+  isAdminFlag: boolean | null | undefined,
+  user: { email?: string | null; identities?: { identity_data?: { email?: string } }[] } | null | undefined
+): AppRole {
+  return normalizeProfileRole(profileRole, isAdminFlag, pickAuthUserEmail(user));
 }
 
 export function postLoginPathForRole(role: AppRole): string {

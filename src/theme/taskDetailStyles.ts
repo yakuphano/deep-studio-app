@@ -261,8 +261,12 @@ export function createTaskDetailStyles(themeColors: AppColors) {
   bottomLeftActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
+    gap: 10,
+  },
+  bottomRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   exitButton: {
     paddingHorizontal: 14,

@@ -99,7 +99,7 @@ function createStyles(themeColors: AppColors) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
-      alignSelf: 'flex-end',
+      flexShrink: 0,
       paddingVertical: 2,
       paddingHorizontal: 2,
     },

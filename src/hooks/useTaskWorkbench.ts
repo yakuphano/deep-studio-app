@@ -318,6 +318,9 @@ export const useTaskWorkbench = (taskId: string | undefined, userId: string | un
           status: 'submitted',
           transcription,
           annotation_data: annotationData,
+          qa_comment: null,
+          qa_reviewed_by: null,
+          qa_reviewed_at: null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', taskId);

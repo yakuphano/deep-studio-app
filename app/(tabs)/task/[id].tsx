@@ -367,7 +367,12 @@ export default function TaskDetailScreen() {
   // Ses / transkripsiyon görevleri
   if (isAudioLike) {
     return (
-      <View style={taskDetailStyles.container}>
+      <View
+        style={[
+          taskDetailStyles.container,
+          Platform.OS === 'web' ? ({ height: '100%', maxHeight: '100vh', overflow: 'hidden' } as object) : null,
+        ]}
+      >
         <TaskHeader
           title={task?.title || ''}
           price={task?.price}
@@ -381,21 +386,23 @@ export default function TaskDetailScreen() {
           userId={user?.id}
           onTaskDiscard={handleTaskDiscard}
         />
-        
-        <ScrollView style={taskDetailStyles.scroll} contentContainerStyle={taskDetailStyles.scrollContent}>
-          <TaskMediaView
-            task={task}
-            taskType={taskType}
-            annotations={annotations}
-            activeTool={activeTool}
-            selectedAnnotationId={selectedAnnotationId}
-            onToolChange={setActiveTool}
-            onAnnotationSelect={handleCanvasAnnotationSelect}
-            onAnnotationDelete={handleAnnotationDelete}
-            onAnnotationsChange={setAnnotations}
-            finalAudioUrl={finalAudioUrl}
-          />
-          
+
+        <View style={{ flex: 1, minHeight: 0 }}>
+          <View style={{ flexShrink: 0, paddingHorizontal: 16, paddingTop: 8 }}>
+            <TaskMediaView
+              task={task}
+              taskType={taskType}
+              annotations={annotations}
+              activeTool={activeTool}
+              selectedAnnotationId={selectedAnnotationId}
+              onToolChange={setActiveTool}
+              onAnnotationSelect={handleCanvasAnnotationSelect}
+              onAnnotationDelete={handleAnnotationDelete}
+              onAnnotationsChange={setAnnotations}
+              finalAudioUrl={finalAudioUrl}
+            />
+          </View>
+
           <TaskEditor
             transcription={transcription}
             onTranscriptionChange={setTranscription}
@@ -404,22 +411,30 @@ export default function TaskDetailScreen() {
             onAIFix={handleAIFix}
             taskType={taskEditorMediaType}
           />
-        </ScrollView>
+        </View>
 
         <View style={taskDetailStyles.bottomButtonBar}>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={taskDetailStyles.bottomLeftActions}>
             <TouchableOpacity style={taskDetailStyles.exitButton} onPress={handleExit}>
               <Text style={taskDetailStyles.exitButtonText}>Exit</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity style={taskDetailStyles.submitExitButton} onPress={() => handleSubmit(false)}>
+            <TouchableOpacity
+              style={[taskDetailStyles.submitExitButton, saving && taskDetailStyles.submitButtonDisabled]}
+              onPress={() => void handleSubmit(false)}
+              disabled={saving}
+            >
               <Text style={taskDetailStyles.submitExitButtonText}>Submit & Exit</Text>
             </TouchableOpacity>
           </View>
-          
-          <TouchableOpacity style={taskDetailStyles.submitButtonGreen} onPress={() => handleSubmit(true)}>
-            <Text style={taskDetailStyles.submitButtonGreenText}>Submit Next</Text>
-          </TouchableOpacity>
+          <View style={taskDetailStyles.bottomRightActions}>
+            <TouchableOpacity
+              style={[taskDetailStyles.submitButtonGreen, saving && taskDetailStyles.submitButtonDisabled]}
+              onPress={() => void handleSubmit(true)}
+              disabled={saving}
+            >
+              <Text style={taskDetailStyles.submitButtonGreenText}>Submit Next</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     );

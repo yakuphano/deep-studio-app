@@ -17,7 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { canAccessReviewQueue } from '@/lib/userRoles';
+import { canAccessReviewQueue, resolveSessionAppRole } from '@/lib/userRoles';
 import { getWorkbenchPathForTask, resolveTaskWorkbenchType } from '@/lib/taskWorkbenchPath';
 import { resolvePlaybackAudioUrl, resolveTaskImageUrl } from '@/lib/audioUrl';
 import AudioPlayer from '@/components/AudioPlayer';
@@ -56,14 +56,18 @@ export default function ReviewTaskDetailScreen() {
   const id = useTaskIdParam();
   const router = useRouter();
   const { t } = useTranslation();
-  const { user, loading: authLoading, appRole } = useAuth();
+  const { user, loading: authLoading, profile, isAdmin } = useAuth();
   const [task, setTask] = useState<Row | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
 
-  const allowed = canAccessReviewQueue(appRole);
+  const effectiveRole = useMemo(
+    () => resolveSessionAppRole(profile?.role, profile?.is_admin ?? isAdmin, user),
+    [profile?.role, profile?.is_admin, isAdmin, user]
+  );
+  const allowed = canAccessReviewQueue(effectiveRole);
 
   /** QA görsel incelemesi: sabit 260px yerine ekranın büyük kısmı (orijinale yakın). */
   const qaImagePreviewHeight = useMemo(() => {

@@ -9,6 +9,7 @@ import {
   Platform,
   Alert,
   StyleSheet,
+  LayoutChangeEvent,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -19,11 +20,15 @@ import TaskDiscardCheckbox from '@/components/task/TaskDiscardCheckbox';
 import { useAuth } from '@/contexts/AuthContext';
 import { triggerEarningsRefresh } from '@/lib/earningsRefresh';
 import { resolveTaskImageUrl } from '@/lib/audioUrl';
-import { bevImageUrlToPointCloud, syntheticUrbanStrip } from '@/lib/lidar/bevImageToPointCloud';
+import {
+  bevImageUrlToPointCloud,
+  syntheticUrbanStrip,
+  type BevPointCloudMeta,
+} from '@/lib/lidar/bevImageToPointCloud';
 import LidarThreeView from '@/components/lidar/LidarThreeView';
 import type { AppColors } from '@/theme/palettes';
 import { useThemeColors } from '@/contexts/ThemeContext';
-import type { LidarBoxFootprint, LidarGizmoMode, LidarPointColorMode, LidarThreeTool } from '@/components/lidar/types';
+import type { LidarBoxFootprint, LidarGizmoMode, LidarThreeTool } from '@/components/lidar/types';
 import { estimateFootprintFromPoints, snapCuboidCenterXZ } from '@/lib/lidar/lidarBoxFromCloud';
 import {
   createEmptyLidarCuboid,
@@ -41,10 +46,28 @@ import {
 
 const LABELS = ['Car', 'Truck', 'Pedestrian', 'Cyclist', 'Sign', 'Other'] as const;
 
-const RAIL_INNER = 48 * 2 + 4;
-const LEFT_RAIL_W = RAIL_INNER + 8;
+/** LiDAR rail: two tool cells + gap + strip padding (fixed width, no flex stretch). */
+const LIDAR_TOOL_CELL = 54;
+const LIDAR_TOOL_GAP = 8;
+const RAIL_INNER = LIDAR_TOOL_CELL * 2 + LIDAR_TOOL_GAP;
+const LEFT_RAIL_W = RAIL_INNER + 24;
 /** Same width as `app/dashboard/image/[id].tsx` right sidebar. */
 const LIDAR_RIGHT_SIDEBAR_W = 280;
+
+/** Fits a near-square box (max aspect ratio `r`) inside maxW × maxH. */
+function nearSquareSize(maxW: number, maxH: number, r = 1.12): { bw: number; bh: number } {
+  const w = Math.max(0, maxW);
+  const h = Math.max(0, maxH);
+  if (w < 8 || h < 8) return { bw: 0, bh: 0 };
+  if (w >= h) {
+    const bh = h;
+    const bw = Math.min(w, bh * r);
+    return { bw: Math.floor(bw), bh: Math.floor(bh) };
+  }
+  const bw = w;
+  const bh = Math.min(h, bw * r);
+  return { bw: Math.floor(bw), bh: Math.floor(bh) };
+}
 
 function cloneCuboids(c: LidarCuboidAnnotation[]): LidarCuboidAnnotation[] {
   return JSON.parse(JSON.stringify(c)) as LidarCuboidAnnotation[];
@@ -78,6 +101,8 @@ export default function LidarAnnotationWorkbench() {
     (): LidarRailCell[] => [
       { kind: 'three', id: 'select', label: t('annotation.selectTool'), icon: 'hand-left-outline', key: 'V' },
       { kind: 'three', id: 'create', label: t('tasks.lidarToolCreateBox'), icon: 'cube-outline', key: 'B' },
+      { kind: 'three', id: 'polygon', label: t('tasks.lidarToolPolygon'), icon: 'shapes-outline', key: 'P' },
+      { kind: 'three', id: 'bbox', label: t('tasks.lidarToolBbox'), icon: 'square-outline', key: 'G' },
       { kind: 'gizmo', mode: 'rotate', label: t('tasks.lidarToolRotate'), icon: 'sync-outline', key: 'R' },
       { kind: 'gizmo', mode: 'scale', label: t('tasks.lidarToolScale'), icon: 'expand-outline', key: 'S' },
       { kind: 'three', id: 'delete', label: t('tasks.lidarToolDelete'), icon: 'trash-outline', key: 'Del' },
@@ -190,11 +215,20 @@ export default function LidarAnnotationWorkbench() {
   }, []);
   const activeLabelRef = useRef(activeLabel);
   activeLabelRef.current = activeLabel;
+  const [resolvedBevUrl, setResolvedBevUrl] = useState<string | null>(null);
+  const [bevMeta, setBevMeta] = useState<BevPointCloudMeta | null>(null);
   const [focusRequestId, setFocusRequestId] = useState(0);
   const [resetCameraRequestId, setResetCameraRequestId] = useState(0);
-  const [pointColorMode, setPointColorMode] = useState<LidarPointColorMode>('height');
-  const [pointDensity, setPointDensity] = useState(1);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [viewerSlot, setViewerSlot] = useState({ w: 0, h: 0 });
+  const onViewerSlotLayout = useCallback((e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    setViewerSlot((prev) => (prev.w === width && prev.h === height ? prev : { w: width, h: height }));
+  }, []);
+  const viewerSquare = useMemo(
+    () => nearSquareSize(Math.max(0, viewerSlot.w - 10), Math.max(0, viewerSlot.h - 10)),
+    [viewerSlot.w, viewerSlot.h]
+  );
 
   const cuboidsLive = useRef(cuboids);
   const selectedIdRef = useRef<string | null>(null);
@@ -291,21 +325,28 @@ export default function LidarAnnotationWorkbench() {
   }, [id, clearUndoStacks]);
 
   useEffect(() => {
-    if (!imageUrl || Platform.OS !== 'web') return;
+    if (!imageUrl || Platform.OS !== 'web') {
+      setResolvedBevUrl(null);
+      setBevMeta(null);
+      return;
+    }
     let cancelled = false;
     const resolved = resolveTaskImageUrl(imageUrl.trim()) ?? imageUrl.trim();
+    setResolvedBevUrl(resolved);
     (async () => {
       try {
-        const { positions: p, colors: col } = await bevImageUrlToPointCloud(resolved);
+        const { positions: p, colors: col, meta } = await bevImageUrlToPointCloud(resolved);
         if (!cancelled) {
           setPositions(p);
           setColors(col);
+          setBevMeta(meta);
         }
       } catch {
         if (!cancelled) {
           const s = syntheticUrbanStrip();
           setPositions(s.positions);
           setColors(s.colors);
+          setBevMeta(null);
         }
       }
     })();
@@ -452,6 +493,14 @@ export default function LidarAnnotationWorkbench() {
         e.preventDefault();
         setTool('create');
       }
+      if (k === 'p' || k === 'P') {
+        e.preventDefault();
+        setTool('polygon');
+      }
+      if (k === 'g' || k === 'G') {
+        e.preventDefault();
+        setTool('bbox');
+      }
       if (k === 'Delete') {
         e.preventDefault();
         const sid = selectedIdRef.current;
@@ -559,6 +608,38 @@ export default function LidarAnnotationWorkbench() {
     );
   }
 
+  const hasSquareViewerFrame =
+    Platform.OS === 'web' && viewerSquare.bw > 60 && viewerSquare.bh > 60;
+  const threePanelStyle = hasSquareViewerFrame ? layoutStyles.threePanelSquareInner : layoutStyles.threePanel;
+
+  const lidarCenterPanels = (
+    <View style={threePanelStyle}>
+      <LidarThreeView
+        positions={positions}
+        colors={colors}
+        bevTextureUrl={resolvedBevUrl}
+        bevWorldWidth={bevMeta?.worldWidth ?? 48}
+        bevWorldDepth={bevMeta?.worldDepth ?? 48}
+        showPointCloud
+        cuboids={cuboids}
+        selectedId={selectedId}
+        hoveredId={hoveredId}
+        tool={tool}
+        gizmoMode={gizmoMode}
+        pointColorMode="height"
+        pointDensity={1}
+        focusRequestId={focusRequestId}
+        resetCameraRequestId={resetCameraRequestId}
+        chromeless={Platform.OS === 'web'}
+        onSelectCuboid={setSelectedId}
+        onHoverCuboid={setHoveredId}
+        onCreateBoxFootprint={handleCreateBoxFootprint}
+        onDeleteCuboid={handleDeleteCuboid}
+        onCuboidTransform={handleCuboidTransform}
+      />
+    </View>
+  );
+
   return (
     <View style={S.root}>
       <View style={[S.topNav, layoutStyles.topNavRow]}>
@@ -606,50 +687,52 @@ export default function LidarAnnotationWorkbench() {
       </View>
 
       <View style={S.mainRow}>
-        <ScrollView
-          style={[S.leftToolRail, { width: LEFT_RAIL_W, minWidth: LEFT_RAIL_W, maxWidth: LEFT_RAIL_W }]}
-          contentContainerStyle={[S.leftToolRailContent, { paddingBottom: 24 }]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        <View style={layoutStyles.mainWorkspaceRow}>
+          <ScrollView
+            style={[S.leftToolRail, layoutStyles.lidarToolsStrip]}
+            contentContainerStyle={[S.leftToolRailContent, { paddingBottom: 24 }]}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
           <View style={L.lidarRailCol}>
             <Text style={L.railSectionTitle}>TOOLS</Text>
 
-            <TouchableOpacity
-              style={[L.lidarToolFull, L.lidarUndoFull, !canUndo && layoutStyles.railToolDisabled]}
-              onPress={() => doUndo()}
-              disabled={!canUndo}
-              activeOpacity={0.85}
-              {...(Platform.OS === 'web' ? ({ title: 'Undo (Ctrl+Z)' } as object) : {})}
-            >
-              <Ionicons name="arrow-undo-outline" size={18} color={canUndo ? appColors.accent : wb.textSoft} />
-              <Text
-                style={[L.lidarToolFullTxt, { color: canUndo ? wb.text : wb.textSoft }]}
-                numberOfLines={1}
+            <View style={L.lidarToolRow}>
+              <TouchableOpacity
+                style={[L.lidarTool48, L.lidarUndoCell, !canUndo && layoutStyles.railToolDisabled]}
+                onPress={() => doUndo()}
+                disabled={!canUndo}
+                activeOpacity={0.85}
+                {...(Platform.OS === 'web' ? ({ title: 'Undo (Ctrl+Z)' } as object) : {})}
               >
-                {t('tasks.lidarUndo')}
-              </Text>
-              <Text style={L.lidarKeyCap}>⌘Z</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[L.lidarToolFull, L.lidarCenterFull]}
-              onPress={handleCenterView}
-              activeOpacity={0.85}
-              {...(Platform.OS === 'web'
-                ? ({
-                    title: selectedId
-                      ? 'Focus camera on selection (F)'
-                      : 'Reset camera to default view (Home)',
-                  } as object)
-                : {})}
-            >
-              <Ionicons name="scan-outline" size={18} color={appColors.success} />
-              <Text style={[L.lidarToolFullTxt, { color: appColors.success }]} numberOfLines={1}>
-                {t('tasks.lidarCenter')}
-              </Text>
-              <Text style={L.lidarKeyCap}>{selectedId ? 'F' : 'Home'}</Text>
-            </TouchableOpacity>
+                <Ionicons name="arrow-undo-outline" size={18} color={canUndo ? appColors.accent : wb.textSoft} />
+                <Text
+                  style={[L.lidarTool48Txt, { color: canUndo ? wb.text : wb.textSoft }]}
+                  numberOfLines={2}
+                >
+                  {t('tasks.lidarUndo')}
+                </Text>
+                <Text style={L.lidarKeyCap}>⌘Z</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[L.lidarTool48, L.lidarCenterCell]}
+                onPress={handleCenterView}
+                activeOpacity={0.85}
+                {...(Platform.OS === 'web'
+                  ? ({
+                      title: selectedId
+                        ? 'Focus camera on selection (F)'
+                        : 'Reset camera to default view (Home)',
+                    } as object)
+                  : {})}
+              >
+                <Ionicons name="scan-outline" size={18} color={appColors.success} />
+                <Text style={[L.lidarTool48Txt, { color: appColors.success }]} numberOfLines={2}>
+                  {t('tasks.lidarCenter')}
+                </Text>
+                <Text style={L.lidarKeyCap}>{selectedId ? 'F' : 'H'}</Text>
+              </TouchableOpacity>
+            </View>
 
             {lidarToolRows.map((row, ri) => (
               <View key={ri} style={L.lidarToolRow}>
@@ -706,71 +789,41 @@ export default function LidarAnnotationWorkbench() {
               </View>
             ))}
 
-            {Platform.OS === 'web' ? (
-              <View style={layoutStyles.leftRailPointsBlock} pointerEvents="auto">
-                <View style={layoutStyles.leftRailHudCard}>
-                  <Text style={layoutStyles.hudLabel}>Points</Text>
-                  <View style={layoutStyles.hudRow}>
-                    <TouchableOpacity
-                      style={[layoutStyles.hudChip, pointColorMode === 'height' && layoutStyles.hudChipOn]}
-                      onPress={() => setPointColorMode('height')}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={[layoutStyles.hudChipTxt, pointColorMode === 'height' && layoutStyles.hudChipTxtOn]}>Height</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[layoutStyles.hudChip, pointColorMode === 'intensity' && layoutStyles.hudChipOn]}
-                      onPress={() => setPointColorMode('intensity')}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={[layoutStyles.hudChipTxt, pointColorMode === 'intensity' && layoutStyles.hudChipTxtOn]}>
-                        Intensity
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={[layoutStyles.hudLabel, { marginTop: 8 }]}>Density</Text>
-                  <View style={layoutStyles.hudRow}>
-                    {([1, 0.75, 0.5, 0.25] as const).map((d) => (
-                      <TouchableOpacity
-                        key={d}
-                        style={[layoutStyles.hudChip, pointDensity === d && layoutStyles.hudChipOn]}
-                        onPress={() => setPointDensity(d)}
-                        activeOpacity={0.85}
-                      >
-                        <Text style={[layoutStyles.hudChipTxt, pointDensity === d && layoutStyles.hudChipTxtOn]}>
-                          {Math.round(d * 100)}%
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              </View>
-            ) : null}
-
             <Text style={L.lidarRailHint}>{t('tasks.lidarVectorToolsHint')}</Text>
           </View>
         </ScrollView>
 
-        <View style={[L.viewport, { position: 'relative' as const }]}>
-          {/* TODO: multi-frame auto-tracking — propagate boxes N→N+1 when task provides frame sequence */}
-          <LidarThreeView
-            positions={positions}
-            colors={colors}
-            cuboids={cuboids}
-            selectedId={selectedId}
-            hoveredId={hoveredId}
-            tool={tool}
-            gizmoMode={gizmoMode}
-            pointColorMode={pointColorMode}
-            pointDensity={pointDensity}
-            focusRequestId={focusRequestId}
-            resetCameraRequestId={resetCameraRequestId}
-            onSelectCuboid={setSelectedId}
-            onHoverCuboid={setHoveredId}
-            onCreateBoxFootprint={handleCreateBoxFootprint}
-            onDeleteCuboid={handleDeleteCuboid}
-            onCuboidTransform={handleCuboidTransform}
-          />
+          {Platform.OS === 'web' ? (
+            <View style={layoutStyles.viewerSlotMeasure} onLayout={onViewerSlotLayout}>
+              {hasSquareViewerFrame ? (
+                <View
+                  style={[
+                    layoutStyles.squareViewerFrame,
+                    { width: viewerSquare.bw, height: viewerSquare.bh },
+                  ]}
+                >
+                  <View style={[L.viewport, layoutStyles.viewportSplit, layoutStyles.viewportSquareFill]}>
+                    {lidarCenterPanels}
+                  </View>
+                </View>
+              ) : (
+                <View
+                  style={[
+                    L.viewport,
+                    layoutStyles.viewportSplit,
+                    layoutStyles.viewportSquareFill,
+                    { flex: 1, minWidth: 200, alignSelf: 'stretch' },
+                  ]}
+                >
+                  {lidarCenterPanels}
+                </View>
+              )}
+            </View>
+          ) : (
+            <View style={[L.viewport, layoutStyles.viewportSplit, { flex: 1, minWidth: 0 }]}>
+              {lidarCenterPanels}
+            </View>
+          )}
         </View>
 
         <View style={sidebarStyles.root}>
@@ -1138,53 +1191,66 @@ function createLidarWorkbenchLayoutStyles(c: AppColors) {
     paddingVertical: 6,
     fontSize: 12,
   },
-  leftRailPointsBlock: {
+  viewportSplit: {
+    flexDirection: 'column' as const,
+    flex: 1,
+    minHeight: 0,
     alignSelf: 'stretch' as const,
+  },
+  viewportSquareFill: {
+    flex: 1,
+    minHeight: 0,
+    minWidth: 0,
     width: '100%' as const,
-    marginTop: 8,
-    marginBottom: 4,
+    height: '100%' as const,
   },
-  leftRailHudCard: {
-    backgroundColor: c.surface,
-    borderWidth: 1.5,
-    borderColor: c.accent,
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    width: '100%' as const,
-    maxWidth: '100%' as const,
-  },
-  hudLabel: {
-    color: c.textMuted,
-    fontSize: 10,
-    fontWeight: '700' as const,
-    letterSpacing: 0.8,
-    marginBottom: 6,
-  },
-  hudRow: {
+  viewerSlotMeasure: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
     flexDirection: 'row' as const,
-    flexWrap: 'wrap' as const,
-    gap: 6,
+    justifyContent: 'flex-end' as const,
+    alignItems: 'center' as const,
   },
-  hudChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: c.surfaceElevated,
+  mainWorkspaceRow: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    minWidth: 0,
+    minHeight: 0,
+  },
+  lidarToolsStrip: {
+    flexGrow: 0,
+    flexShrink: 0,
+    width: LEFT_RAIL_W,
+    minWidth: LEFT_RAIL_W,
+    maxWidth: LEFT_RAIL_W,
+    alignSelf: 'stretch' as const,
+    backgroundColor: c.bg,
+    borderRightWidth: 1,
+    borderRightColor: c.border,
+  },
+  squareViewerFrame: {
+    borderRadius: 10,
+    overflow: 'hidden' as const,
     borderWidth: 1.5,
-    borderColor: c.border,
-  },
-  hudChipOn: {
     borderColor: c.accent,
-    backgroundColor: c.accentMuted,
+    backgroundColor: c.bg,
   },
-  hudChipTxt: {
-    color: c.text,
-    fontSize: 12,
-    fontWeight: '600' as const,
+  threePanelSquareInner: {
+    flex: 1,
+    minHeight: 0,
+    minWidth: 0,
+    overflow: 'hidden' as const,
   },
-  hudChipTxtOn: {
-    color: c.accent,
+  threePanel: {
+    flex: 1,
+    minHeight: 0,
+    minWidth: 0,
+    borderRadius: 8,
+    overflow: 'hidden' as const,
+    borderWidth: 1,
+    borderColor: c.border,
+    borderStyle: 'solid' as const,
   },
 });
 }

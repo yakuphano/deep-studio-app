@@ -75,7 +75,7 @@ export function intensityToRgb(s: number): { r: number; g: number; b: number } {
  * Classic LiDAR look: small round points, no custom shader.
  */
 /** Cap drawn points for smooth orbit / pan on large clouds (stride grows if needed). */
-const MAX_DRAWN_POINTS = 320_000;
+const MAX_DRAWN_POINTS = 600_000;
 
 export function buildClassicPointCloudBuffers(
   positions: Float32Array,
